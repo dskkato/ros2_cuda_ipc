@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <cstring>
+#include <stdexcept>
+#include <string>
 
 namespace py = pybind11;
 
@@ -51,7 +53,13 @@ py::capsule to_dlpack(std::uintptr_t ptr, std::size_t size_bytes) {
   shape[0] = static_cast<int64_t>(size_bytes);
   managed->dl_tensor.data = reinterpret_cast<void*>(ptr);
   int device_id = 0;
-  (void)cudaGetDevice(&device_id);
+  cudaError_t err = cudaGetDevice(&device_id);
+  if (err != cudaSuccess) {
+    delete[] shape;
+    delete managed;
+    throw std::runtime_error(std::string("cudaGetDevice failed: ") +
+                             cudaGetErrorString(err));
+  }
   managed->dl_tensor.device = {kDLGPU, device_id};
   managed->dl_tensor.ndim = 1;
   managed->dl_tensor.dtype = {1, 8, 1};  // kDLUInt
@@ -64,7 +72,8 @@ py::capsule to_dlpack(std::uintptr_t ptr, std::size_t size_bytes) {
     delete self;
   };
   return py::capsule(managed, "dltensor", [](PyObject* cap) {
-    auto* m = static_cast<DLManagedTensor*>(PyCapsule_GetPointer(cap, "dltensor"));
+    auto* m =
+        static_cast<DLManagedTensor*>(PyCapsule_GetPointer(cap, "dltensor"));
     if (m && m->deleter) {
       m->deleter(m);
     }
@@ -72,8 +81,8 @@ py::capsule to_dlpack(std::uintptr_t ptr, std::size_t size_bytes) {
 }
 
 void from_dlpack(std::uintptr_t dst_ptr, py::capsule cap) {
-  auto* managed =
-      static_cast<DLManagedTensor*>(PyCapsule_GetPointer(cap.ptr(), "dltensor"));
+  auto* managed = static_cast<DLManagedTensor*>(
+      PyCapsule_GetPointer(cap.ptr(), "dltensor"));
   if (!managed) {
     throw std::runtime_error("Invalid DLTensor capsule");
   }
@@ -84,11 +93,16 @@ void from_dlpack(std::uintptr_t dst_ptr, py::capsule cap) {
     n *= static_cast<std::size_t>(t.shape[i]);
   }
   std::size_t bytes = elem_bytes * n;
-  cudaMemcpy(reinterpret_cast<void*>(dst_ptr), t.data, bytes, cudaMemcpyDeviceToDevice);
+  cudaError_t err = cudaMemcpy(reinterpret_cast<void*>(dst_ptr), t.data, bytes,
+                               cudaMemcpyDeviceToDevice);
+  if (err != cudaSuccess) {
+    throw std::runtime_error(std::string("cudaMemcpy failed: ") +
+                             cudaGetErrorString(err));
+  }
+  PyCapsule_SetName(cap.ptr(), "used_dltensor");
   if (managed->deleter) {
     managed->deleter(managed);
   }
-  PyCapsule_SetName(cap.ptr(), "used_dltensor");
 }
 
 }  // namespace
@@ -97,4 +111,3 @@ void init_dlpack_utils(py::module_& m) {
   m.def("to_dlpack", &to_dlpack, py::arg("ptr"), py::arg("size_bytes"));
   m.def("from_dlpack", &from_dlpack, py::arg("dst_ptr"), py::arg("tensor"));
 }
-
