@@ -10,6 +10,11 @@ struct CudaIpcMemHandle {
   unsigned char reserved[64];
 };
 
+// A portable representation of a CUDA IPC event handle (64 bytes).
+struct CudaIpcEventHandle {
+  unsigned char reserved[64];
+};
+
 // Returns true if CUDA runtime is available (device count > 0)
 bool cuda_is_available();
 
@@ -30,6 +35,27 @@ void* cuda_ipc_open_mem_handle(const CudaIpcMemHandle& handle);
 
 // Closes a previously opened IPC mapping. Returns true on success.
 bool cuda_ipc_close_mem_handle(void* device_ptr);
+
+// Creates a CUDA interprocess-capable event. Returns opaque handle or nullptr
+// on failure.
+void* cuda_event_create();
+
+// Destroys a CUDA event previously created or opened. Returns true on success.
+bool cuda_event_destroy(void* evt);
+
+// Records the event on the default stream (0). Returns true on success.
+bool cuda_event_record(void* evt);
+
+// Exports an IPC event handle for a given event. Returns true on success.
+bool cuda_event_get_ipc_handle(void* evt, CudaIpcEventHandle* out_handle);
+
+// Opens an IPC event handle in the current process. Returns event or nullptr on
+// failure.
+void* cuda_ipc_open_event_handle(const CudaIpcEventHandle& handle);
+
+// Queries event status. Returns true if event has completed (or if
+// unsupported), false if not ready.
+bool cuda_event_query(void* evt);
 
 }  // namespace ros2_cuda_ipc_core
 
