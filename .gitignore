@@ -1,0 +1,16 @@
+# ROS 2 build artifacts
+build/
+install/
+log/
+
+# Python virtual environments
+venv/
+.venv/
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+
+# Other common ignored files
+*.pyc
+__pycache__/
