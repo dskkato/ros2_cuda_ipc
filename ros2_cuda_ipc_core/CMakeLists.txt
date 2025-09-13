@@ -8,13 +8,44 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 
-add_library(${PROJECT_NAME} src/gpu_buffer_pool.cpp)
+# Optionally enable CUDA support
+option(ROS2_CUDA_IPC_ENABLE_CUDA "Build with CUDA support" OFF)
+
+set(SOURCES
+  src/gpu_buffer_pool.cpp
+)
+
+if(ROS2_CUDA_IPC_ENABLE_CUDA)
+  message(STATUS "ros2_cuda_ipc_core: CUDA support ENABLED")
+  enable_language(CUDA)
+  # Prefer modern CMake CUDA language instead of FindCUDA
+  set(CMAKE_CUDA_STANDARD 14)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  list(APPEND SOURCES src/cuda_support.cu)
+  find_package(CUDAToolkit QUIET)
+else()
+  message(STATUS "ros2_cuda_ipc_core: CUDA support DISABLED")
+  list(APPEND SOURCES src/cuda_support_stub.cpp)
+endif()
+
+add_library(${PROJECT_NAME} ${SOURCES})
 target_include_directories(${PROJECT_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 ament_target_dependencies(${PROJECT_NAME} rclcpp ros2_cuda_ipc_msgs)
+
+if(ROS2_CUDA_IPC_ENABLE_CUDA)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC ROS2_CUDA_IPC_WITH_CUDA=1)
+  if(CUDAToolkit_FOUND AND TARGET CUDA::cudart)
+    target_link_libraries(${PROJECT_NAME} CUDA::cudart)
+    # Ensure consumers also find CUDAToolkit when importing this target
+    set(_ros2_cuda_ipc_export_cuda TRUE)
+  else()
+    set(_ros2_cuda_ipc_export_cuda FALSE)
+  endif()
+endif()
 
 install(TARGETS ${PROJECT_NAME}
   EXPORT export_${PROJECT_NAME}
@@ -35,4 +66,7 @@ endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(rclcpp ros2_cuda_ipc_msgs)
+if(DEFINED _ros2_cuda_ipc_export_cuda AND _ros2_cuda_ipc_export_cuda)
+  ament_export_dependencies(CUDAToolkit)
+endif()
 ament_package()
