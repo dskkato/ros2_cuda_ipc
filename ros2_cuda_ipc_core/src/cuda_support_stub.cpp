@@ -37,4 +37,9 @@ void* cuda_ipc_open_event_handle(const CudaIpcEventHandle& /*handle*/) {
 
 bool cuda_event_query(void* /*evt*/) { return false; }
 
+void* cuda_stream_create() { return nullptr; }
+bool cuda_stream_destroy(void* /*stream*/) { return false; }
+bool cuda_stream_wait_event(void* /*stream*/, void* /*evt*/) { return false; }
+bool cuda_stream_synchronize(void* /*stream*/) { return false; }
+
 }  // namespace ros2_cuda_ipc_core

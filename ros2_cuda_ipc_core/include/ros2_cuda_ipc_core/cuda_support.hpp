@@ -57,6 +57,15 @@ void* cuda_ipc_open_event_handle(const CudaIpcEventHandle& handle);
 // unsupported), false if not ready.
 bool cuda_event_query(void* evt);
 
+// CUDA stream helpers (opaque void* to avoid leaking CUDA headers)
+void* cuda_stream_create();
+bool cuda_stream_destroy(void* stream);
+// Waits for evt on the given stream. Returns true on success.
+bool cuda_stream_wait_event(void* stream, void* evt);
+// Optional: synchronize stream (blocks until complete). Returns true on
+// success.
+bool cuda_stream_synchronize(void* stream);
+
 }  // namespace ros2_cuda_ipc_core
 
 #endif  // ROS2_CUDA_IPC_CORE_CUDA_SUPPORT_HPP_

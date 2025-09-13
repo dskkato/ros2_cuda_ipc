@@ -48,6 +48,51 @@ GpuBufferPool::GpuBufferPool(std::size_t size, std::size_t bytes_per_slot,
       using_cuda_ = false;
     } else {
       using_cuda_ = true;
+      events_enabled_ = true;
+    }
+  }
+}
+
+GpuBufferPool::GpuBufferPool(const PoolOptions& opts)
+    : slots_(opts.pool_size),
+      device_ptrs_(opts.pool_size, nullptr),
+      events_(opts.pool_size, nullptr),
+      bytes_per_slot_(opts.bytes_per_slot) {
+  if (opts.use_cuda && bytes_per_slot_ > 0 && cuda_is_available()) {
+    bool ok = true;
+    for (std::size_t i = 0; i < opts.pool_size; ++i) {
+      void* p = cuda_allocate(bytes_per_slot_);
+      if (!p) {
+        ok = false;
+        break;
+      }
+      device_ptrs_[i] = p;
+    }
+    if (ok && opts.events_enabled) {
+      for (std::size_t i = 0; i < opts.pool_size; ++i) {
+        void* e = cuda_event_create();
+        if (!e) {
+          ok = false;
+          break;
+        }
+        events_[i] = e;
+      }
+    }
+    if (!ok) {
+      for (void* e : events_) {
+        if (e) cuda_event_destroy(e);
+      }
+      for (void* p : device_ptrs_) {
+        if (p) cuda_free(p);
+      }
+      std::fill(events_.begin(), events_.end(), nullptr);
+      std::fill(device_ptrs_.begin(), device_ptrs_.end(), nullptr);
+      bytes_per_slot_ = 0;
+      using_cuda_ = false;
+      events_enabled_ = false;
+    } else {
+      using_cuda_ = true;
+      events_enabled_ = opts.events_enabled;
     }
   }
 }
@@ -99,7 +144,7 @@ bool GpuBufferPool::ipc_handle(std::size_t id,
 }
 
 bool GpuBufferPool::record_ready(std::size_t id) {
-  if (!using_cuda_) return false;
+  if (!using_cuda_ || !events_enabled_) return false;
   if (id >= events_.size()) return false;
   void* evt = events_[id];
   if (!evt) return false;
@@ -108,7 +153,7 @@ bool GpuBufferPool::record_ready(std::size_t id) {
 
 bool GpuBufferPool::ipc_event_handle(std::size_t id,
                                      CudaIpcEventHandle& out_handle) const {
-  if (!using_cuda_) return false;
+  if (!using_cuda_ || !events_enabled_) return false;
   if (id >= events_.size()) return false;
   void* evt = events_[id];
   if (!evt) return false;
