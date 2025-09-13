@@ -3,6 +3,7 @@ project(ros2_cuda_ipc_py)
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
+find_package(Python3 REQUIRED COMPONENTS Interpreter Development.Module)
 find_package(pybind11 REQUIRED)
 
 ament_python_install_package(${PROJECT_NAME})
