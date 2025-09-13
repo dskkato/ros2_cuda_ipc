@@ -20,5 +20,6 @@ install(TARGETS _cuda_ipc EXPORT export_${PROJECT_NAME}
   DESTINATION ${PYTHON_INSTALL_DIR}/${PROJECT_NAME})
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+ament_export_dependencies(ros2_cuda_ipc_core)
 
 ament_package()
