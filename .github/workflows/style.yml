@@ -1,0 +1,14 @@
+name: style
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: --all-files
