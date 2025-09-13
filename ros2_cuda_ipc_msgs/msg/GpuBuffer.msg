@@ -1,0 +1,15 @@
+uint32 abi_version
+string device_uuid
+uint64 seq_id
+uint32 pool_slot_id
+uint8 plane_count
+uint8 format
+uint8 layout
+uint32 width
+uint32 height
+uint32 channels
+GpuPlane[] planes
+uint8[64] ipc_event_handle
+builtin_interfaces/Time stamp
+string frame_id
+string shm_name
