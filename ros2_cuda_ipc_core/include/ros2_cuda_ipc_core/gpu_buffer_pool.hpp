@@ -10,6 +10,13 @@
 
 namespace ros2_cuda_ipc_core {
 
+struct PoolOptions {
+  std::size_t pool_size = 16;
+  std::size_t bytes_per_slot = 0;  // 0 means no device allocation
+  bool use_cuda = true;            // attempt to use CUDA if available
+  bool events_enabled = true;  // create interprocess-capable events per slot
+};
+
 struct Slot {
   bool in_use{false};
 };
@@ -20,6 +27,8 @@ class GpuBufferPool {
   // Optional CUDA-aware constructor. If use_cuda is true and CUDA is available,
   // pre-allocates device buffers of bytes_per_slot for each slot.
   GpuBufferPool(std::size_t size, std::size_t bytes_per_slot, bool use_cuda);
+  // Options-based constructor for future extensibility.
+  explicit GpuBufferPool(const PoolOptions& opts);
   ~GpuBufferPool();
   std::optional<std::size_t> borrow();
   bool release(std::size_t id);
@@ -42,6 +51,7 @@ class GpuBufferPool {
   std::vector<void*> events_;
   std::size_t bytes_per_slot_{0};
   bool using_cuda_{false};
+  bool events_enabled_{false};
   std::mutex mutex_;
 };
 

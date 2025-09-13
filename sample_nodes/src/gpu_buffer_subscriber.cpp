@@ -11,6 +11,10 @@ class DummySubscriber : public rclcpp::Node {
     release_client_ =
         this->create_client<ros2_cuda_ipc_msgs::srv::GpuBufferRelease>(
             "gpu_buffer_release");
+    // Create a non-blocking CUDA stream if available
+    if (ros2_cuda_ipc_core::cuda_is_available()) {
+      stream_ = ros2_cuda_ipc_core::cuda_stream_create();
+    }
     sub_ = this->create_subscription<ros2_cuda_ipc_msgs::msg::GpuBuffer>(
         "gpu_buffer", 10,
         [this](const ros2_cuda_ipc_msgs::msg::GpuBuffer& msg) {
@@ -33,16 +37,24 @@ class DummySubscriber : public rclcpp::Node {
                   "Failed to open CUDA IPC mem (CUDA disabled or no device?)");
             }
           }
-          // If event handle is present, try opening and querying it
+          // If event handle is present, open it and wait on our stream
           {
             ros2_cuda_ipc_core::CudaIpcEventHandle eh{};
             static_assert(sizeof(eh) == 64, "Unexpected event handle size");
             std::memcpy(&eh, msg.ipc_event_handle.data(), sizeof(eh));
             void* evt = ros2_cuda_ipc_core::cuda_ipc_open_event_handle(eh);
             if (evt) {
-              bool ready = ros2_cuda_ipc_core::cuda_event_query(evt);
-              RCLCPP_INFO(this->get_logger(), "Event query: %s",
-                          ready ? "ready" : "not ready");
+              if (stream_) {
+                bool ok =
+                    ros2_cuda_ipc_core::cuda_stream_wait_event(stream_, evt);
+                RCLCPP_INFO(this->get_logger(), "StreamWaitEvent: %s",
+                            ok ? "ok" : "fail");
+                (void)ros2_cuda_ipc_core::cuda_stream_synchronize(stream_);
+              } else {
+                bool ready = ros2_cuda_ipc_core::cuda_event_query(evt);
+                RCLCPP_INFO(this->get_logger(), "Event query: %s",
+                            ready ? "ready" : "not ready");
+              }
               (void)ros2_cuda_ipc_core::cuda_event_destroy(evt);
             }
           }
@@ -66,6 +78,7 @@ class DummySubscriber : public rclcpp::Node {
   rclcpp::Subscription<ros2_cuda_ipc_msgs::msg::GpuBuffer>::SharedPtr sub_;
   rclcpp::Client<ros2_cuda_ipc_msgs::srv::GpuBufferRelease>::SharedPtr
       release_client_;
+  void* stream_{nullptr};
 };
 
 int main(int argc, char** argv) {

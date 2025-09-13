@@ -110,4 +110,30 @@ bool cuda_event_query(void* evt) {
   return false;
 }
 
+void* cuda_stream_create() {
+  cudaStream_t s = nullptr;
+  auto err = cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
+  if (err != cudaSuccess) return nullptr;
+  return reinterpret_cast<void*>(s);
+}
+
+bool cuda_stream_destroy(void* stream) {
+  if (!stream) return false;
+  auto err = cudaStreamDestroy(reinterpret_cast<cudaStream_t>(stream));
+  return err == cudaSuccess;
+}
+
+bool cuda_stream_wait_event(void* stream, void* evt) {
+  if (!stream || !evt) return false;
+  auto err = cudaStreamWaitEvent(reinterpret_cast<cudaStream_t>(stream),
+                                 reinterpret_cast<cudaEvent_t>(evt), 0);
+  return err == cudaSuccess;
+}
+
+bool cuda_stream_synchronize(void* stream) {
+  if (!stream) return false;
+  auto err = cudaStreamSynchronize(reinterpret_cast<cudaStream_t>(stream));
+  return err == cudaSuccess;
+}
+
 }  // namespace ros2_cuda_ipc_core
