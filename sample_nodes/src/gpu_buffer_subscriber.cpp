@@ -3,10 +3,14 @@
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
+#include "ros2_cuda_ipc_msgs/srv/gpu_buffer_release.hpp"
 
 class DummySubscriber : public rclcpp::Node {
  public:
   DummySubscriber() : Node("dummy_gpu_buffer_subscriber") {
+    release_client_ =
+        this->create_client<ros2_cuda_ipc_msgs::srv::GpuBufferRelease>(
+            "gpu_buffer_release");
     sub_ = this->create_subscription<ros2_cuda_ipc_msgs::msg::GpuBuffer>(
         "gpu_buffer", 10,
         [this](const ros2_cuda_ipc_msgs::msg::GpuBuffer& msg) {
@@ -42,11 +46,26 @@ class DummySubscriber : public rclcpp::Node {
               (void)ros2_cuda_ipc_core::cuda_event_destroy(evt);
             }
           }
+
+          // Notify release via service
+          if (!release_client_->service_is_ready()) {
+            // Try a non-blocking wait once
+            (void)release_client_->wait_for_service(
+                std::chrono::milliseconds(10));
+          }
+          auto req = std::make_shared<
+              ros2_cuda_ipc_msgs::srv::GpuBufferRelease::Request>();
+          req->seq_id = msg.seq_id;
+          req->pool_slot_id = msg.pool_slot_id;
+          req->consumer_id = this->get_fully_qualified_name();
+          (void)release_client_->async_send_request(req);
         });
   }
 
  private:
   rclcpp::Subscription<ros2_cuda_ipc_msgs::msg::GpuBuffer>::SharedPtr sub_;
+  rclcpp::Client<ros2_cuda_ipc_msgs::srv::GpuBufferRelease>::SharedPtr
+      release_client_;
 };
 
 int main(int argc, char** argv) {
