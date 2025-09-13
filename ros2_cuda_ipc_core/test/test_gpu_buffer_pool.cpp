@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+
 #include "ros2_cuda_ipc_core/gpu_buffer_pool.hpp"
 
 using ros2_cuda_ipc_core::GpuBufferPool;
