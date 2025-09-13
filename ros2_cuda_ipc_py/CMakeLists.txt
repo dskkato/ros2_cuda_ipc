@@ -8,6 +8,6 @@ find_package(pybind11 REQUIRED)
 ament_python_install_package(${PROJECT_NAME})
 
 pybind11_add_module(_cuda_ipc src/pybind_module.cpp)
-install(TARGETS _cuda_ipc DESTINATION lib/${PROJECT_NAME})
+install(TARGETS _cuda_ipc DESTINATION ${PYTHON_INSTALL_DIR}/${PROJECT_NAME})
 
 ament_package()
