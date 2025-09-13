@@ -11,7 +11,8 @@ TEST(GpuBufferPool, BorrowRelease) {
   ASSERT_TRUE(s1.has_value());
   auto s2 = pool.borrow();
   EXPECT_FALSE(s2.has_value());
-  pool.release(*s0);
+  EXPECT_TRUE(pool.release(*s0));
+  EXPECT_FALSE(pool.release(pool.capacity()));
   auto s3 = pool.borrow();
   EXPECT_TRUE(s3.has_value());
 }

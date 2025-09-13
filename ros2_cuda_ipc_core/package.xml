@@ -3,8 +3,8 @@
   <name>ros2_cuda_ipc_core</name>
   <version>0.0.1</version>
   <description>C++ core utilities for ROS2 CUDA IPC transport.</description>
-  <maintainer email="example@example.com">Maintainer</maintainer>
-  <license>Apache-2.0</license>
+  <maintainer email="kato.daisuke429@gmail.com">dskkato</maintainer>
+  <license>MIT</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <build_depend>rclcpp</build_depend>
   <build_depend>ros2_cuda_ipc_msgs</build_depend>
