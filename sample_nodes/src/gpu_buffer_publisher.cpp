@@ -5,6 +5,7 @@
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 #include "ros2_cuda_ipc_core/gpu_buffer_pool.hpp"
+#include "ros2_cuda_ipc_core/version.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
 #include "ros2_cuda_ipc_msgs/srv/gpu_buffer_release.hpp"
 #include "sample_nodes/sample_cuda_utils.hpp"
@@ -103,8 +104,11 @@ class DummyPublisher : public rclcpp::Node {
       return;
     }
     ros2_cuda_ipc_msgs::msg::GpuBuffer msg;
-    msg.abi_version = 1;
-    msg.device_uuid = "dummy";  // TODO: obtain real device UUID
+    msg.abi_version = ros2_cuda_ipc_core::kAbiVersion;
+    {
+      auto id = ros2_cuda_ipc_core::cuda_get_device_id_string();
+      msg.device_uuid = id.empty() ? std::string("unknown") : id;
+    }
     msg.seq_id = count_++;
     msg.pool_slot_id = 0;
     msg.format = 1;   // e.g., BGR8 (tentative)

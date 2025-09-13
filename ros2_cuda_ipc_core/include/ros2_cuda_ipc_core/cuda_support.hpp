@@ -2,6 +2,7 @@
 #define ROS2_CUDA_IPC_CORE_CUDA_SUPPORT_HPP_
 
 #include <cstddef>
+#include <string>
 
 namespace ros2_cuda_ipc_core {
 
@@ -67,6 +68,11 @@ bool cuda_stream_wait_event(void* stream, void* evt);
 // Optional: synchronize stream (blocks until complete). Returns true on
 // success.
 bool cuda_stream_synchronize(void* stream);
+
+// Returns a stable device identifier string for the current device.
+// Prefer UUID when available; otherwise falls back to PCI bus id.
+// Empty string indicates failure or no device.
+std::string cuda_get_device_id_string();
 
 }  // namespace ros2_cuda_ipc_core
 
