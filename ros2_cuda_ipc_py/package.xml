@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ros2_cuda_ipc_py</name>
+  <version>0.0.1</version>
+  <description>Python bindings for ROS2 CUDA IPC transport.</description>
+  <maintainer email="kato.daisuke429@gmail.com">dskkato</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>ament_python</depend>
+  <depend>rclpy</depend>
+  <depend>pybind11</depend>
+</package>
