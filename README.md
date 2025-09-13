@@ -19,7 +19,7 @@ ROS 2 CUDA IPC Zero-Copy Transport
 このリポジトリは以下の ROS 2 パッケージを含みます：
 
 - `ros2_cuda_ipc_msgs` — GPU バッファ共有のためのメッセージ／サービス定義
-- `ros2_cuda_ipc_core` — メモリープールなどコア機能の C++ 実装
+- `ros2_cuda_ipc_core` — メモリープール、CUDA IPCユーティリティ、マッパの C++ 実装（CUDA 前提）
 - `sample_nodes` — メッセージ送受信を確認する簡単なサンプルノード
 
 ## 開発環境セットアップ
@@ -54,7 +54,7 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### サンプルノード実行
+### サンプルノード実行（単平面・Releaseサービス・イベント同期）
 
 ```bash
 # Publisher
@@ -63,6 +63,17 @@ ros2 run sample_nodes gpu_buffer_publisher
 # Subscriber
 ros2 run sample_nodes gpu_buffer_subscriber
 ```
+
+期待される動作（CUDA 環境）
+- Publisher: スロットを借用し、GPUメモリの IPC ハンドルとイベントハンドルを `GpuBuffer` に格納して publish。スロットは Release サービスで解放されるまで保持（`lease_timeout_ms` 過ぎると強制解放、既定 3000ms）。
+- Subscriber: 受信したハンドルをキャッシュ（`GpuBufferMapper`）し、自身の CUDA ストリームで `cudaStreamWaitEvent`。処理後に Release サービスを呼び出しスロット解放。
+- ログ: Subscriber 側で `Event waited ~X ms` が出力。Publisher 側で `Publishing seq=... (slot X)` と Release 受信ログが出力。
+
+パラメータ
+- Publisher: `lease_timeout_ms`（既定 3000）。例: `ros2 run sample_nodes gpu_buffer_publisher --ros-args -p lease_timeout_ms:=1000`
+
+備考
+- Publisher はメッセージに `abi_version` と `device_uuid` を埋め込みます。Subscriber はそれらが変化した場合にマッピングキャッシュを自動リセットします。
 
 ---
 
@@ -79,23 +90,29 @@ ros2 run sample_nodes gpu_buffer_subscriber
 
 Apache License 2.0
 
-## CUDA の有効化について
+---
 
-このリポジトリは任意で CUDA を有効化できます。既定では無効です。
+## P0 ステータス（実装済み範囲）
+- 単平面ゼロコピー（mem IPC ハンドル + イベント IPC ハンドルの配送）
+- イベント同期（Publisher: producer stream で記録、Subscriber: `cudaStreamWaitEvent`）
+- Release サービスによるスロット解放 + `lease_timeout_ms` による強制回収
+- `GpuBufferMapper` による mem/event の open キャッシュ
+- `abi_version` / `device_uuid` 変化時の Subscriber 側キャッシュ失効
 
-- 有効化してビルドする例：
+制約（P0）
+- 同一ホスト・同一 GPU のみ（UUID/PCI情報で検査）
+- C++ のみ（Python/DLPack は今後）
+- 多平面（NV12等）は今後拡張
+
+## CUDA について（coreは CUDA 前提）
+
+- `ros2_cuda_ipc_core` は CUDA を前提にビルドされます（`CUDAToolkit` が必須）。
+- サンプルの擬似GPUワーク（待機時間可視化）は任意です。無効化したい場合:
 
 ```bash
 colcon build \
-  --packages-select ros2_cuda_ipc_core sample_nodes \
-  --cmake-args -DROS2_CUDA_IPC_ENABLE_CUDA=ON
+  --packages-select sample_nodes \
+  --cmake-args -DSAMPLE_NODES_ENABLE_CUDA=OFF
 ```
 
-- 前提条件：
-  - NVIDIA CUDA Toolkit がインストールされ、CMake の `find_package(CUDAToolkit)` で検出可能
-  - 実行時に CUDA デバイスが存在すること（存在しない場合、いくつかのテストは skip されます）
-
-- しくみ：
-  - CUDA を有効にし、かつ Toolkit が見つかった場合、`ros2_cuda_ipc_core` は `CUDA::cudart` にリンクし、`CUDAToolkit` をエクスポート依存に追加します。これにより依存パッケージ（例：`sample_nodes`）でも自動的に CUDA ターゲットが解決されます。
-  - Toolkit が見つからない場合は、安全なスタブ実装にフォールバックします。
-  - `test_cuda_support` という gtest は CUDA 有効時にのみ追加され、ラベル `cuda` が付与されます。デバイスが無い環境ではテストは自動的に skip されます。
+- テスト: `test_cuda_support` / `test_gpu_buffer_pool` / `test_gpu_buffer_mapper` を含みます（環境により skip あり）。
