@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.5)
 project(ros2_cuda_ipc_core)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)

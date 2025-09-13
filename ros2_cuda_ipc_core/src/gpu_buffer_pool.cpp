@@ -15,11 +15,13 @@ std::optional<std::size_t> GpuBufferPool::borrow() {
   return std::nullopt;
 }
 
-void GpuBufferPool::release(std::size_t id) {
+bool GpuBufferPool::release(std::size_t id) {
   std::lock_guard<std::mutex> lock(mutex_);
-  if (id < slots_.size()) {
+  if (id < slots_.size() && slots_[id].in_use) {
     slots_[id].in_use = false;
+    return true;
   }
+  return false;
 }
 
 }  // namespace ros2_cuda_ipc_core

@@ -16,7 +16,7 @@ class GpuBufferPool {
 public:
   explicit GpuBufferPool(std::size_t size);
   std::optional<std::size_t> borrow();
-  void release(std::size_t id);
+  bool release(std::size_t id);
   std::size_t capacity() const { return slots_.size(); }
 private:
   std::vector<Slot> slots_;
