@@ -9,7 +9,11 @@ find_package(rclcpp REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 
 add_library(${PROJECT_NAME} src/gpu_buffer_pool.cpp)
-target_include_directories(${PROJECT_NAME} PUBLIC include)
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
 ament_target_dependencies(${PROJECT_NAME} rclcpp ros2_cuda_ipc_msgs)
 
 install(TARGETS ${PROJECT_NAME}
