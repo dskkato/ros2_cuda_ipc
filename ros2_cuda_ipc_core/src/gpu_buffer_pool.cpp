@@ -93,6 +93,7 @@ GpuBufferPool::GpuBufferPool(const PoolOptions& opts)
     } else {
       using_cuda_ = true;
       events_enabled_ = opts.events_enabled;
+      producer_stream_ = opts.producer_stream;
     }
   }
 }
@@ -148,6 +149,9 @@ bool GpuBufferPool::record_ready(std::size_t id) {
   if (id >= events_.size()) return false;
   void* evt = events_[id];
   if (!evt) return false;
+  if (producer_stream_) {
+    return cuda_event_record_on_stream(evt, producer_stream_);
+  }
   return cuda_event_record(evt);
 }
 
@@ -158,6 +162,14 @@ bool GpuBufferPool::ipc_event_handle(std::size_t id,
   void* evt = events_[id];
   if (!evt) return false;
   return cuda_event_get_ipc_handle(evt, &out_handle);
+}
+
+bool GpuBufferPool::record_ready_on_stream(std::size_t id, void* stream) {
+  if (!using_cuda_ || !events_enabled_) return false;
+  if (id >= events_.size()) return false;
+  void* evt = events_[id];
+  if (!evt) return false;
+  return cuda_event_record_on_stream(evt, stream);
 }
 
 }  // namespace ros2_cuda_ipc_core

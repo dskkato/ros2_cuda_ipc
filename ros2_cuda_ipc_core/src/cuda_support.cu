@@ -110,6 +110,14 @@ bool cuda_event_query(void* evt) {
   return false;
 }
 
+bool cuda_event_record_on_stream(void* evt, void* stream) {
+  if (!evt) return false;
+  auto s = stream ? reinterpret_cast<cudaStream_t>(stream)
+                  : static_cast<cudaStream_t>(0);
+  auto err = cudaEventRecord(reinterpret_cast<cudaEvent_t>(evt), s);
+  return err == cudaSuccess;
+}
+
 void* cuda_stream_create() {
   cudaStream_t s = nullptr;
   auto err = cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking);
