@@ -2,10 +2,9 @@
 
 namespace py = pybind11;
 
-int add(int a, int b) {
-  return a + b;
-}
+// forward declaration of bindings defined in bindings.cpp
+void init_bindings(py::module_ &m);
 
 PYBIND11_MODULE(_cuda_ipc, m) {
-  m.def("add", &add, "Add two integers");
+  init_bindings(m);
 }
