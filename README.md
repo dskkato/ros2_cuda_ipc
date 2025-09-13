@@ -78,3 +78,24 @@ ros2 run sample_nodes gpu_buffer_subscriber
 ## ライセンス
 
 Apache License 2.0
+
+## CUDA の有効化について
+
+このリポジトリは任意で CUDA を有効化できます。既定では無効です。
+
+- 有効化してビルドする例：
+
+```bash
+colcon build \
+  --packages-select ros2_cuda_ipc_core sample_nodes \
+  --cmake-args -DROS2_CUDA_IPC_ENABLE_CUDA=ON
+```
+
+- 前提条件：
+  - NVIDIA CUDA Toolkit がインストールされ、CMake の `find_package(CUDAToolkit)` で検出可能
+  - 実行時に CUDA デバイスが存在すること（存在しない場合、いくつかのテストは skip されます）
+
+- しくみ：
+  - CUDA を有効にし、かつ Toolkit が見つかった場合、`ros2_cuda_ipc_core` は `CUDA::cudart` にリンクし、`CUDAToolkit` をエクスポート依存に追加します。これにより依存パッケージ（例：`sample_nodes`）でも自動的に CUDA ターゲットが解決されます。
+  - Toolkit が見つからない場合は、安全なスタブ実装にフォールバックします。
+  - `test_cuda_support` という gtest は CUDA 有効時にのみ追加され、ラベル `cuda` が付与されます。デバイスが無い環境ではテストは自動的に skip されます。

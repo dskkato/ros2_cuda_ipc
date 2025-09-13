@@ -69,4 +69,13 @@ void* GpuBufferPool::device_ptr(std::size_t id) const {
   return device_ptrs_[id];
 }
 
+bool GpuBufferPool::ipc_handle(std::size_t id,
+                               CudaIpcMemHandle& out_handle) const {
+  if (!using_cuda_) return false;
+  if (id >= device_ptrs_.size()) return false;
+  void* ptr = device_ptrs_[id];
+  if (!ptr) return false;
+  return cuda_ipc_get_mem_handle(ptr, &out_handle);
+}
+
 }  // namespace ros2_cuda_ipc_core
