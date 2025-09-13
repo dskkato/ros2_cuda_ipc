@@ -3,6 +3,7 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
+#include "ros2_cuda_ipc_core/gpu_buffer_mapper.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
 #include "ros2_cuda_ipc_msgs/srv/gpu_buffer_release.hpp"
 
@@ -20,47 +21,27 @@ class DummySubscriber : public rclcpp::Node {
         "gpu_buffer", 10,
         [this](const ros2_cuda_ipc_msgs::msg::GpuBuffer& msg) {
           RCLCPP_INFO(this->get_logger(), "Received seq_id %lu", msg.seq_id);
+          // Map memory once per slot and reuse
           if (msg.plane_count > 0 && msg.planes.size() >= 1) {
-            // Reconstruct CUDA IPC handle and try open/close via core helpers
             ros2_cuda_ipc_core::CudaIpcMemHandle h{};
-            static_assert(sizeof(h) == 64, "Unexpected handle size");
             std::memcpy(&h, msg.planes[0].ipc_mem_handle.data(), sizeof(h));
-            void* dev_ptr = ros2_cuda_ipc_core::cuda_ipc_open_mem_handle(h);
-            if (dev_ptr) {
-              RCLCPP_INFO(this->get_logger(), "Opened CUDA IPC mem @%p",
-                          dev_ptr);
-              bool closed =
-                  ros2_cuda_ipc_core::cuda_ipc_close_mem_handle(dev_ptr);
-              (void)closed;
-            } else {
-              RCLCPP_WARN(
-                  this->get_logger(),
-                  "Failed to open CUDA IPC mem (CUDA disabled or no device?)");
-            }
+            (void)mapper_.open_memory(msg.pool_slot_id, h);
           }
-          // If event handle is present, open it and wait on our stream
-          {
-            ros2_cuda_ipc_core::CudaIpcEventHandle eh{};
-            static_assert(sizeof(eh) == 64, "Unexpected event handle size");
-            std::memcpy(&eh, msg.ipc_event_handle.data(), sizeof(eh));
-            void* evt = ros2_cuda_ipc_core::cuda_ipc_open_event_handle(eh);
-            if (evt) {
-              auto t0 = std::chrono::steady_clock::now();
-              if (stream_) {
-                (void)ros2_cuda_ipc_core::cuda_stream_wait_event(stream_, evt);
-                (void)ros2_cuda_ipc_core::cuda_stream_synchronize(stream_);
-              } else {
-                (void)ros2_cuda_ipc_core::cuda_event_query(evt);
-              }
-              auto t1 = std::chrono::steady_clock::now();
-              auto ms =
-                  std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0)
-                      .count();
-              RCLCPP_INFO(this->get_logger(), "Event waited ~%ld ms",
-                          static_cast<long>(ms));
-              (void)ros2_cuda_ipc_core::cuda_event_destroy(evt);
-            }
+          // Open or reuse the event, then wait on our stream
+          ros2_cuda_ipc_core::CudaIpcEventHandle eh{};
+          std::memcpy(&eh, msg.ipc_event_handle.data(), sizeof(eh));
+          (void)mapper_.open_event(msg.pool_slot_id, eh);
+          auto t0 = std::chrono::steady_clock::now();
+          if (stream_) {
+            (void)mapper_.wait_ready(msg.pool_slot_id, stream_);
+            (void)ros2_cuda_ipc_core::cuda_stream_synchronize(stream_);
           }
+          auto t1 = std::chrono::steady_clock::now();
+          auto ms =
+              std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0)
+                  .count();
+          RCLCPP_INFO(this->get_logger(), "Event waited ~%ld ms",
+                      static_cast<long>(ms));
 
           // Notify release via service
           if (!release_client_->service_is_ready()) {
@@ -82,6 +63,7 @@ class DummySubscriber : public rclcpp::Node {
   rclcpp::Client<ros2_cuda_ipc_msgs::srv::GpuBufferRelease>::SharedPtr
       release_client_;
   void* stream_{nullptr};
+  ros2_cuda_ipc_core::GpuBufferMapper mapper_;
 };
 
 int main(int argc, char** argv) {
