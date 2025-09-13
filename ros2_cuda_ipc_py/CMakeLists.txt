@@ -9,6 +9,7 @@ find_package(ros2_cuda_ipc_core REQUIRED)
 ament_python_install_package(${PROJECT_NAME})
 
 pybind11_add_module(_cuda_ipc src/pybind_module.cpp src/bindings.cpp)
+target_compile_features(_cuda_ipc PRIVATE cxx_std_17)
 target_link_libraries(_cuda_ipc PRIVATE ros2_cuda_ipc_core)
 ament_target_dependencies(_cuda_ipc ros2_cuda_ipc_core)
 

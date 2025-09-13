@@ -18,13 +18,13 @@ void init_bindings(py::module_ &m) {
   py::class_<rcc::GpuBufferMapper>(m, "GpuBufferMapper")
       .def(py::init<>())
       .def("open_memory", &rcc::GpuBufferMapper::open_memory,
-           py::return_value_policy::reference)
+           py::return_value_policy::reference_internal)
       .def("open_event", &rcc::GpuBufferMapper::open_event,
-           py::return_value_policy::reference)
+           py::return_value_policy::reference_internal)
       .def("get_memory", &rcc::GpuBufferMapper::get_memory,
-           py::return_value_policy::reference)
+           py::return_value_policy::reference_internal)
       .def("get_event", &rcc::GpuBufferMapper::get_event,
-           py::return_value_policy::reference)
+           py::return_value_policy::reference_internal)
       .def("wait_ready", &rcc::GpuBufferMapper::wait_ready)
       .def("close_slot", &rcc::GpuBufferMapper::close_slot)
       .def("reset", &rcc::GpuBufferMapper::reset);
