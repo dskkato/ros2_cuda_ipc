@@ -1,10 +1,12 @@
 #include <chrono>
 #include <cstring>
+#include <optional>
 #include <rclcpp/rclcpp.hpp>
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 #include "ros2_cuda_ipc_core/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
+#include "ros2_cuda_ipc_msgs/srv/gpu_buffer_release.hpp"
 
 class DummyPublisher : public rclcpp::Node {
  public:
@@ -17,10 +19,72 @@ class DummyPublisher : public rclcpp::Node {
         1 /*slots*/, 4u * 1024u * 1024u /*bytes/slot*/, true /*use_cuda*/);
 
     timer_ = this->create_wall_timer(1s, [this]() { publish_once(); });
+
+    // Parameter for lease timeout (ms)
+    lease_timeout_ms_ = this->declare_parameter<int>("lease_timeout_ms", 3000);
+
+    // Service server to accept release notifications
+    release_srv_ = this->create_service<
+        ros2_cuda_ipc_msgs::srv::GpuBufferRelease>(
+        "gpu_buffer_release",
+        [this](
+            const std::shared_ptr<
+                ros2_cuda_ipc_msgs::srv::GpuBufferRelease::Request>
+                req,
+            std::shared_ptr<ros2_cuda_ipc_msgs::srv::GpuBufferRelease::Response>
+                resp) {
+          if (!held_slot_) {
+            resp->ok = false;
+            RCLCPP_WARN(this->get_logger(),
+                        "Release requested but no slot held");
+            return;
+          }
+          if (req->pool_slot_id == *held_slot_ && req->seq_id == held_seq_) {
+            bool ok = pool_->release(*held_slot_);
+            resp->ok = ok;
+            if (ok) {
+              RCLCPP_INFO(
+                  this->get_logger(), "Released slot %u for seq %lu from %s",
+                  req->pool_slot_id, req->seq_id, req->consumer_id.c_str());
+              held_slot_.reset();
+              held_since_ = {};
+            } else {
+              RCLCPP_WARN(this->get_logger(), "Release failed for slot %u",
+                          req->pool_slot_id);
+            }
+          } else {
+            resp->ok = false;
+            RCLCPP_WARN(this->get_logger(),
+                        "Release mismatch: req(slot=%u,seq=%lu) vs "
+                        "held(slot=%zu,seq=%lu)",
+                        req->pool_slot_id, req->seq_id,
+                        held_slot_.value_or(static_cast<size_t>(-1)),
+                        held_seq_);
+          }
+        });
   }
 
  private:
   void publish_once() {
+    if (held_slot_) {
+      // Enforce lease timeout to avoid deadlock when subscriber never releases
+      const auto now = std::chrono::steady_clock::now();
+      if (held_since_.time_since_epoch().count() > 0) {
+        const auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now -
+                                                                  held_since_);
+        if (elapsed.count() > lease_timeout_ms_) {
+          RCLCPP_WARN(this->get_logger(),
+                      "Lease timeout (%d ms) exceeded for slot %zu (seq %lu). "
+                      "Forcing release.",
+                      lease_timeout_ms_, *held_slot_, held_seq_);
+          (void)pool_->release(*held_slot_);
+          held_slot_.reset();
+          held_since_ = {};
+        }
+      }
+      return;
+    }
     ros2_cuda_ipc_msgs::msg::GpuBuffer msg;
     msg.abi_version = 1;
     msg.device_uuid = "dummy";  // TODO: obtain real device UUID
@@ -57,8 +121,13 @@ class DummyPublisher : public rclcpp::Node {
           std::memcpy(msg.ipc_event_handle.data(), &eh, sizeof(eh));
           (void)pool_->record_ready(*slot);
         }
+        msg.pool_slot_id = static_cast<uint32_t>(*slot);
+        held_slot_ = slot;
+        held_seq_ = msg.seq_id;
+        held_since_ = std::chrono::steady_clock::now();
         RCLCPP_INFO(this->get_logger(),
-                    "Publishing seq=%lu with CUDA IPC mem handle", msg.seq_id);
+                    "Publishing seq=%lu with CUDA IPC mem handle (slot %zu)",
+                    msg.seq_id, *slot);
       } else {
         // CUDA disabled or unavailable: publish without plane data
         msg.plane_count = 0;
@@ -66,8 +135,7 @@ class DummyPublisher : public rclcpp::Node {
                              "CUDA IPC handle unavailable. Did you build core "
                              "with CUDA and have a device?");
       }
-      // For now, immediately release so we don't exhaust the single slot.
-      pool_->release(*slot);
+      // Keep slot borrowed until release service is called.
     } else {
       // Pool exhausted; skip planes for this demo message
       msg.plane_count = 0;
@@ -81,6 +149,12 @@ class DummyPublisher : public rclcpp::Node {
   rclcpp::Publisher<ros2_cuda_ipc_msgs::msg::GpuBuffer>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::unique_ptr<ros2_cuda_ipc_core::GpuBufferPool> pool_;
+  rclcpp::Service<ros2_cuda_ipc_msgs::srv::GpuBufferRelease>::SharedPtr
+      release_srv_;
+  std::optional<std::size_t> held_slot_;
+  uint64_t held_seq_{0};
+  std::chrono::steady_clock::time_point held_since_{};
+  int lease_timeout_ms_{3000};
   uint64_t count_{0};
 };
 
