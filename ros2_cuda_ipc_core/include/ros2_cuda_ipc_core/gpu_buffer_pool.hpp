@@ -15,12 +15,21 @@ struct Slot {
 class GpuBufferPool {
  public:
   explicit GpuBufferPool(std::size_t size);
+  // Optional CUDA-aware constructor. If use_cuda is true and CUDA is available,
+  // pre-allocates device buffers of bytes_per_slot for each slot.
+  GpuBufferPool(std::size_t size, std::size_t bytes_per_slot, bool use_cuda);
+  ~GpuBufferPool();
   std::optional<std::size_t> borrow();
   bool release(std::size_t id);
   std::size_t capacity() const { return slots_.size(); }
+  // Returns device pointer for a slot (nullptr if not CUDA or invalid).
+  void* device_ptr(std::size_t id) const;
 
  private:
   std::vector<Slot> slots_;
+  std::vector<void*> device_ptrs_;
+  std::size_t bytes_per_slot_{0};
+  bool using_cuda_{false};
   std::mutex mutex_;
 };
 
