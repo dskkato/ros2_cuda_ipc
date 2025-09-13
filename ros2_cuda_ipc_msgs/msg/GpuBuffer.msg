@@ -1,13 +1,33 @@
+# Format constants
+uint8 FORMAT_BGR8=1
+uint8 FORMAT_RGBA8=2
+uint8 FORMAT_NV12=10
+uint8 FORMAT_YUV420=11
+uint8 FORMAT_FP16=20
+uint8 FORMAT_FP32=21
+uint8 FORMAT_PCL_XYZ=30
+
+# Layout constants
+uint8 LAYOUT_LINEAR=0
+uint8 LAYOUT_PITCHED=1
+uint8 LAYOUT_CHW=10
+uint8 LAYOUT_NCHW=11
+uint8 LAYOUT_AOS=20
+uint8 LAYOUT_SOA=21
+
+# When introducing new formats or layouts, assign values as follows:
+#   - FORMAT_*: Use values 1-49 for standard formats, 50-99 for future/experimental formats, 100+ for custom/user-defined formats.
+#   - LAYOUT_*: Use values 0-49 for standard layouts, 50-99 for future/experimental layouts, 100+ for custom/user-defined layouts.
+# Update the constants above accordingly and avoid reusing existing values.
+
 uint32 abi_version                # ABI version; increment when incompatible changes are made
 string device_uuid                # Target CUDA device UUID (cudaDeviceProp::uuid); ensures same GPU
 uint64 seq_id                     # Monotonic sequence number for the buffer/frame (0..2^64-1)
 uint32 pool_slot_id               # Index of slot in publisher's pool [0..N-1]
 uint8 plane_count                 # Number of valid entries in 'planes'; range 1-255 (typ. 1 for RGB(A), 2 for NV12)
 
-# format enum: 1=BGR8, 2=RGBA8, 10=NV12, 11=YUV420, 20=FP16, 21=FP32, 30=PCL_XYZ
 uint8 format                      # Pixel/element format code describing memory contents
 
-# layout enum: 0=LINEAR, 1=PITCHED, 10=CHW, 11=NCHW, 20=AOS, 21=SOA
 uint8 layout                      # Memory layout of each plane
 
 uint32 width                      # Width in pixels/elements; must be > 0

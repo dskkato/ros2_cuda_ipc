@@ -91,8 +91,8 @@ string   device_uuid  // `cudaDeviceProp::uuid` 文字列
 uint64   seq_id       // フレーム番号
 uint32   pool_slot_id // プール内スロット
 uint8    plane_count
-uint8    format       // enum: BGR8=1, RGBA8=2, NV12=10, YUV420=11, FP16=20, FP32=21, PCL\_XYZ=30, ...
-uint8    layout       // enum: LINEAR=0, PITCHED=1, CHW=10, NCHW=11, AOS=20, SOA=21
+uint8    format       // constants: FORMAT_BGR8, FORMAT_RGBA8, FORMAT_NV12, FORMAT_YUV420, FORMAT_FP16, FORMAT_FP32, FORMAT_PCL_XYZ, ...
+uint8    layout       // constants: LAYOUT_LINEAR, LAYOUT_PITCHED, LAYOUT_CHW, LAYOUT_NCHW, LAYOUT_AOS, LAYOUT_SOA
 uint32   width
 uint32   height
 uint32   channels
@@ -173,8 +173,8 @@ enum {FREE, IN_USE} + deadline + last_seq_id
 
 ### 8.1 Images
 
-* Formats: `NV12`, `YUV420`, `BGR8`, `RGBA8`（将来: `P010`, `FP16`）
-* Layout: `LINEAR` or `PITCHED`（`pitch_bytes` で通知）
+* Formats: `FORMAT_NV12`, `FORMAT_YUV420`, `FORMAT_BGR8`, `FORMAT_RGBA8`（将来: `FORMAT_P010`, `FORMAT_FP16`）
+* Layout: `LAYOUT_LINEAR` or `LAYOUT_PITCHED`（`pitch_bytes` で通知）
 * 多平面: 平面ごとに `mem_handle` を渡す。イベントはフレーム単位で1つ。
 
 ### 8.2 Point Clouds
@@ -290,8 +290,8 @@ ros2_cuda_ipc:
   lease_timeout_ms: 30
   expected_consumers: 3           # 省略可（未指定ならタイムアウト制）
   image:
-    default_format: NV12
-    layout: pitched
+    default_format: FORMAT_NV12
+    layout: LAYOUT_PITCHED
 ```
 
 ---
