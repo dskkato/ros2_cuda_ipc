@@ -4,15 +4,23 @@ ROS 2 CUDA IPC Zero-Copy Transport
 
 ## 概要
 
-`ros2_cuda_ipc` は、**ROS 2 ノード間で GPU メモリをゼロコピー共有**するためのライブラリ／メッセージ定義を提供します。  
-同一ホスト・同一GPUデバイスを前提に、CUDA IPC（`cudaIpcMemHandle_t` / `cudaIpcEventHandle_t`）を利用し、Publisher ノードが所有するメモリープールを Subscriber が read-only 参照できます。  
+`ros2_cuda_ipc` は、**ROS 2 ノード間で GPU メモリをゼロコピー共有**するためのライブラリ／メッセージ定義を提供します。
+同一ホスト・同一GPUデバイスを前提に、CUDA IPC（`cudaIpcMemHandle_t` / `cudaIpcEventHandle_t`）を利用し、Publisher ノードが所有するメモリープールを Subscriber が read-only 参照できます。
 
 主な用途は以下です：
-- カメラドライバー → CUDA 前処理 → 複数ノード（エンコード／プレビュー／DNN推論）へのゼロコピー分配  
-- 画像（NV12, BGR, RGBA 等）、点群（AoS/SoA）など大規模GPUデータの効率的な伝搬  
-- C++ / Python 双方から利用可能  
+- カメラドライバー → CUDA 前処理 → 複数ノード（エンコード／プレビュー／DNN推論）へのゼロコピー分配
+- 画像（NV12, BGR, RGBA 等）、点群（AoS/SoA）など大規模GPUデータの効率的な伝搬
+- C++ / Python 双方から利用可能
 
 詳細な設計は [doc/design.md](doc/design.md) を参照してください。
+
+## パッケージ構成
+
+このリポジトリは以下の ROS 2 パッケージを含みます：
+
+- `ros2_cuda_ipc_msgs` — GPU バッファ共有のためのメッセージ／サービス定義
+- `ros2_cuda_ipc_core` — メモリープールなどコア機能の C++ 実装
+- `sample_nodes` — メッセージ送受信を確認する簡単なサンプルノード
 
 ## 開発環境セットアップ
 
@@ -44,25 +52,16 @@ colcon build --symlink-install
 
 # ビルド成果を反映
 source install/setup.bash
-````
+```
 
-### Python バインディング
-
-Python バインディングは `ros2_cuda_ipc_py` としてビルドされ、
-`import ros2_cuda_ipc_py` で利用可能です。
-DLPack ブリッジを通じて PyTorch / CuPy 等にゼロコピーで渡すことができます。
-
-### サンプルノード実行（予定）
+### サンプルノード実行
 
 ```bash
-# Publisher (疑似カメラ + YUV->BGR)
-ros2 run ros2_cuda_ipc sample_publisher
+# Publisher
+ros2 run sample_nodes gpu_buffer_publisher
 
-# Subscriber (プレビュー縮小)
-ros2 run ros2_cuda_ipc sample_preview
-
-# Subscriber (エンコーダ)
-ros2 run ros2_cuda_ipc sample_encoder
+# Subscriber
+ros2 run sample_nodes gpu_buffer_subscriber
 ```
 
 ---
@@ -71,7 +70,7 @@ ros2 run ros2_cuda_ipc sample_encoder
 
 * 設計は [doc/design.md](doc/design.md) に従う
 * Issue / PR ベースで進める
-* コードスタイル: clang-format, ament\_lint
+* コードスタイル: clang-format, ament_lint
 * CI: GitHub Actions (予定)
 
 ---
@@ -79,4 +78,3 @@ ros2 run ros2_cuda_ipc sample_encoder
 ## ライセンス
 
 Apache License 2.0
-
