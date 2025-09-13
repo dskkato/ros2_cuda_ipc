@@ -9,4 +9,5 @@
   <depend>ament_python</depend>
   <depend>rclpy</depend>
   <depend>pybind11</depend>
+  <depend>ros2_cuda_ipc_core</depend>
 </package>
