@@ -56,6 +56,8 @@ void* cuda_ipc_open_event_handle(const CudaIpcEventHandle& handle);
 // Queries event status. Returns true if event has completed (or if
 // unsupported), false if not ready.
 bool cuda_event_query(void* evt);
+// Records the event on the specified stream. Returns true on success.
+bool cuda_event_record_on_stream(void* evt, void* stream);
 
 // CUDA stream helpers (opaque void* to avoid leaking CUDA headers)
 void* cuda_stream_create();

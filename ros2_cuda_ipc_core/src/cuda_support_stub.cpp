@@ -36,6 +36,9 @@ void* cuda_ipc_open_event_handle(const CudaIpcEventHandle& /*handle*/) {
 }
 
 bool cuda_event_query(void* /*evt*/) { return false; }
+bool cuda_event_record_on_stream(void* /*evt*/, void* /*stream*/) {
+  return false;
+}
 
 void* cuda_stream_create() { return nullptr; }
 bool cuda_stream_destroy(void* /*stream*/) { return false; }

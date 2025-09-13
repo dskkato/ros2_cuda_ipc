@@ -15,6 +15,7 @@ struct PoolOptions {
   std::size_t bytes_per_slot = 0;  // 0 means no device allocation
   bool use_cuda = true;            // attempt to use CUDA if available
   bool events_enabled = true;  // create interprocess-capable events per slot
+  void* producer_stream = nullptr;  // optional: record events on this stream
 };
 
 struct Slot {
@@ -41,6 +42,8 @@ class GpuBufferPool {
 
   // Records the slot's ready event (default stream). Returns true on success.
   bool record_ready(std::size_t id);
+  // Records the slot's ready event on the provided stream.
+  bool record_ready_on_stream(std::size_t id, void* stream);
 
   // Exports CUDA IPC handle for a slot's ready event.
   bool ipc_event_handle(std::size_t id, CudaIpcEventHandle& out_handle) const;
@@ -52,6 +55,7 @@ class GpuBufferPool {
   std::size_t bytes_per_slot_{0};
   bool using_cuda_{false};
   bool events_enabled_{false};
+  void* producer_stream_{nullptr};
   std::mutex mutex_;
 };
 

@@ -21,6 +21,10 @@ class DummyPublisher : public rclcpp::Node {
     opts.bytes_per_slot = 4u * 1024u * 1024u;
     opts.use_cuda = true;
     opts.events_enabled = true;
+    if (ros2_cuda_ipc_core::cuda_is_available()) {
+      producer_stream_ = ros2_cuda_ipc_core::cuda_stream_create();
+      opts.producer_stream = producer_stream_;
+    }
     pool_ = std::make_unique<ros2_cuda_ipc_core::GpuBufferPool>(opts);
 
     timer_ = this->create_wall_timer(1s, [this]() { publish_once(); });
@@ -67,6 +71,13 @@ class DummyPublisher : public rclcpp::Node {
                         held_seq_);
           }
         });
+  }
+
+  ~DummyPublisher() {
+    if (producer_stream_) {
+      (void)ros2_cuda_ipc_core::cuda_stream_destroy(producer_stream_);
+      producer_stream_ = nullptr;
+    }
   }
 
  private:
@@ -161,9 +172,10 @@ class DummyPublisher : public rclcpp::Node {
   std::chrono::steady_clock::time_point held_since_{};
   int lease_timeout_ms_{3000};
   uint64_t count_{0};
+  void* producer_stream_{nullptr};
 };
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   rclcpp::spin(std::make_shared<DummyPublisher>());
   rclcpp::shutdown();
