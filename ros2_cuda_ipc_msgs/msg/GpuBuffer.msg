@@ -15,7 +15,10 @@ uint8 LAYOUT_NCHW=11
 uint8 LAYOUT_AOS=20
 uint8 LAYOUT_SOA=21
 
-# Update the constants above when introducing new formats or layouts.
+# When introducing new formats or layouts, assign values as follows:
+#   - FORMAT_*: Use values 1-49 for standard formats, 50-99 for future/experimental formats, 100+ for custom/user-defined formats.
+#   - LAYOUT_*: Use values 0-49 for standard layouts, 50-99 for future/experimental layouts, 100+ for custom/user-defined layouts.
+# Update the constants above accordingly and avoid reusing existing values.
 
 uint32 abi_version                # ABI version; increment when incompatible changes are made
 string device_uuid                # Target CUDA device UUID (cudaDeviceProp::uuid); ensures same GPU
