@@ -111,8 +111,8 @@ class DummyPublisher : public rclcpp::Node {
     }
     msg.seq_id = count_++;
     msg.pool_slot_id = 0;
-    msg.format = 1;   // e.g., BGR8 (tentative)
-    msg.layout = 0;   // LINEAR
+    msg.format = ros2_cuda_ipc_msgs::msg::GpuBuffer::FORMAT_BGR8;
+    msg.layout = ros2_cuda_ipc_msgs::msg::GpuBuffer::LAYOUT_LINEAR;
     msg.width = 640;  // demo values
     msg.height = 480;
     msg.channels = 3;
