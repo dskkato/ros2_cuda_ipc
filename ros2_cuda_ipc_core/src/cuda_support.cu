@@ -60,4 +60,54 @@ bool cuda_ipc_close_mem_handle(void* device_ptr) {
   return err == cudaSuccess;
 }
 
+void* cuda_event_create() {
+  cudaEvent_t evt = nullptr;
+  auto err = cudaEventCreateWithFlags(
+      &evt, cudaEventDisableTiming | cudaEventInterprocess);
+  if (err != cudaSuccess) return nullptr;
+  return reinterpret_cast<void*>(evt);
+}
+
+bool cuda_event_destroy(void* evt) {
+  if (!evt) return false;
+  auto err = cudaEventDestroy(reinterpret_cast<cudaEvent_t>(evt));
+  return err == cudaSuccess;
+}
+
+bool cuda_event_record(void* evt) {
+  if (!evt) return false;
+  auto err = cudaEventRecord(reinterpret_cast<cudaEvent_t>(evt), /*stream=*/0);
+  return err == cudaSuccess;
+}
+
+bool cuda_event_get_ipc_handle(void* evt, CudaIpcEventHandle* out_handle) {
+  if (!evt || !out_handle) return false;
+  cudaIpcEventHandle_t h{};
+  auto err = cudaIpcGetEventHandle(&h, reinterpret_cast<cudaEvent_t>(evt));
+  if (err != cudaSuccess) return false;
+  static_assert(sizeof(CudaIpcEventHandle) == sizeof(cudaIpcEventHandle_t),
+                "IPC event handle size mismatch");
+  std::memcpy(out_handle, &h, sizeof(h));
+  return true;
+}
+
+void* cuda_ipc_open_event_handle(const CudaIpcEventHandle& handle) {
+  cudaIpcEventHandle_t h{};
+  static_assert(sizeof(CudaIpcEventHandle) == sizeof(cudaIpcEventHandle_t),
+                "IPC event handle size mismatch");
+  std::memcpy(&h, &handle, sizeof(h));
+  cudaEvent_t evt = nullptr;
+  auto err = cudaIpcOpenEventHandle(&evt, h);
+  if (err != cudaSuccess) return nullptr;
+  return reinterpret_cast<void*>(evt);
+}
+
+bool cuda_event_query(void* evt) {
+  if (!evt) return false;
+  auto err = cudaEventQuery(reinterpret_cast<cudaEvent_t>(evt));
+  if (err == cudaSuccess) return true;
+  if (err == cudaErrorNotReady) return false;
+  return false;
+}
+
 }  // namespace ros2_cuda_ipc_core

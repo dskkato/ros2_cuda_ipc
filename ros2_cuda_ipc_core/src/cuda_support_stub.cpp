@@ -20,4 +20,21 @@ void* cuda_ipc_open_mem_handle(const CudaIpcMemHandle& /*handle*/) {
 
 bool cuda_ipc_close_mem_handle(void* /*device_ptr*/) { return false; }
 
+void* cuda_event_create() { return nullptr; }
+
+bool cuda_event_destroy(void* /*evt*/) { return false; }
+
+bool cuda_event_record(void* /*evt*/) { return false; }
+
+bool cuda_event_get_ipc_handle(void* /*evt*/,
+                               CudaIpcEventHandle* /*out_handle*/) {
+  return false;
+}
+
+void* cuda_ipc_open_event_handle(const CudaIpcEventHandle& /*handle*/) {
+  return nullptr;
+}
+
+bool cuda_event_query(void* /*evt*/) { return false; }
+
 }  // namespace ros2_cuda_ipc_core

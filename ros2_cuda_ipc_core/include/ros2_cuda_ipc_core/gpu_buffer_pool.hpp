@@ -30,9 +30,16 @@ class GpuBufferPool {
   // Returns true on success, false if CUDA disabled or invalid id.
   bool ipc_handle(std::size_t id, CudaIpcMemHandle& out_handle) const;
 
+  // Records the slot's ready event (default stream). Returns true on success.
+  bool record_ready(std::size_t id);
+
+  // Exports CUDA IPC handle for a slot's ready event.
+  bool ipc_event_handle(std::size_t id, CudaIpcEventHandle& out_handle) const;
+
  private:
   std::vector<Slot> slots_;
   std::vector<void*> device_ptrs_;
+  std::vector<void*> events_;
   std::size_t bytes_per_slot_{0};
   bool using_cuda_{false};
   std::mutex mutex_;
