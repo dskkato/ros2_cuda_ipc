@@ -1,6 +1,7 @@
 #include <cuda_runtime.h>
 
 #include <cstring>
+#include <string>
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 
@@ -142,5 +143,33 @@ bool cuda_stream_synchronize(void* stream) {
   if (!stream) return false;
   auto err = cudaStreamSynchronize(reinterpret_cast<cudaStream_t>(stream));
   return err == cudaSuccess;
+}
+
+std::string cuda_get_device_id_string() {
+  int dev = 0;
+  auto err = cudaGetDevice(&dev);
+  if (err != cudaSuccess) return {};
+    // Try device UUID from properties if available
+#ifdef cudaDeviceProp
+  cudaDeviceProp prop{};
+  if (cudaGetDeviceProperties(&prop, dev) == cudaSuccess) {
+#if defined(__CUDACC_VER_MAJOR__) && (__CUDACC_VER_MAJOR__ >= 11)
+    // Many toolkits expose prop.uuid.bytes (16 bytes). Serialize to hex.
+    const unsigned char* u = reinterpret_cast<const unsigned char*>(&prop.uuid);
+    char buf[64];
+    int off = 0;
+    for (int i = 0; i < 16 && off + 2 < static_cast<int>(sizeof(buf)); ++i) {
+      off += std::snprintf(buf + off, sizeof(buf) - off, "%02x", u[i]);
+    }
+    if (off > 0) return std::string(buf, buf + off);
+#endif
+  }
+#endif
+  // Fallback to PCI bus id string
+  char busid[64] = {0};
+  if (cudaDeviceGetPCIBusId(busid, sizeof(busid), dev) == cudaSuccess) {
+    return std::string(busid);
+  }
+  return {};
 }
 }  // namespace ros2_cuda_ipc_core
