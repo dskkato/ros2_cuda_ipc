@@ -1,0 +1,5 @@
+uint64 seq_id
+uint32 pool_slot_id
+string consumer_id
+---
+bool ok
