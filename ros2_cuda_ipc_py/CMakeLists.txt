@@ -4,10 +4,17 @@ project(ros2_cuda_ipc_py)
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(pybind11 REQUIRED)
+find_package(ros2_cuda_ipc_core REQUIRED)
 
 ament_python_install_package(${PROJECT_NAME})
 
-pybind11_add_module(_cuda_ipc src/pybind_module.cpp)
-install(TARGETS _cuda_ipc DESTINATION ${PYTHON_INSTALL_DIR}/${PROJECT_NAME})
+pybind11_add_module(_cuda_ipc src/pybind_module.cpp src/bindings.cpp)
+target_link_libraries(_cuda_ipc PRIVATE ros2_cuda_ipc_core)
+ament_target_dependencies(_cuda_ipc ros2_cuda_ipc_core)
+
+install(TARGETS _cuda_ipc EXPORT export_${PROJECT_NAME}
+  DESTINATION ${PYTHON_INSTALL_DIR}/${PROJECT_NAME})
+
+ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 ament_package()
