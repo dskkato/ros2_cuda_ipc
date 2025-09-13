@@ -1,8 +1,8 @@
 #include <cuda_runtime.h>
 
+#include <cstdio>
 #include <cstring>
 #include <string>
-#include <cstdio>
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 
@@ -155,8 +155,7 @@ std::string cuda_get_device_id_string() {
   if (cudaGetDeviceProperties(&prop, dev) == cudaSuccess) {
 #if defined(__CUDACC_VER_MAJOR__) && (__CUDACC_VER_MAJOR__ >= 11)
     // Many toolkits expose prop.uuid.bytes (16 bytes). Serialize to hex.
-    const unsigned char* u =
-        reinterpret_cast<const unsigned char*>(&prop.uuid);
+    const unsigned char* u = reinterpret_cast<const unsigned char*>(&prop.uuid);
     char buf[64];
     int off = 0;
     for (int i = 0; i < 16 && off + 2 < static_cast<int>(sizeof(buf)); ++i) {
