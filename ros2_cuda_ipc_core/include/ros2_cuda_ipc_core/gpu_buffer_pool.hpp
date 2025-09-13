@@ -2,9 +2,9 @@
 #define ROS2_CUDA_IPC_CORE_GPU_BUFFER_POOL_HPP_
 
 #include <cstddef>
-#include <vector>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 namespace ros2_cuda_ipc_core {
 
@@ -13,12 +13,13 @@ struct Slot {
 };
 
 class GpuBufferPool {
-public:
+ public:
   explicit GpuBufferPool(std::size_t size);
   std::optional<std::size_t> borrow();
   bool release(std::size_t id);
   std::size_t capacity() const { return slots_.size(); }
-private:
+
+ private:
   std::vector<Slot> slots_;
   std::mutex mutex_;
 };

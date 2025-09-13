@@ -1,13 +1,17 @@
 #include <rclcpp/rclcpp.hpp>
+
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
 
 class DummyPublisher : public rclcpp::Node {
-public:
+ public:
   DummyPublisher() : Node("dummy_gpu_buffer_publisher") {
-    pub_ = this->create_publisher<ros2_cuda_ipc_msgs::msg::GpuBuffer>("gpu_buffer", 10);
-    timer_ = this->create_wall_timer(std::chrono::seconds(1), [this]() { publish_once(); });
+    pub_ = this->create_publisher<ros2_cuda_ipc_msgs::msg::GpuBuffer>(
+        "gpu_buffer", 10);
+    timer_ = this->create_wall_timer(std::chrono::seconds(1),
+                                     [this]() { publish_once(); });
   }
-private:
+
+ private:
   void publish_once() {
     ros2_cuda_ipc_msgs::msg::GpuBuffer msg;
     msg.abi_version = 1;
