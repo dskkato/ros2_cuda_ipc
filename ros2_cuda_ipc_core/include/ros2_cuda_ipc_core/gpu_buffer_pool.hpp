@@ -6,6 +6,8 @@
 #include <optional>
 #include <vector>
 
+#include "ros2_cuda_ipc_core/cuda_support.hpp"
+
 namespace ros2_cuda_ipc_core {
 
 struct Slot {
@@ -24,6 +26,9 @@ class GpuBufferPool {
   std::size_t capacity() const { return slots_.size(); }
   // Returns device pointer for a slot (nullptr if not CUDA or invalid).
   void* device_ptr(std::size_t id) const;
+  // Exports CUDA IPC handle for a slot's device buffer.
+  // Returns true on success, false if CUDA disabled or invalid id.
+  bool ipc_handle(std::size_t id, CudaIpcMemHandle& out_handle) const;
 
  private:
   std::vector<Slot> slots_;
