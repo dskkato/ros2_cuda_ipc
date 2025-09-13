@@ -1,3 +1,4 @@
+#include <chrono>
 #include <cstring>
 #include <rclcpp/rclcpp.hpp>
 
@@ -44,17 +45,19 @@ class DummySubscriber : public rclcpp::Node {
             std::memcpy(&eh, msg.ipc_event_handle.data(), sizeof(eh));
             void* evt = ros2_cuda_ipc_core::cuda_ipc_open_event_handle(eh);
             if (evt) {
+              auto t0 = std::chrono::steady_clock::now();
               if (stream_) {
-                bool ok =
-                    ros2_cuda_ipc_core::cuda_stream_wait_event(stream_, evt);
-                RCLCPP_INFO(this->get_logger(), "StreamWaitEvent: %s",
-                            ok ? "ok" : "fail");
+                (void)ros2_cuda_ipc_core::cuda_stream_wait_event(stream_, evt);
                 (void)ros2_cuda_ipc_core::cuda_stream_synchronize(stream_);
               } else {
-                bool ready = ros2_cuda_ipc_core::cuda_event_query(evt);
-                RCLCPP_INFO(this->get_logger(), "Event query: %s",
-                            ready ? "ready" : "not ready");
+                (void)ros2_cuda_ipc_core::cuda_event_query(evt);
               }
+              auto t1 = std::chrono::steady_clock::now();
+              auto ms =
+                  std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0)
+                      .count();
+              RCLCPP_INFO(this->get_logger(), "Event waited ~%ld ms",
+                          static_cast<long>(ms));
               (void)ros2_cuda_ipc_core::cuda_event_destroy(evt);
             }
           }

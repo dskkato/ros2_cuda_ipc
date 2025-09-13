@@ -143,5 +143,4 @@ bool cuda_stream_synchronize(void* stream) {
   auto err = cudaStreamSynchronize(reinterpret_cast<cudaStream_t>(stream));
   return err == cudaSuccess;
 }
-
 }  // namespace ros2_cuda_ipc_core

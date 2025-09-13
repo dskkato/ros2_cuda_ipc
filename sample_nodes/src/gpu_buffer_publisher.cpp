@@ -7,6 +7,7 @@
 #include "ros2_cuda_ipc_core/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
 #include "ros2_cuda_ipc_msgs/srv/gpu_buffer_release.hpp"
+#include "sample_nodes/sample_cuda_utils.hpp"
 
 class DummyPublisher : public rclcpp::Node {
  public:
@@ -121,6 +122,8 @@ class DummyPublisher : public rclcpp::Node {
       ros2_cuda_ipc_core::CudaIpcMemHandle h{};
       bool has_cuda_mem = pool_->ipc_handle(*slot, h);
       if (has_cuda_mem) {
+        // Simulate GPU work on producer stream to visualize event sync
+        (void)sample_nodes::cuda_simulate_work_ms(50, producer_stream_);
         // Fill plane 0 with size/pitch and copy raw 64B handle
         msg.plane_count = 1;
         msg.planes.resize(1);
