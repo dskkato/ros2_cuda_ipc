@@ -14,6 +14,7 @@ find_package(CUDAToolkit REQUIRED)
 
 set(SOURCES
   src/gpu_buffer_pool.cpp
+  src/gpu_buffer_mapper.cpp
   src/cuda_support.cu
 )
 
@@ -46,6 +47,13 @@ if(BUILD_TESTING)
     target_link_libraries(test_cuda_support ${PROJECT_NAME})
     set_tests_properties(test_cuda_support PROPERTIES LABELS "cuda")
   endif()
+
+  ament_add_gtest(test_gpu_buffer_mapper test/test_gpu_buffer_mapper.cpp)
+  if(TARGET test_gpu_buffer_mapper)
+    target_link_libraries(test_gpu_buffer_mapper ${PROJECT_NAME})
+    set_tests_properties(test_gpu_buffer_mapper PROPERTIES LABELS "cuda")
+  endif()
+  # Note: process‑separated IPC tests removed for portability
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
