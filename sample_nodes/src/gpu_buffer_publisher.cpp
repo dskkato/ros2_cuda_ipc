@@ -18,12 +18,10 @@ class DummyPublisher : public rclcpp::Node {
     using namespace std::chrono_literals;
     pub_ = this->create_publisher<ros2_cuda_ipc_msgs::msg::GpuBuffer>(
         "gpu_buffer", 10);
-    // Prepare a tiny pool (1 slot, 4 MiB) and try enabling CUDA using
-    // PoolOptions.
+    // Prepare a tiny pool (1 slot, 4 MiB) using PoolOptions.
     ros2_cuda_ipc_core::PoolOptions opts;
-    opts.pool_size = 4;
+    opts.pool_size = 1;
     opts.bytes_per_slot = 4u * 1024u * 1024u;
-    opts.use_cuda = true;
     opts.events_enabled = true;
     if (ros2_cuda_ipc_core::cuda_is_available()) {
       producer_stream_ = ros2_cuda_ipc_core::cuda_stream_create();
