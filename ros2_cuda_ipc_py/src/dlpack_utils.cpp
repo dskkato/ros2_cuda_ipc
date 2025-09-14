@@ -104,15 +104,18 @@ void from_dlpack(std::uintptr_t dst_ptr, py::capsule cap) {
     throw std::invalid_argument("Destination pointer is null.");
   }
   cudaPointerAttributes attr;
-  cudaError_t err = cudaPointerGetAttributes(&attr, reinterpret_cast<void*>(dst_ptr));
+  cudaError_t err =
+      cudaPointerGetAttributes(&attr, reinterpret_cast<void*>(dst_ptr));
 #if CUDART_VERSION >= 10000
   if (err != cudaSuccess || attr.type != cudaMemoryTypeDevice) {
-    throw std::invalid_argument("Destination pointer is not a valid CUDA device pointer.");
+    throw std::invalid_argument(
+        "Destination pointer is not a valid CUDA device pointer.");
   }
   int device_id = attr.device;
 #else
   if (err != cudaSuccess || attr.memoryType != cudaMemoryTypeDevice) {
-    throw std::invalid_argument("Destination pointer is not a valid CUDA device pointer.");
+    throw std::invalid_argument(
+        "Destination pointer is not a valid CUDA device pointer.");
   }
   int device_id = attr.device;
 #endif
