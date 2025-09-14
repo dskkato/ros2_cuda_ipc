@@ -17,6 +17,7 @@ class DummySubscriber : public rclcpp::Node {
     if (ros2_cuda_ipc_core::cuda_is_available()) {
       stream_ = ros2_cuda_ipc_core::cuda_stream_create();
     }
+
     sub_ = this->create_subscription<ros2_cuda_ipc_msgs::msg::GpuBuffer>(
         "gpu_buffer", 10,
         [this](const ros2_cuda_ipc_msgs::msg::GpuBuffer& msg) {
@@ -59,18 +60,20 @@ class DummySubscriber : public rclcpp::Node {
           RCLCPP_INFO(this->get_logger(), "Event waited ~%ld ms",
                       static_cast<long>(ms));
 
-          // Notify release via service
-          if (!release_client_->service_is_ready()) {
-            // Try a non-blocking wait once
-            (void)release_client_->wait_for_service(
-                std::chrono::milliseconds(10));
+          // Notify release via service only when a valid plane was provided
+          if (msg.plane_count > 0) {
+            if (!release_client_->service_is_ready()) {
+              // Try a non-blocking wait once
+              (void)release_client_->wait_for_service(
+                  std::chrono::milliseconds(10));
+            }
+            auto req = std::make_shared<
+                ros2_cuda_ipc_msgs::srv::GpuBufferRelease::Request>();
+            req->seq_id = msg.seq_id;
+            req->pool_slot_id = msg.pool_slot_id;
+            req->consumer_id = this->get_fully_qualified_name();
+            (void)release_client_->async_send_request(req);
           }
-          auto req = std::make_shared<
-              ros2_cuda_ipc_msgs::srv::GpuBufferRelease::Request>();
-          req->seq_id = msg.seq_id;
-          req->pool_slot_id = msg.pool_slot_id;
-          req->consumer_id = this->get_fully_qualified_name();
-          (void)release_client_->async_send_request(req);
         });
   }
 
