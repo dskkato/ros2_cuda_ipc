@@ -1,5 +1,7 @@
 #include "ros2_cuda_ipc_core/gpu_buffer_pool.hpp"
 
+#include <stdexcept>
+
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 
 namespace ros2_cuda_ipc_core {
@@ -11,8 +13,13 @@ GpuBufferPool::GpuBufferPool(const PoolOptions& opts)
       device_ptrs_(opts.pool_size, nullptr),
       events_(opts.pool_size, nullptr),
       bytes_per_slot_(opts.bytes_per_slot) {
-  if (bytes_per_slot_ > 0 && cuda_is_available()) {
-    bool ok = true;
+  const bool needs_cuda = (bytes_per_slot_ > 0) || opts.events_enabled;
+  if (needs_cuda && !cuda_is_available()) {
+    throw std::runtime_error("CUDA is not available for GpuBufferPool");
+  }
+
+  bool ok = true;
+  if (bytes_per_slot_ > 0) {
     for (std::size_t i = 0; i < opts.pool_size; ++i) {
       void* p = cuda_allocate(bytes_per_slot_);
       if (!p) {
@@ -21,44 +28,40 @@ GpuBufferPool::GpuBufferPool(const PoolOptions& opts)
       }
       device_ptrs_[i] = p;
     }
-    if (ok && opts.events_enabled) {
-      for (std::size_t i = 0; i < opts.pool_size; ++i) {
-        void* e = cuda_event_create();
-        if (!e) {
-          ok = false;
-          break;
-        }
-        events_[i] = e;
+  }
+
+  if (ok && opts.events_enabled) {
+    for (std::size_t i = 0; i < opts.pool_size; ++i) {
+      void* e = cuda_event_create();
+      if (!e) {
+        ok = false;
+        break;
       }
-    }
-    if (!ok) {
-      for (void* e : events_) {
-        if (e) cuda_event_destroy(e);
-      }
-      for (void* p : device_ptrs_) {
-        if (p) cuda_free(p);
-      }
-      std::fill(events_.begin(), events_.end(), nullptr);
-      std::fill(device_ptrs_.begin(), device_ptrs_.end(), nullptr);
-      bytes_per_slot_ = 0;
-      using_cuda_ = false;
-      events_enabled_ = false;
-    } else {
-      using_cuda_ = true;
-      events_enabled_ = opts.events_enabled;
-      producer_stream_ = opts.producer_stream;
+      events_[i] = e;
     }
   }
-}
 
-GpuBufferPool::~GpuBufferPool() {
-  if (using_cuda_) {
+  if (!ok) {
     for (void* e : events_) {
       if (e) cuda_event_destroy(e);
     }
     for (void* p : device_ptrs_) {
       if (p) cuda_free(p);
     }
+    throw std::runtime_error(
+        "Failed to initialize CUDA resources for GpuBufferPool");
+  }
+
+  events_enabled_ = opts.events_enabled;
+  producer_stream_ = opts.producer_stream;
+}
+
+GpuBufferPool::~GpuBufferPool() {
+  for (void* e : events_) {
+    if (e) cuda_event_destroy(e);
+  }
+  for (void* p : device_ptrs_) {
+    if (p) cuda_free(p);
   }
 }
 
@@ -83,14 +86,12 @@ bool GpuBufferPool::release(std::size_t id) {
 }
 
 void* GpuBufferPool::device_ptr(std::size_t id) const {
-  if (!using_cuda_) return nullptr;
   if (id >= device_ptrs_.size()) return nullptr;
   return device_ptrs_[id];
 }
 
 bool GpuBufferPool::ipc_handle(std::size_t id,
                                CudaIpcMemHandle& out_handle) const {
-  if (!using_cuda_) return false;
   if (id >= device_ptrs_.size()) return false;
   void* ptr = device_ptrs_[id];
   if (!ptr) return false;
@@ -98,7 +99,7 @@ bool GpuBufferPool::ipc_handle(std::size_t id,
 }
 
 bool GpuBufferPool::record_ready(std::size_t id) {
-  if (!using_cuda_ || !events_enabled_) return false;
+  if (!events_enabled_) return false;
   if (id >= events_.size()) return false;
   void* evt = events_[id];
   if (!evt) return false;
@@ -110,7 +111,7 @@ bool GpuBufferPool::record_ready(std::size_t id) {
 
 bool GpuBufferPool::ipc_event_handle(std::size_t id,
                                      CudaIpcEventHandle& out_handle) const {
-  if (!using_cuda_ || !events_enabled_) return false;
+  if (!events_enabled_) return false;
   if (id >= events_.size()) return false;
   void* evt = events_[id];
   if (!evt) return false;
@@ -118,7 +119,7 @@ bool GpuBufferPool::ipc_event_handle(std::size_t id,
 }
 
 bool GpuBufferPool::record_ready_on_stream(std::size_t id, void* stream) {
-  if (!using_cuda_ || !events_enabled_) return false;
+  if (!events_enabled_) return false;
   if (id >= events_.size()) return false;
   void* evt = events_[id];
   if (!evt) return false;
