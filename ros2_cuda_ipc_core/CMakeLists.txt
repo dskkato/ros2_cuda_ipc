@@ -15,6 +15,7 @@ find_package(CUDAToolkit REQUIRED)
 set(SOURCES
   src/gpu_buffer_pool.cpp
   src/gpu_buffer_mapper.cpp
+  src/shm_release.cpp
   src/cuda_support.cu
 )
 

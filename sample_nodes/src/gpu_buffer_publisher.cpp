@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include <chrono>
 #include <cstring>
 #include <optional>
@@ -7,9 +9,9 @@
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 #include "ros2_cuda_ipc_core/gpu_buffer_pool.hpp"
+#include "ros2_cuda_ipc_core/shm_release.hpp"
 #include "ros2_cuda_ipc_core/version.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
-#include "ros2_cuda_ipc_msgs/srv/gpu_buffer_release.hpp"
 #include "sample_nodes/sample_cuda_utils.hpp"
 
 class DummyPublisher : public rclcpp::Node {
@@ -36,74 +38,32 @@ class DummyPublisher : public rclcpp::Node {
     // expected_consumers: -1 means auto (use get_subscription_count()).
     expected_consumers_ =
         this->declare_parameter<int>("expected_consumers", -1);
-
-    // Service server to accept release notifications
-    release_srv_ = this->create_service<
-        ros2_cuda_ipc_msgs::srv::GpuBufferRelease>(
-        "gpu_buffer_release",
-        [this](
-            const std::shared_ptr<
-                ros2_cuda_ipc_msgs::srv::GpuBufferRelease::Request>
-                req,
-            std::shared_ptr<ros2_cuda_ipc_msgs::srv::GpuBufferRelease::Response>
-                resp) {
-          auto it = leases_.find(req->pool_slot_id);
-          if (it == leases_.end()) {
-            resp->ok = false;
-            RCLCPP_WARN(this->get_logger(),
-                        "Release for unknown slot %u (seq=%lu) from %s",
-                        req->pool_slot_id, req->seq_id,
-                        req->consumer_id.c_str());
-            return;
-          }
-          auto& lease = it->second;
-          if (lease.seq != req->seq_id) {
-            resp->ok = false;
-            RCLCPP_WARN(this->get_logger(),
-                        "Release seq mismatch for slot %u: got %lu, expect %lu",
-                        req->pool_slot_id, req->seq_id, lease.seq);
-            return;
-          }
-          // Deduplicate by consumer_id
-          if (!lease.consumers.insert(req->consumer_id).second) {
-            // Already released by this consumer
-            resp->ok = true;
-            RCLCPP_DEBUG(
-                this->get_logger(),
-                "Duplicate release ignored: slot %u seq %lu consumer %s",
-                req->pool_slot_id, req->seq_id, req->consumer_id.c_str());
-            return;
-          }
-          if (lease.remaining > 0) {
-            lease.remaining -= 1;
-          }
-          RCLCPP_INFO(this->get_logger(),
-                      "Release ack: slot %u seq %lu remaining %d/%d by %s",
-                      req->pool_slot_id, req->seq_id, lease.remaining,
-                      lease.expected, req->consumer_id.c_str());
-          if (lease.remaining == 0) {
-            bool ok = pool_->release(req->pool_slot_id);
-            resp->ok = ok;
-            if (ok) {
-              RCLCPP_INFO(this->get_logger(),
-                          "Slot %u freed for seq %lu (all consumers done)",
-                          req->pool_slot_id, req->seq_id);
-            } else {
-              RCLCPP_WARN(this->get_logger(),
-                          "Pool release failed for slot %u (seq %lu)",
-                          req->pool_slot_id, req->seq_id);
-            }
-            leases_.erase(it);
-          } else {
-            resp->ok = true;
-          }
-        });
+    // Owner string for SHM names; default to sanitized(FQN)_<epoch>_<pid>
+    auto owner_param = this->declare_parameter<std::string>("shm_owner", "");
+    if (!owner_param.empty()) {
+      shm_owner_ = ros2_cuda_ipc_core::sanitize_shm_owner(owner_param);
+    } else {
+      auto base = ros2_cuda_ipc_core::sanitize_shm_owner(
+          this->get_fully_qualified_name());
+      const auto now = std::chrono::system_clock::now();
+      const auto secs = std::chrono::duration_cast<std::chrono::seconds>(
+                            now.time_since_epoch())
+                            .count();
+      char buf[96];
+      std::snprintf(buf, sizeof(buf), "%s_%lld_%d", base.c_str(),
+                    static_cast<long long>(secs), static_cast<int>(::getpid()));
+      shm_owner_ = ros2_cuda_ipc_core::sanitize_shm_owner(buf);
+    }
   }
 
   ~DummyPublisher() {
     if (producer_stream_) {
       (void)ros2_cuda_ipc_core::cuda_stream_destroy(producer_stream_);
       producer_stream_ = nullptr;
+    }
+    // Cleanup slot-fixed SHM objects we created
+    for (const auto& name : known_shms_) {
+      (void)ros2_cuda_ipc_core::shm_unlink(name);
     }
   }
 
@@ -112,6 +72,19 @@ class DummyPublisher : public rclcpp::Node {
     // Enforce lease timeout to avoid deadlock when subscribers never release
     const auto now = std::chrono::steady_clock::now();
     for (auto it = leases_.begin(); it != leases_.end();) {
+      // If using SHM release and refcnt reached 0, free immediately
+      if (!it->second.shm_name.empty()) {
+        auto ref = ros2_cuda_ipc_core::shm_read_refcnt(
+            it->second.shm_name, it->first, it->second.seq);
+        if (ref.has_value() && *ref <= 0) {
+          (void)pool_->release(it->first);
+          RCLCPP_INFO(this->get_logger(),
+                      "Slot %u freed for seq %lu via SHM (all consumers done)",
+                      it->first, it->second.seq);
+          it = leases_.erase(it);
+          continue;
+        }
+      }
       const auto elapsed =
           std::chrono::duration_cast<std::chrono::milliseconds>(
               now - it->second.since);
@@ -182,8 +155,24 @@ class DummyPublisher : public rclcpp::Node {
           Lease lease;
           lease.seq = msg.seq_id;
           lease.expected = expected_count;
-          lease.remaining = expected_count;
           lease.since = std::chrono::steady_clock::now();
+          // Create SHM control block and pass name to message
+          auto name = ros2_cuda_ipc_core::make_slot_shm_name_with_owner(
+              shm_owner_, static_cast<uint32_t>(*slot));
+          auto created = ros2_cuda_ipc_core::shm_create_init(
+              name, static_cast<uint32_t>(*slot), msg.seq_id, expected_count);
+          if (created) {
+            msg.shm_name = *created;
+            lease.shm_name = *created;
+            known_shms_.insert(*created);
+            RCLCPP_INFO(this->get_logger(), "Using SHM release: %s (expect %d)",
+                        lease.shm_name.c_str(), expected_count);
+          } else {
+            RCLCPP_WARN(this->get_logger(),
+                        "Failed to create SHM control block; release unlikely "
+                        "to complete");
+            msg.shm_name.clear();
+          }
           leases_[msg.pool_slot_id] = std::move(lease);
         } else {
           // No subscribers; free immediately without creating a lease entry
@@ -216,20 +205,19 @@ class DummyPublisher : public rclcpp::Node {
   rclcpp::Publisher<ros2_cuda_ipc_msgs::msg::GpuBuffer>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr timer_;
   std::unique_ptr<ros2_cuda_ipc_core::GpuBufferPool> pool_;
-  rclcpp::Service<ros2_cuda_ipc_msgs::srv::GpuBufferRelease>::SharedPtr
-      release_srv_;
   struct Lease {
     uint64_t seq{0};
     int expected{0};
-    int remaining{0};
     std::chrono::steady_clock::time_point since{};
-    std::unordered_set<std::string> consumers;
+    std::string shm_name;
   };
   std::unordered_map<uint32_t, Lease> leases_;
   int lease_timeout_ms_{3000};
   int expected_consumers_{-1};
   uint64_t count_{0};
   void* producer_stream_{nullptr};
+  std::unordered_set<std::string> known_shms_;
+  std::string shm_owner_;
 };
 
 int main(int argc, char** argv) {

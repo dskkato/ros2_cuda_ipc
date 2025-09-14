@@ -7,7 +7,6 @@ find_package(builtin_interfaces REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/GpuPlane.msg"
   "msg/GpuBuffer.msg"
-  "srv/GpuBufferRelease.srv"
   DEPENDENCIES builtin_interfaces
 )
 
