@@ -2,12 +2,18 @@
 #ifndef SAMPLE_NODES_SAMPLE_CUDA_UTILS_HPP_
 #define SAMPLE_NODES_SAMPLE_CUDA_UTILS_HPP_
 
+#include <cstddef>
+
 namespace sample_nodes {
 
-// Launch a small GPU workload to simulate processing time on a given stream.
-// `stream` is an opaque CUDA stream pointer (nullptr for default stream).
-// Returns true if launched successfully; no-op when built without CUDA.
-bool cuda_simulate_work_ms(int ms, void* stream);
+// Fill a device buffer with a byte pattern asynchronously on a stream.
+// - device_ptr: CUDA device pointer to buffer
+// - value: byte pattern to fill (e.g., 0xAB)
+// - size_bytes: number of bytes to fill
+// - stream: CUDA stream handle (nullptr for default stream)
+// Returns true on success.
+bool cuda_fill_u8(void* device_ptr, unsigned char value, std::size_t size_bytes,
+                  void* stream);
 
 }  // namespace sample_nodes
 

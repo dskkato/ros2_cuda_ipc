@@ -2,27 +2,15 @@
 
 namespace sample_nodes {
 
-__global__ void busy_kernel(unsigned long long iters) {
-  unsigned long long acc = 0;
-  for (unsigned long long i = 0; i < iters; ++i) {
-    acc += (i ^ (acc << 1));
-  }
-  if (threadIdx.x == 0) {
-    volatile unsigned long long* sink = &acc;
-    (void)*sink;
-  }
-}
-
-bool cuda_simulate_work_ms(int ms, void* stream) {
-  if (ms <= 0) return true;
-  // Rough scaling factor; device-dependent, just for demo visibility
-  // Increase if the GPU is very fast.
-  const unsigned long long iters =
-      static_cast<unsigned long long>(ms) * 200000ULL;
+bool cuda_fill_u8(void* device_ptr, unsigned char value, std::size_t size_bytes,
+                  void* stream) {
+  if (!device_ptr || size_bytes == 0) return false;
   cudaStream_t s = stream ? reinterpret_cast<cudaStream_t>(stream)
                           : static_cast<cudaStream_t>(0);
-  busy_kernel<<<1, 1, 0, s>>>(iters);
-  return cudaGetLastError() == cudaSuccess;
+  auto err =
+      cudaMemsetAsync(device_ptr, static_cast<int>(value), size_bytes, s);
+  if (err != cudaSuccess) return false;
+  return true;
 }
 
 }  // namespace sample_nodes
