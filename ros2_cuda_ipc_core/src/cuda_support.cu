@@ -1,4 +1,4 @@
-#include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
 
 #include <cstdio>
 #include <cstring>
@@ -69,22 +69,21 @@ bool cuda_ipc_close_mem_handle(void* device_ptr) {
 }
 
 cudaEvent_t cuda_event_create() {
-  ::cudaEvent_t evt = nullptr;
+  cudaEvent_t evt = nullptr;
   check_cuda_error(cudaEventCreateWithFlags(
       &evt, cudaEventDisableTiming | cudaEventInterprocess));
-  return reinterpret_cast<cudaEvent_t>(evt);
+  return evt;
 }
 
 bool cuda_event_destroy(cudaEvent_t evt) {
   if (!evt) return false;
-  check_cuda_error(cudaEventDestroy(reinterpret_cast<::cudaEvent_t>(evt)));
+  check_cuda_error(cudaEventDestroy(evt));
   return true;
 }
 
 bool cuda_event_record(cudaEvent_t evt) {
   if (!evt) return false;
-  check_cuda_error(
-      cudaEventRecord(reinterpret_cast<::cudaEvent_t>(evt), /*stream=*/0));
+  check_cuda_error(cudaEventRecord(evt, /*stream=*/0));
   return true;
 }
 
@@ -92,8 +91,7 @@ bool cuda_event_get_ipc_handle(cudaEvent_t evt,
                                CudaIpcEventHandle* out_handle) {
   if (!evt || !out_handle) return false;
   cudaIpcEventHandle_t h{};
-  check_cuda_error(
-      cudaIpcGetEventHandle(&h, reinterpret_cast<::cudaEvent_t>(evt)));
+  check_cuda_error(cudaIpcGetEventHandle(&h, evt));
   static_assert(sizeof(CudaIpcEventHandle) == sizeof(cudaIpcEventHandle_t),
                 "IPC event handle size mismatch");
   std::memcpy(out_handle, &h, sizeof(h));
@@ -105,14 +103,14 @@ cudaEvent_t cuda_ipc_open_event_handle(const CudaIpcEventHandle& handle) {
   static_assert(sizeof(CudaIpcEventHandle) == sizeof(cudaIpcEventHandle_t),
                 "IPC event handle size mismatch");
   std::memcpy(&h, &handle, sizeof(h));
-  ::cudaEvent_t evt = nullptr;
+  cudaEvent_t evt = nullptr;
   check_cuda_error(cudaIpcOpenEventHandle(&evt, h));
-  return reinterpret_cast<cudaEvent_t>(evt);
+  return evt;
 }
 
 bool cuda_event_query(cudaEvent_t evt) {
   if (!evt) return false;
-  auto err = cudaEventQuery(reinterpret_cast<::cudaEvent_t>(evt));
+  auto err = cudaEventQuery(evt);
   if (err == cudaSuccess) return true;
   if (err == cudaErrorNotReady) return false;
   return false;
@@ -120,36 +118,31 @@ bool cuda_event_query(cudaEvent_t evt) {
 
 bool cuda_event_record_on_stream(cudaEvent_t evt, cudaStream_t stream) {
   if (!evt) return false;
-  auto s = stream ? reinterpret_cast<::cudaStream_t>(stream)
-                  : static_cast<::cudaStream_t>(0);
-  check_cuda_error(cudaEventRecord(reinterpret_cast<::cudaEvent_t>(evt), s));
+  check_cuda_error(cudaEventRecord(evt, stream ? stream : 0));
   return true;
 }
 
 cudaStream_t cuda_stream_create() {
-  ::cudaStream_t s = nullptr;
+  cudaStream_t s = nullptr;
   check_cuda_error(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking));
-  return reinterpret_cast<cudaStream_t>(s);
+  return s;
 }
 
 bool cuda_stream_destroy(cudaStream_t stream) {
   if (!stream) return false;
-  check_cuda_error(cudaStreamDestroy(reinterpret_cast<::cudaStream_t>(stream)));
+  check_cuda_error(cudaStreamDestroy(stream));
   return true;
 }
 
 bool cuda_stream_wait_event(cudaStream_t stream, cudaEvent_t evt) {
   if (!stream || !evt) return false;
-  check_cuda_error(cudaStreamWaitEvent(reinterpret_cast<::cudaStream_t>(stream),
-                                       reinterpret_cast<::cudaEvent_t>(evt),
-                                       0));
+  check_cuda_error(cudaStreamWaitEvent(stream, evt, 0));
   return true;
 }
 
 bool cuda_stream_synchronize(cudaStream_t stream) {
   if (!stream) return false;
-  check_cuda_error(
-      cudaStreamSynchronize(reinterpret_cast<::cudaStream_t>(stream)));
+  check_cuda_error(cudaStreamSynchronize(stream));
   return true;
 }
 

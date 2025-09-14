@@ -1,6 +1,8 @@
 #ifndef ROS2_CUDA_IPC_CORE_CUDA_SUPPORT_HPP_
 #define ROS2_CUDA_IPC_CORE_CUDA_SUPPORT_HPP_
 
+#include <cuda_runtime_api.h>
+
 #include <cstddef>
 #include <string>
 
@@ -16,9 +18,9 @@ struct CudaIpcEventHandle {
   unsigned char reserved[64];
 };
 
-// Opaque CUDA stream and event handle types (avoid including CUDA headers).
-using cudaStream_t = void*;
-using cudaEvent_t = void*;
+// Aliases for CUDA stream and event handle types.
+using cudaStream_t = ::cudaStream_t;
+using cudaEvent_t = ::cudaEvent_t;
 
 // Returns true if CUDA runtime is available (device count > 0)
 bool cuda_is_available();
@@ -64,7 +66,7 @@ bool cuda_event_query(cudaEvent_t evt);
 // Records the event on the specified stream. Returns true on success.
 bool cuda_event_record_on_stream(cudaEvent_t evt, cudaStream_t stream);
 
-// CUDA stream helpers (opaque void* to avoid leaking CUDA headers)
+// CUDA stream helpers
 cudaStream_t cuda_stream_create();
 bool cuda_stream_destroy(cudaStream_t stream);
 // Waits for evt on the given stream. Returns true on success.
