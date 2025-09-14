@@ -4,15 +4,12 @@
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 #include "ros2_cuda_ipc_core/gpu_buffer_mapper.hpp"
+#include "ros2_cuda_ipc_core/shm_release.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
-#include "ros2_cuda_ipc_msgs/srv/gpu_buffer_release.hpp"
 
 class DummySubscriber : public rclcpp::Node {
  public:
   DummySubscriber() : Node("dummy_gpu_buffer_subscriber") {
-    release_client_ =
-        this->create_client<ros2_cuda_ipc_msgs::srv::GpuBufferRelease>(
-            "gpu_buffer_release");
     // Create a non-blocking CUDA stream if available
     if (ros2_cuda_ipc_core::cuda_is_available()) {
       stream_ = ros2_cuda_ipc_core::cuda_stream_create();
@@ -60,27 +57,28 @@ class DummySubscriber : public rclcpp::Node {
           RCLCPP_INFO(this->get_logger(), "Event waited ~%ld ms",
                       static_cast<long>(ms));
 
-          // Notify release via service only when a valid plane was provided
+          // Release via SHM decrement when a valid plane was provided
           if (msg.plane_count > 0) {
-            if (!release_client_->service_is_ready()) {
-              // Try a non-blocking wait once
-              (void)release_client_->wait_for_service(
-                  std::chrono::milliseconds(10));
+            if (!msg.shm_name.empty()) {
+              auto res = ros2_cuda_ipc_core::shm_decrement(
+                  msg.shm_name, msg.pool_slot_id, msg.seq_id);
+              if (res.has_value()) {
+                RCLCPP_INFO(this->get_logger(), "SHM release %s: new refcnt=%d",
+                            msg.shm_name.c_str(), *res);
+              } else {
+                RCLCPP_WARN(this->get_logger(), "SHM release failed for %s",
+                            msg.shm_name.c_str());
+              }
+            } else {
+              RCLCPP_WARN(this->get_logger(),
+                          "No shm_name provided; cannot release via SHM");
             }
-            auto req = std::make_shared<
-                ros2_cuda_ipc_msgs::srv::GpuBufferRelease::Request>();
-            req->seq_id = msg.seq_id;
-            req->pool_slot_id = msg.pool_slot_id;
-            req->consumer_id = this->get_fully_qualified_name();
-            (void)release_client_->async_send_request(req);
           }
         });
   }
 
  private:
   rclcpp::Subscription<ros2_cuda_ipc_msgs::msg::GpuBuffer>::SharedPtr sub_;
-  rclcpp::Client<ros2_cuda_ipc_msgs::srv::GpuBufferRelease>::SharedPtr
-      release_client_;
   void* stream_{nullptr};
   ros2_cuda_ipc_core::GpuBufferMapper mapper_;
   uint32_t prev_abi_version_{0};

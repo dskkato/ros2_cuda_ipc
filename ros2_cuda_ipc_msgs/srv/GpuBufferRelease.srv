@@ -1,5 +1,0 @@
-uint64 seq_id        # Sequence number of the buffer to release
-uint32 pool_slot_id  # Slot index in publisher's pool [0..N-1]
-string consumer_id   # Identifier of releasing consumer (e.g., node name)
----
-bool ok              # True if the buffer was successfully released

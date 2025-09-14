@@ -39,7 +39,7 @@
 
 * ROS 2メッセージでGPUバッファの**ハンドル＋メタデータ**をpublishする
 * Subscriberは初回にIPCハンドルをopen→以後キャッシュ再利用
-* Release通知（サービス or 共有制御ブロック）によりスロット再利用
+* Release通知（共有制御ブロック SHM）によりスロット再利用
 
 ### Non‑Functional
 
@@ -65,7 +65,7 @@
 
 ### Components
 
-* **ros2\_cuda\_ipc\_msgs**: `GpuBuffer.msg`, `GpuBufferRelease.srv`
+* **ros2\_cuda\_ipc\_msgs**: `GpuBuffer.msg`
 * **ros2\_cuda\_ipc\_core**: C++コア（Pool/Mapper、IPCラッパ、管理）
 * **ros2\_cuda\_ipc\_py**: pybind11バインディング + DLPackブリッジ
 * **sample\_nodes**: Publisher/Subscriber最小実装
@@ -74,7 +74,7 @@
 
 ## 4. Message & Service Definitions
 
-### 4.2 `GpuPlane.msg`（案）
+### 4.1 `GpuPlane.msg`
 
 ```
 uint64 size_bytes
@@ -83,7 +83,7 @@ uint8  ipc_mem_handle[64]
 ```
 
 
-### 4.1 `GpuBuffer.msg`（案）
+### 4.2 `GpuBuffer.msg`
 
 ```
 uint32   abi_version
@@ -105,14 +105,7 @@ string  shm_name       // 任意：共有制御ブロック方式を使う場合
 
 > 備考: 64バイトはCUDA IPCハンドルの最大サイズ想定。実装時に静的\_assert。
 
-### 4.2 `GpuBufferRelease.srv`
-
-* Request
-  * uint64 seq_id
-  * uint32 pool_slot_id
-  * string consumer_id
-* **Response**:
-  * bool ok
+（Release サービスは削除。Release は SHM 制御ブロックの参照カウントで行う）
 
 ---
 
@@ -155,7 +148,7 @@ enum {FREE, IN_USE} + deadline + last_seq_id
 ## 6. Subscriber‑Side Mapping
 
 * 初回のみ: `cudaIpcOpenMemHandle` / `cudaIpcOpenEventHandle`（`pool_slot_id`でキャッシュ）
-* フレームごと: `cudaStreamWaitEvent(ready_evt)` → 利用 → `release()`
+* フレームごと: `cudaStreamWaitEvent(ready_evt)` → 利用 → `release()`（SHM の `refcnt--`）
 * キャッシュ失効: Publisherリスタート検知（`abi_version`/`device_uuid`/`seq_id`逆転 など）で `Close + Reopen`
 
 ---
@@ -164,7 +157,7 @@ enum {FREE, IN_USE} + deadline + last_seq_id
 
 * **produce完了**: `cudaEventRecord` → Subscriberは各自の`cudaStream`で `cudaStreamWaitEvent`
 * **読み取り同時実行**: 複数Subscriberが同一スロットを参照可能（read-only）
-* **解放**: `GpuBufferRelease` サービス or 共有制御ブロック（SHM）の `refcnt==0` で再利用
+* **解放**: 共有制御ブロック（SHM）の `refcnt==0` で再利用
 * **タイムアウト**: `lease_timeout` 超過で強制再利用（ログ/カウンタ増分）
 
 ---
@@ -238,10 +231,10 @@ Publisher (ColorConvert)
   borrow → memcpyAsync(YUV) → kernel_yuv2bgr → EventRecord → Publish(GpuBuffer)
 
 Encoder/Preview/DNN (Subscribers)
-  open(cache) → StreamWaitEvent → use_zero_copy → release()
+  open(cache) → StreamWaitEvent → use_zero_copy → release() [SHM]
 
 Publisher
-  on_release(...) x N or timeout → FREE
+  refcnt==0（SHM） or timeout → FREE
 ```
 
 ### 11.2 再接続・再初期化
@@ -325,9 +318,9 @@ ros2_cuda_ipc:
 
 ## 18. Rollout Plan
 
-1. **P0**: 画像単平面（BGR/RGBA）、サービスRelease、C++のみ
+1. **P0**: 画像単平面（BGR/RGBA）、SHM Release、C++のみ
 2. **P1**: NV12多平面、pybind11、DLPack
-3. **P2**: 点群、SHM制御ブロック版、監視メトリクス/可視化
+3. **P2**: 点群、監視メトリクス/可視化
 4. **P3**: 上位サンプル（FFmpeg NVENC、TensorRT/PyTorch）
 
 ---
@@ -342,7 +335,7 @@ ros2_cuda_ipc:
 
 ## 20. Risks & Mitigations
 
-* **Release漏れ**: タイムアウト + SHM refcnt への移行余地
+* **Release漏れ**: タイムアウト + SHM refcnt
 * **IPCハンドル肥大**: スロット再利用設計でopen頻度を最小化
 * **ABIドリフト**: `abi_version` を上げて互換性崩壊を検知
 
@@ -381,4 +374,3 @@ mapper.release(msg, consumer_id);
 ---
 
 **End of Document**
-
