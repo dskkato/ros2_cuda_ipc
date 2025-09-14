@@ -100,6 +100,32 @@ py::capsule to_dlpack(std::uintptr_t ptr, std::size_t size_bytes) {
 }
 
 void from_dlpack(std::uintptr_t dst_ptr, py::capsule cap) {
+  if (dst_ptr == 0) {
+    throw std::invalid_argument("Destination pointer is null.");
+  }
+  cudaPointerAttributes attr;
+  cudaError_t err = cudaPointerGetAttributes(&attr, reinterpret_cast<void*>(dst_ptr));
+#if CUDART_VERSION >= 10000
+  if (err != cudaSuccess || attr.type != cudaMemoryTypeDevice) {
+    throw std::invalid_argument("Destination pointer is not a valid CUDA device pointer.");
+  }
+  int device_id = attr.device;
+#else
+  if (err != cudaSuccess || attr.memoryType != cudaMemoryTypeDevice) {
+    throw std::invalid_argument("Destination pointer is not a valid CUDA device pointer.");
+  }
+  int device_id = attr.device;
+#endif
+  int current_device = 0;
+  err = cudaGetDevice(&current_device);
+  if (err != cudaSuccess) {
+    throw std::runtime_error(std::string("cudaGetDevice failed: ") +
+                             cudaGetErrorString(err));
+  }
+  if (device_id != current_device) {
+    throw std::invalid_argument(
+        "Destination pointer is not accessible from the current CUDA device.");
+  }
   auto* managed = static_cast<DLManagedTensor*>(
       PyCapsule_GetPointer(cap.ptr(), "dltensor"));
   if (!managed) {
