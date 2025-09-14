@@ -149,14 +149,18 @@ class DummyPublisher : public rclcpp::Node {
       ros2_cuda_ipc_core::CudaIpcMemHandle h{};
       bool has_cuda_mem = pool_->ipc_handle(*slot, h);
       if (has_cuda_mem) {
-        // Simulate GPU work on producer stream to visualize event sync
-        (void)sample_nodes::cuda_simulate_work_ms(50, producer_stream_);
-        // Fill plane 0 with size/pitch and copy raw 64B handle
-        msg.plane_count = 1;
-        msg.planes.resize(1);
+        // Fill the borrowed device buffer with a pattern on producer stream
+        void* dptr = pool_->device_ptr(*slot);
         const uint64_t size_bytes = static_cast<uint64_t>(msg.width) *
                                     static_cast<uint64_t>(msg.height) *
                                     static_cast<uint64_t>(msg.channels);
+        // Use a simple changing pattern so frames differ (low byte of seq)
+        unsigned char pattern = static_cast<unsigned char>(count_ & 0xFF);
+        (void)sample_nodes::cuda_fill_u8(dptr, pattern, size_bytes,
+                                         producer_stream_);
+        // Fill plane 0 with size/pitch and copy raw 64B handle
+        msg.plane_count = 1;
+        msg.planes.resize(1);
         msg.planes[0].size_bytes = size_bytes;
         msg.planes[0].pitch_bytes = static_cast<uint64_t>(msg.width) *
                                     static_cast<uint64_t>(msg.channels);
