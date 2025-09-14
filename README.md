@@ -76,6 +76,27 @@ ros2 run sample_nodes gpu_buffer_subscriber
 備考
 - Publisher はメッセージに `abi_version` と `device_uuid` を埋め込みます。Subscriber はそれらが変化した場合にマッピングキャッシュを自動リセットします。
 
+## サンプル簡素化のためのヘルパー
+
+- **LeaseManager**: SHM 参照カウントとタイムアウトに基づくスロット自動解放を管理。
+  - 実装: `ros2_cuda_ipc_core/lease_manager.hpp`
+  - 使い方: `LeaseManager lm(pool, lease_timeout_ms); lm.set_owner(owner);` 毎ループ `lm.tick()`
+
+- **ScopedMappedFrame**: Subscriber 側での RAII ヘルパー。イベント open + wait、メモリ open の再利用、破棄時に SHM decrement。
+  - 実装: `ros2_cuda_ipc_core/scoped_mapped_frame.hpp`
+  - 使い方: `ScopedMappedFrame frame(mapper, slot, &mem, &evt, stream, shm_name, seq, true);`
+
+- **GpuBufferPublisherHelper**: Publisher 側の定型処理を集約（借用→GPU書込→イベント→メッセージ→リース）。
+  - 実装: `sample_nodes/include/sample_nodes/gpu_buffer_publisher_helper.hpp`
+  - ビルドターゲット: `sample_nodes_helpers`（サンプル内の再利用用ライブラリ）
+  - 典型手順:
+    - 初期化: `helper(pool, &lease, producer_stream)`
+    - 借用: `auto f = helper.borrow_frame(width, height, channels)`
+    - 書込: `cuda_fill_u8(f.device_ptr, ...)` など
+    - 仕上げ: `helper.finalize_and_fill(f, seq, expected_consumers, owner, w, h, c, layout, format, msg)`
+
+サンプル Publisher は既に helper を利用する形に差し替え済みです。Subscriber は ScopedMappedFrame を用いて wait と SHM 解放を簡素化しています。
+
 ---
 
 ## 開発フロー
@@ -116,4 +137,21 @@ colcon build \
   --cmake-args -DSAMPLE_NODES_ENABLE_CUDA=OFF
 ```
 
-- テスト: `test_cuda_support` / `test_gpu_buffer_pool` / `test_gpu_buffer_mapper` を含みます（環境により skip あり）。
+- テスト: `ros2_cuda_ipc_core` には以下の gtest が含まれます（環境により skip あり）
+  - `test_cuda_support`（CUDA ありで実行）
+  - `test_gpu_buffer_pool`（CUDA 依存なし）
+  - `test_gpu_buffer_mapper`（一部環境で同一プロセスの IPC event open が不可 → スキップ分岐あり）
+  - `test_lease_manager`（SHM リリースとタイムアウト解放を確認）
+  - `test_scoped_mapped_frame`（破棄時の SHM decrement を確認）
+
+- サンプル側のテスト:
+  - `sample_nodes/test/test_gpu_buffer_publisher_helper`（CUDA メモリが無い場合のメタデータ配信へのフォールバック等）
+
+ビルドとテスト実行例:
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --packages-select ros2_cuda_ipc_core sample_nodes --cmake-args -DBUILD_TESTING=ON
+colcon test --packages-select ros2_cuda_ipc_core sample_nodes
+colcon test-result --verbose
+```
