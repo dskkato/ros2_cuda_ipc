@@ -94,7 +94,7 @@ class GpuBufferPublisher(Node):
             self.held_seq = msg.seq_id
             self.held_since = time.time()
             self.get_logger().info(
-                'Publishing seq=%u with dummy CUDA IPC handles (slot %u)',
+                'Publishing seq=%u with dummy CUDA IPC handles (slot %u) [DEMO ONLY: not for production]',
                 msg.seq_id, slot)
         else:
             self.get_logger().warn('Pool exhausted; publishing metadata only')
