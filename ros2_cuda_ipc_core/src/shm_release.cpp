@@ -151,7 +151,9 @@ std::optional<int32_t> shm_read_refcnt(const std::string& name, uint32_t slot,
 }
 
 bool shm_unlink(const std::string& name) {
-  return ::shm_unlink(name.c_str()) == 0 || errno == ENOENT;
+  int ret = ::shm_unlink(name.c_str());
+  int err = errno;
+  return ret == 0 || err == ENOENT;
 }
 
 }  // namespace ros2_cuda_ipc_core
