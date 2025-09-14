@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -48,5 +49,10 @@ std::optional<int32_t> shm_read_refcnt(const std::string& name, uint32_t slot,
 
 // Unlink the SHM object (best-effort cleanup).
 bool shm_unlink(const std::string& name);
+
+// Portable-ish atomic decrement for shared-memory refcounts.
+// Uses C++20 atomic_ref when available; otherwise falls back to GCC/Clang
+// builtins.
+int32_t shm_atomic_dec_seq_cst(int32_t* ptr);
 
 }  // namespace ros2_cuda_ipc_core

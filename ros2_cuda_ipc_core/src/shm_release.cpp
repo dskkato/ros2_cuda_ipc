@@ -118,8 +118,8 @@ std::optional<int32_t> shm_decrement(const std::string& name, uint32_t slot,
     ::close(fd);
     return std::nullopt;
   }
-  // Use GCC atomic builtins on the shared int32_t memory.
-  int32_t newv = __atomic_sub_fetch(&h->refcnt, 1, __ATOMIC_SEQ_CST);
+  // Decrement shared refcnt with a portability wrapper.
+  int32_t newv = shm_atomic_dec_seq_cst(&h->refcnt);
   ::msync(p, sz, MS_SYNC);
   ::munmap(p, sz);
   ::close(fd);
@@ -154,6 +154,20 @@ bool shm_unlink(const std::string& name) {
   int ret = ::shm_unlink(name.c_str());
   int err = errno;
   return ret == 0 || err == ENOENT;
+}
+
+int32_t shm_atomic_dec_seq_cst(int32_t* ptr) {
+#if defined(__cpp_lib_atomic_ref) && __cpp_lib_atomic_ref >= 201806
+  // C++20 atomic_ref: operate atomically on an existing int32_t in shared
+  // memory
+  std::atomic_ref<int32_t> ref(*ptr);
+  return ref.fetch_sub(1, std::memory_order_seq_cst) - 1;
+#elif defined(__clang__) || defined(__GNUC__)
+  return __atomic_sub_fetch(ptr, 1, __ATOMIC_SEQ_CST);
+#else
+#error \
+    "No supported atomic primitive for shared-memory decrement. Enable C++20 (atomic_ref) or use GCC/Clang with __atomic builtins."
+#endif
 }
 
 }  // namespace ros2_cuda_ipc_core
