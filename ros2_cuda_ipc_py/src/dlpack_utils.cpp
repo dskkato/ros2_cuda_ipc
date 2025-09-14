@@ -48,18 +48,37 @@ struct DLManagedTensor {
 namespace {
 
 py::capsule to_dlpack(std::uintptr_t ptr, std::size_t size_bytes) {
+  if (ptr == 0) {
+    throw std::invalid_argument("Pointer is null.");
+  }
+  cudaPointerAttributes attr;
+  cudaError_t err =
+      cudaPointerGetAttributes(&attr, reinterpret_cast<void*>(ptr));
+#if CUDART_VERSION >= 10000
+  if (err != cudaSuccess || attr.type != cudaMemoryTypeDevice) {
+    throw std::invalid_argument("Pointer is not a valid CUDA device pointer.");
+  }
+  int device_id = attr.device;
+#else
+  if (err != cudaSuccess || attr.memoryType != cudaMemoryTypeDevice) {
+    throw std::invalid_argument("Pointer is not a valid CUDA device pointer.");
+  }
+  int device_id = attr.device;
+#endif
+  int current_device = 0;
+  err = cudaGetDevice(&current_device);
+  if (err != cudaSuccess) {
+    throw std::runtime_error(std::string("cudaGetDevice failed: ") +
+                             cudaGetErrorString(err));
+  }
+  if (device_id != current_device) {
+    throw std::invalid_argument(
+        "Pointer is not accessible from the current CUDA device.");
+  }
   auto* managed = new DLManagedTensor();
   int64_t* shape = new int64_t[1];
   shape[0] = static_cast<int64_t>(size_bytes);
   managed->dl_tensor.data = reinterpret_cast<void*>(ptr);
-  int device_id = 0;
-  cudaError_t err = cudaGetDevice(&device_id);
-  if (err != cudaSuccess) {
-    delete[] shape;
-    delete managed;
-    throw std::runtime_error(std::string("cudaGetDevice failed: ") +
-                             cudaGetErrorString(err));
-  }
   managed->dl_tensor.device = {kDLGPU, device_id};
   managed->dl_tensor.ndim = 1;
   managed->dl_tensor.dtype = {1, 8, 1};  // kDLUInt
@@ -93,8 +112,27 @@ void from_dlpack(std::uintptr_t dst_ptr, py::capsule cap) {
     n *= static_cast<std::size_t>(t.shape[i]);
   }
   std::size_t bytes = elem_bytes * n;
-  cudaError_t err = cudaMemcpy(reinterpret_cast<void*>(dst_ptr), t.data, bytes,
-                               cudaMemcpyDeviceToDevice);
+  cudaError_t err;
+  if (t.device.device_type == kDLCPU) {
+    err = cudaMemcpy(reinterpret_cast<void*>(dst_ptr), t.data, bytes,
+                     cudaMemcpyHostToDevice);
+  } else if (t.device.device_type == kDLGPU) {
+    int current_device = 0;
+    err = cudaGetDevice(&current_device);
+    if (err != cudaSuccess) {
+      throw std::runtime_error(std::string("cudaGetDevice failed: ") +
+                               cudaGetErrorString(err));
+    }
+    if (t.device.device_id != current_device) {
+      err = cudaMemcpyPeer(reinterpret_cast<void*>(dst_ptr), current_device,
+                           t.data, t.device.device_id, bytes);
+    } else {
+      err = cudaMemcpy(reinterpret_cast<void*>(dst_ptr), t.data, bytes,
+                       cudaMemcpyDeviceToDevice);
+    }
+  } else {
+    throw std::invalid_argument("Unsupported device type in DLTensor");
+  }
   if (err != cudaSuccess) {
     throw std::runtime_error(std::string("cudaMemcpy failed: ") +
                              cudaGetErrorString(err));
