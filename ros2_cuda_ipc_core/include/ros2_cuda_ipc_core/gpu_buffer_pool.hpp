@@ -51,7 +51,6 @@ class GpuBufferPool {
   std::vector<void*> device_ptrs_;
   std::vector<void*> events_;
   std::size_t bytes_per_slot_{0};
-  bool using_cuda_{false};
   bool events_enabled_{false};
   void* producer_stream_{nullptr};
   std::mutex mutex_;
