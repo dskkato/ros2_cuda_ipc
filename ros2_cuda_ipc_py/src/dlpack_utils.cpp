@@ -3,11 +3,8 @@
 
 #include <cstdint>
 #include <cstring>
-<<<<<<< HEAD
 #include <stdexcept>
 #include <string>
-=======
->>>>>>> 54fa033 (Add DLPack utilities and Python bindings)
 
 namespace py = pybind11;
 
@@ -51,7 +48,6 @@ struct DLManagedTensor {
 namespace {
 
 py::capsule to_dlpack(std::uintptr_t ptr, std::size_t size_bytes) {
-<<<<<<< HEAD
   if (ptr == 0) {
     throw std::invalid_argument("Pointer is null.");
   }
@@ -79,17 +75,10 @@ py::capsule to_dlpack(std::uintptr_t ptr, std::size_t size_bytes) {
     throw std::invalid_argument(
         "Pointer is not accessible from the current CUDA device.");
   }
-=======
->>>>>>> 54fa033 (Add DLPack utilities and Python bindings)
   auto* managed = new DLManagedTensor();
   int64_t* shape = new int64_t[1];
   shape[0] = static_cast<int64_t>(size_bytes);
   managed->dl_tensor.data = reinterpret_cast<void*>(ptr);
-<<<<<<< HEAD
-=======
-  int device_id = 0;
-  (void)cudaGetDevice(&device_id);
->>>>>>> 54fa033 (Add DLPack utilities and Python bindings)
   managed->dl_tensor.device = {kDLGPU, device_id};
   managed->dl_tensor.ndim = 1;
   managed->dl_tensor.dtype = {1, 8, 1};  // kDLUInt
@@ -102,12 +91,8 @@ py::capsule to_dlpack(std::uintptr_t ptr, std::size_t size_bytes) {
     delete self;
   };
   return py::capsule(managed, "dltensor", [](PyObject* cap) {
-<<<<<<< HEAD
     auto* m =
         static_cast<DLManagedTensor*>(PyCapsule_GetPointer(cap, "dltensor"));
-=======
-    auto* m = static_cast<DLManagedTensor*>(PyCapsule_GetPointer(cap, "dltensor"));
->>>>>>> 54fa033 (Add DLPack utilities and Python bindings)
     if (m && m->deleter) {
       m->deleter(m);
     }
@@ -115,13 +100,8 @@ py::capsule to_dlpack(std::uintptr_t ptr, std::size_t size_bytes) {
 }
 
 void from_dlpack(std::uintptr_t dst_ptr, py::capsule cap) {
-<<<<<<< HEAD
   auto* managed = static_cast<DLManagedTensor*>(
       PyCapsule_GetPointer(cap.ptr(), "dltensor"));
-=======
-  auto* managed =
-      static_cast<DLManagedTensor*>(PyCapsule_GetPointer(cap.ptr(), "dltensor"));
->>>>>>> 54fa033 (Add DLPack utilities and Python bindings)
   if (!managed) {
     throw std::runtime_error("Invalid DLTensor capsule");
   }
@@ -132,7 +112,6 @@ void from_dlpack(std::uintptr_t dst_ptr, py::capsule cap) {
     n *= static_cast<std::size_t>(t.shape[i]);
   }
   std::size_t bytes = elem_bytes * n;
-<<<<<<< HEAD
   cudaError_t err;
   if (t.device.device_type == kDLCPU) {
     err = cudaMemcpy(reinterpret_cast<void*>(dst_ptr), t.data, bytes,
@@ -162,13 +141,6 @@ void from_dlpack(std::uintptr_t dst_ptr, py::capsule cap) {
   if (managed->deleter) {
     managed->deleter(managed);
   }
-=======
-  cudaMemcpy(reinterpret_cast<void*>(dst_ptr), t.data, bytes, cudaMemcpyDeviceToDevice);
-  if (managed->deleter) {
-    managed->deleter(managed);
-  }
-  PyCapsule_SetName(cap.ptr(), "used_dltensor");
->>>>>>> 54fa033 (Add DLPack utilities and Python bindings)
 }
 
 }  // namespace
@@ -177,7 +149,3 @@ void init_dlpack_utils(py::module_& m) {
   m.def("to_dlpack", &to_dlpack, py::arg("ptr"), py::arg("size_bytes"));
   m.def("from_dlpack", &from_dlpack, py::arg("dst_ptr"), py::arg("tensor"));
 }
-<<<<<<< HEAD
-=======
-
->>>>>>> 54fa033 (Add DLPack utilities and Python bindings)
