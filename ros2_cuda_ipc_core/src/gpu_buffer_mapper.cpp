@@ -1,5 +1,7 @@
 #include "ros2_cuda_ipc_core/gpu_buffer_mapper.hpp"
 
+#include <stdexcept>
+
 namespace ros2_cuda_ipc_core {
 
 GpuBufferMapper::~GpuBufferMapper() { reset(); }
@@ -9,7 +11,11 @@ void* GpuBufferMapper::open_memory(uint32_t slot_id,
   std::lock_guard<std::mutex> lock(mutex_);
   auto& e = cache_[slot_id];
   if (!e.mem) {
-    e.mem = cuda_ipc_open_mem_handle(mem_handle);
+    try {
+      e.mem = cuda_ipc_open_mem_handle(mem_handle);
+    } catch (const std::exception&) {
+      e.mem = nullptr;  // Leave unopened on error
+    }
   }
   return e.mem;
 }
@@ -19,7 +25,11 @@ void* GpuBufferMapper::open_event(uint32_t slot_id,
   std::lock_guard<std::mutex> lock(mutex_);
   auto& e = cache_[slot_id];
   if (!e.evt) {
-    e.evt = cuda_ipc_open_event_handle(evt_handle);
+    try {
+      e.evt = cuda_ipc_open_event_handle(evt_handle);
+    } catch (const std::exception&) {
+      e.evt = nullptr;  // Leave unopened on error
+    }
   }
   return e.evt;
 }

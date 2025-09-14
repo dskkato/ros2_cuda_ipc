@@ -16,6 +16,8 @@ set(SOURCES
   src/gpu_buffer_pool.cpp
   src/gpu_buffer_mapper.cpp
   src/shm_release.cpp
+  src/lease_manager.cpp
+  src/scoped_mapped_frame.cpp
   src/cuda_support.cu
 )
 
@@ -54,6 +56,14 @@ if(BUILD_TESTING)
   if(TARGET test_gpu_buffer_mapper)
     target_link_libraries(test_gpu_buffer_mapper ${PROJECT_NAME})
     set_tests_properties(test_gpu_buffer_mapper PROPERTIES LABELS "cuda")
+  endif()
+  ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
+  if(TARGET test_lease_manager)
+    target_link_libraries(test_lease_manager ${PROJECT_NAME})
+  endif()
+  ament_add_gtest(test_scoped_mapped_frame test/test_scoped_mapped_frame.cpp)
+  if(TARGET test_scoped_mapped_frame)
+    target_link_libraries(test_scoped_mapped_frame ${PROJECT_NAME})
   endif()
   # Note: process‑separated IPC tests removed for portability
 endif()
