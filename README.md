@@ -18,7 +18,7 @@ ROS 2 CUDA IPC Zero-Copy Transport
 
 このリポジトリは以下の ROS 2 パッケージを含みます：
 
-- `ros2_cuda_ipc_msgs` — GPU バッファ共有のためのメッセージ／サービス定義
+- `ros2_cuda_ipc_msgs` — GPU バッファ共有のためのメッセージ定義
 - `ros2_cuda_ipc_core` — メモリープール、CUDA IPCユーティリティ、マッパの C++ 実装（CUDA 前提）
 - `sample_nodes` — メッセージ送受信を確認する簡単なサンプルノード
 
@@ -54,7 +54,7 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### サンプルノード実行（単平面・Releaseサービス・イベント同期）
+### サンプルノード実行（単平面・SHMリリース・イベント同期）
 
 ```bash
 # Publisher
@@ -65,12 +65,13 @@ ros2 run sample_nodes gpu_buffer_subscriber
 ```
 
 期待される動作（CUDA 環境）
-- Publisher: スロットを借用し、GPUメモリの IPC ハンドルとイベントハンドルを `GpuBuffer` に格納して publish。スロットは Release サービスで解放されるまで保持（`lease_timeout_ms` 過ぎると強制解放、既定 3000ms）。
-- Subscriber: 受信したハンドルをキャッシュ（`GpuBufferMapper`）し、自身の CUDA ストリームで `cudaStreamWaitEvent`。処理後に Release サービスを呼び出しスロット解放。
-- ログ: Subscriber 側で `Event waited ~X ms` が出力。Publisher 側で `Publishing seq=... (slot X)` と Release 受信ログが出力。
+- Publisher: スロットを借用し、GPUメモリの IPC ハンドルとイベントハンドルを `GpuBuffer` に格納して publish。スロットは SHM 制御ブロックの参照カウントが 0 になると解放（`lease_timeout_ms` 過ぎると強制解放、既定 3000ms）。
+- Subscriber: 受信したハンドルをキャッシュ（`GpuBufferMapper`）し、自身の CUDA ストリームで `cudaStreamWaitEvent`。処理後に SHM の参照カウントを原子的にデクリメント。
+- ログ: Subscriber 側で `Event waited ~X ms` が出力。Publisher 側で `Publishing seq=... (slot X)` と `Slot X freed ... via SHM` が出力。
 
 パラメータ
 - Publisher: `lease_timeout_ms`（既定 3000）。例: `ros2 run sample_nodes gpu_buffer_publisher --ros-args -p lease_timeout_ms:=1000`
+- Publisher: `shm_owner`（省略時は `sanitized(FQN)_<epoch>_<pid>` を自動生成）。複数Publisher共存時の SHM 名衝突回避に使用。
 
 備考
 - Publisher はメッセージに `abi_version` と `device_uuid` を埋め込みます。Subscriber はそれらが変化した場合にマッピングキャッシュを自動リセットします。
@@ -95,7 +96,7 @@ Apache License 2.0
 ## P0 ステータス（実装済み範囲）
 - 単平面ゼロコピー（mem IPC ハンドル + イベント IPC ハンドルの配送）
 - イベント同期（Publisher: producer stream で記録、Subscriber: `cudaStreamWaitEvent`）
-- Release サービスによるスロット解放 + `lease_timeout_ms` による強制回収
+- SHM 制御ブロック（参照カウント）によるスロット解放 + `lease_timeout_ms` による強制回収
 - `GpuBufferMapper` による mem/event の open キャッシュ
 - `abi_version` / `device_uuid` 変化時の Subscriber 側キャッシュ失効
 

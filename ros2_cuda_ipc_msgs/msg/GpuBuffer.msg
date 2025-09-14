@@ -39,4 +39,4 @@ uint8[64] ipc_event_handle        # cudaIpcEventHandle_t (64 bytes); open via cu
 
 builtin_interfaces/Time stamp     # ROS timestamp when buffer was produced
 string frame_id                   # Frame of reference, follows standard ROS usage
-string shm_name                   # Optional shared memory control block name; may be empty
+string shm_name                   # SHM control block name used for release; required when plane_count > 0
