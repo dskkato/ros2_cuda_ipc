@@ -59,11 +59,11 @@ TEST(CudaSupport, EventAndStreamBasic) {
     GTEST_SKIP() << "CUDA device not available";
   }
 
-  void* evt = nullptr;
+  cudaEvent_t evt = nullptr;
   ASSERT_NO_THROW({ evt = cuda_event_create(); });
   ASSERT_NE(evt, nullptr);
 
-  void* stream = nullptr;
+  cudaStream_t stream = nullptr;
   ASSERT_NO_THROW({ stream = cuda_stream_create(); });
   ASSERT_NE(stream, nullptr);
 

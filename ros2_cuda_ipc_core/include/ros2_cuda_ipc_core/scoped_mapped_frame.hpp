@@ -19,7 +19,7 @@ class ScopedMappedFrame {
  public:
   ScopedMappedFrame(GpuBufferMapper& mapper, uint32_t slot_id,
                     const CudaIpcMemHandle* mem_handle,
-                    const CudaIpcEventHandle* evt_handle, void* stream,
+                    const CudaIpcEventHandle* evt_handle, cudaStream_t stream,
                     std::string shm_name, uint64_t seq,
                     bool sync_on_dtor = true);
 
@@ -32,12 +32,12 @@ class ScopedMappedFrame {
  private:
   GpuBufferMapper& mapper_;
   uint32_t slot_;
-  void* stream_;
+  cudaStream_t stream_;
   std::string shm_name_;
   uint64_t seq_;
   bool sync_on_dtor_;
   void* mem_ptr_{nullptr};
-  void* evt_ptr_{nullptr};
+  cudaEvent_t evt_ptr_{nullptr};
 };
 
 }  // namespace ros2_cuda_ipc_core

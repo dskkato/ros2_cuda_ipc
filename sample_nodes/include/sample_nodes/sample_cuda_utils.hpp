@@ -4,6 +4,8 @@
 
 #include <cstddef>
 
+#include "ros2_cuda_ipc_core/cuda_support.hpp"
+
 namespace sample_nodes {
 
 // Fill a device buffer with a byte pattern asynchronously on a stream.
@@ -13,7 +15,7 @@ namespace sample_nodes {
 // - stream: CUDA stream handle (nullptr for default stream)
 // Returns true on success.
 bool cuda_fill_u8(void* device_ptr, unsigned char value, std::size_t size_bytes,
-                  void* stream);
+                  ros2_cuda_ipc_core::cudaStream_t stream);
 
 }  // namespace sample_nodes
 

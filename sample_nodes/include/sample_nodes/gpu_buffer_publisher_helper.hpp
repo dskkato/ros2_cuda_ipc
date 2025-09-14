@@ -25,7 +25,7 @@ class GpuBufferPublisherHelper {
 
   GpuBufferPublisherHelper(ros2_cuda_ipc_core::GpuBufferPool& pool,
                            ros2_cuda_ipc_core::LeaseManager* lease_mgr,
-                           void* producer_stream);
+                           ros2_cuda_ipc_core::cudaStream_t producer_stream);
 
   // Attempts to borrow a slot and returns basic info for filling GPU memory.
   std::optional<Frame> borrow_frame(uint32_t width, uint32_t height,
@@ -42,7 +42,7 @@ class GpuBufferPublisherHelper {
  private:
   ros2_cuda_ipc_core::GpuBufferPool& pool_;
   ros2_cuda_ipc_core::LeaseManager* lease_mgr_{nullptr};
-  void* stream_{nullptr};
+  ros2_cuda_ipc_core::cudaStream_t stream_{nullptr};
 };
 
 }  // namespace sample_nodes

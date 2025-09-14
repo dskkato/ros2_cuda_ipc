@@ -65,7 +65,7 @@ class DummySubscriber : public rclcpp::Node {
 
  private:
   rclcpp::Subscription<ros2_cuda_ipc_msgs::msg::GpuBuffer>::SharedPtr sub_;
-  void* stream_{nullptr};
+  ros2_cuda_ipc_core::cudaStream_t stream_{nullptr};
   ros2_cuda_ipc_core::GpuBufferMapper mapper_;
   uint32_t prev_abi_version_{0};
   std::string prev_device_id_;
