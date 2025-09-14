@@ -80,15 +80,21 @@ ros2 run sample_nodes gpu_buffer_subscriber
 
 - **LeaseManager**: SHM 参照カウントとタイムアウトに基づくスロット自動解放を管理。
   - 実装: `ros2_cuda_ipc_core/lease_manager.hpp`
-  - 使い方: `LeaseManager lm(pool, lease_timeout_ms); lm.set_owner(owner);` 毎ループ `lm.tick()`
+  - リソース管理: スロットごとに SHM 制御ブロックを生成し、参照カウントまたはタイムアウトで解放。
+  - 注意: 毎ループ `tick()` を呼ばないとスロットが回収されない。`start_lease()` を呼び忘れるとリークする。
+  - 典型シーケンス: `lm.set_owner(owner)` → フレームごとに `lm.start_lease(slot, seq, consumers)` → メインループで `lm.tick()` → 終了時 `lm.cleanup()`
 
 - **ScopedMappedFrame**: Subscriber 側での RAII ヘルパー。イベント open + wait、メモリ open の再利用、破棄時に SHM decrement。
   - 実装: `ros2_cuda_ipc_core/scoped_mapped_frame.hpp`
-  - 使い方: `ScopedMappedFrame frame(mapper, slot, &mem, &evt, stream, shm_name, seq, true);`
+  - リソース管理: IPC イベント/メモリの open とキャッシュ、スコープ終了時に SHM 参照カウントを減算。
+  - 注意: `sync_on_dtor=true` の場合は破棄時にストリーム同期が発生。オブジェクトの寿命は GPU 処理より長く保つ。
+  - 典型シーケンス: メッセージ受信 → `ScopedMappedFrame frame(mapper, slot, &mem, &evt, stream, shm, seq)` → `frame.device_ptr()` で GPU 処理 → スコープ終了で解放
 
 - **GpuBufferPublisherHelper**: Publisher 側の定型処理を集約（借用→GPU書込→イベント→メッセージ→リース）。
   - 実装: `sample_nodes/include/sample_nodes/gpu_buffer_publisher_helper.hpp`
   - ビルドターゲット: `sample_nodes_helpers`（サンプル内の再利用用ライブラリ）
+  - リソース管理: GpuBufferPool のスロット借用/返却、CUDA イベント記録、必要に応じて LeaseManager でリースを開始。
+  - 注意: `borrow_frame()` で得たスロットは必ず `finalize_and_fill()` で仕上げる。マルチスレッド利用は未検証。
   - 典型手順:
     - 初期化: `helper(pool, &lease, producer_stream)`
     - 借用: `auto f = helper.borrow_frame(width, height, channels)`

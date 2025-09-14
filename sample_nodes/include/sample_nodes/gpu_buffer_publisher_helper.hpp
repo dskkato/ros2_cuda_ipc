@@ -14,25 +14,56 @@
 
 namespace sample_nodes {
 
+/**
+ * @brief Convenience wrapper for publishing GPU-backed frames.
+ *
+ * The helper hides the ceremony of borrowing a slot from GpuBufferPool,
+ * recording a CUDA event on the producer stream and starting a lease via
+ * LeaseManager.  It is intended for simple samples and single-threaded
+ * publishers.
+ *
+ * Typical sequence:
+ * 1. Call borrow_frame() to reserve a slot and obtain a device pointer.
+ * 2. Write GPU data into the provided pointer.
+ * 3. Call finalize_and_fill() to populate the message and optionally start a
+ *    lease.
+ *
+ * @warning finalize_and_fill() must be called exactly once for each successful
+ * borrow_frame() or the slot will remain reserved and leak.
+ */
 class GpuBufferPublisherHelper {
  public:
+  /** Basic information about a borrowed frame. */
   struct Frame {
-    uint32_t slot_id{0};
-    void* device_ptr{nullptr};
-    uint64_t size_bytes{0};
-    uint64_t pitch_bytes{0};
+    uint32_t slot_id{0};       /**< Slot index in the pool. */
+    void* device_ptr{nullptr}; /**< Writable device pointer. */
+    uint64_t size_bytes{0};    /**< Total byte size of the frame. */
+    uint64_t pitch_bytes{0};   /**< Row pitch in bytes. */
   };
 
+  /**
+   * @brief Create a helper bound to a pool, optional LeaseManager and stream.
+   */
   GpuBufferPublisherHelper(ros2_cuda_ipc_core::GpuBufferPool& pool,
                            ros2_cuda_ipc_core::LeaseManager* lease_mgr,
                            void* producer_stream);
 
-  // Attempts to borrow a slot and returns basic info for filling GPU memory.
+  /**
+   * @brief Borrow a frame slot from the pool.
+   *
+   * @return Frame information including device pointer on success; std::nullopt
+   * on failure.
+   */
   std::optional<Frame> borrow_frame(uint32_t width, uint32_t height,
                                     uint32_t channels);
 
-  // Fills the message fields, exports IPC handles, records the ready event and
-  // optionally starts a lease. Returns true if plane[0] was populated.
+  /**
+   * @brief Finalize a borrowed frame and populate a message.
+   *
+   * Exports IPC handles, records a ready event and optionally starts a lease.
+   *
+   * @return true if plane[0] was populated.
+   */
   bool finalize_and_fill(const Frame& f, uint64_t seq_id,
                          int expected_consumers, std::string_view shm_owner,
                          uint32_t width, uint32_t height, uint32_t channels,
@@ -40,9 +71,10 @@ class GpuBufferPublisherHelper {
                          ros2_cuda_ipc_msgs::msg::GpuBuffer& out);
 
  private:
-  ros2_cuda_ipc_core::GpuBufferPool& pool_;
-  ros2_cuda_ipc_core::LeaseManager* lease_mgr_{nullptr};
-  void* stream_{nullptr};
+  ros2_cuda_ipc_core::GpuBufferPool& pool_; /**< Underlying pool. */
+  ros2_cuda_ipc_core::LeaseManager* lease_mgr_{
+      nullptr};           /**< Optional lease manager. */
+  void* stream_{nullptr}; /**< Producer CUDA stream. */
 };
 
 }  // namespace sample_nodes
