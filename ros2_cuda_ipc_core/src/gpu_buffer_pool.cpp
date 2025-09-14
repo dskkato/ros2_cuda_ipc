@@ -6,59 +6,12 @@ namespace ros2_cuda_ipc_core {
 
 GpuBufferPool::GpuBufferPool(std::size_t size) : slots_(size) {}
 
-GpuBufferPool::GpuBufferPool(std::size_t size, std::size_t bytes_per_slot,
-                             bool use_cuda)
-    : slots_(size),
-      device_ptrs_(size, nullptr),
-      events_(size, nullptr),
-      bytes_per_slot_(bytes_per_slot) {
-  if (use_cuda && bytes_per_slot_ > 0 && cuda_is_available()) {
-    bool ok = true;
-    // Allocate device buffers
-    for (std::size_t i = 0; i < size; ++i) {
-      void* p = cuda_allocate(bytes_per_slot_);
-      if (!p) {
-        ok = false;
-        break;
-      }
-      device_ptrs_[i] = p;
-    }
-    // Create interprocess-capable events (best-effort)
-    if (ok) {
-      for (std::size_t i = 0; i < size; ++i) {
-        void* e = cuda_event_create();
-        if (!e) {
-          ok = false;
-          break;
-        }
-        events_[i] = e;
-      }
-    }
-    if (!ok) {
-      // Free any allocated resources and fall back to CPU-only mode
-      for (void* e : events_) {
-        if (e) cuda_event_destroy(e);
-      }
-      for (void* p : device_ptrs_) {
-        if (p) cuda_free(p);
-      }
-      std::fill(events_.begin(), events_.end(), nullptr);
-      std::fill(device_ptrs_.begin(), device_ptrs_.end(), nullptr);
-      bytes_per_slot_ = 0;
-      using_cuda_ = false;
-    } else {
-      using_cuda_ = true;
-      events_enabled_ = true;
-    }
-  }
-}
-
 GpuBufferPool::GpuBufferPool(const PoolOptions& opts)
     : slots_(opts.pool_size),
       device_ptrs_(opts.pool_size, nullptr),
       events_(opts.pool_size, nullptr),
       bytes_per_slot_(opts.bytes_per_slot) {
-  if (opts.use_cuda && bytes_per_slot_ > 0 && cuda_is_available()) {
+  if (bytes_per_slot_ > 0 && cuda_is_available()) {
     bool ok = true;
     for (std::size_t i = 0; i < opts.pool_size; ++i) {
       void* p = cuda_allocate(bytes_per_slot_);
