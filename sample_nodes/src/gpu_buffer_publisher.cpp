@@ -105,9 +105,17 @@ class DummyPublisher : public rclcpp::Node {
               ? static_cast<int>(pub_->get_subscription_count())
               : expected_consumers_;
 
-      bool ok = helper_->finalize_and_fill(
-          *frame, msg.seq_id, expected_count, shm_owner_, msg.width, msg.height,
-          msg.channels, msg.layout, msg.format, msg);
+      sample_nodes::GpuBufferPublisherHelper::PublishParams params;
+      params.seq_id = msg.seq_id;
+      params.expected_consumers = expected_count;
+      params.shm_owner = shm_owner_;
+      params.width = msg.width;
+      params.height = msg.height;
+      params.channels = msg.channels;
+      params.layout = msg.layout;
+      params.format = msg.format;
+
+      bool ok = helper_->finalize_and_fill(*frame, params, msg);
       if (!ok) {
         RCLCPP_WARN_THROTTLE(
             this->get_logger(), *this->get_clock(), 5000,

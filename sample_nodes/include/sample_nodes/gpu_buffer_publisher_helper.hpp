@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <string_view>
 
 #include "ros2_cuda_ipc_core/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/lease_manager.hpp"
@@ -23,6 +22,17 @@ class GpuBufferPublisherHelper {
     uint64_t pitch_bytes{0};
   };
 
+  struct PublishParams {
+    uint64_t seq_id{0};
+    int expected_consumers{0};
+    std::string shm_owner{};
+    uint32_t width{0};
+    uint32_t height{0};
+    uint32_t channels{0};
+    uint8_t layout{0};
+    uint8_t format{0};
+  };
+
   GpuBufferPublisherHelper(ros2_cuda_ipc_core::GpuBufferPool& pool,
                            ros2_cuda_ipc_core::LeaseManager* lease_mgr,
                            void* producer_stream);
@@ -33,10 +43,7 @@ class GpuBufferPublisherHelper {
 
   // Fills the message fields, exports IPC handles, records the ready event and
   // optionally starts a lease. Returns true if plane[0] was populated.
-  bool finalize_and_fill(const Frame& f, uint64_t seq_id,
-                         int expected_consumers, std::string_view shm_owner,
-                         uint32_t width, uint32_t height, uint32_t channels,
-                         uint8_t layout, uint8_t format,
+  bool finalize_and_fill(const Frame& f, const PublishParams& params,
                          ros2_cuda_ipc_msgs::msg::GpuBuffer& out);
 
  private:
