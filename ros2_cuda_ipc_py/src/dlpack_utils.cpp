@@ -138,9 +138,7 @@ void from_dlpack(std::uintptr_t dst_ptr, py::capsule cap) {
                              cudaGetErrorString(err));
   }
   PyCapsule_SetName(cap.ptr(), "used_dltensor");
-  if (managed->deleter) {
-    managed->deleter(managed);
-  }
+  // Do not call the deleter here; let the capsule destructor handle cleanup.
 }
 
 }  // namespace
