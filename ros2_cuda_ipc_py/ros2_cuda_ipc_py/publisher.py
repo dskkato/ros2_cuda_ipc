@@ -39,9 +39,9 @@ class GpuBufferPublisher(Node):
             if request.pool_slot_id != self._held_slot or request.seq_id != self._held_seq:
                 response.ok = False
                 self.get_logger().warn(
-                    'Release mismatch: req(slot=%u, seq=%u) vs held(slot=%s, seq=%u)',
+                    'Release mismatch: req(slot=%u, seq=%u) vs held(slot=%u, seq=%u)',
                     request.pool_slot_id, request.seq_id,
-                    str(self._held_slot), self._held_seq)
+                    self._held_slot, self._held_seq)
                 return response
             ok = self._pool.release(self._held_slot)
             response.ok = bool(ok)
