@@ -89,7 +89,8 @@ class DummyPublisher : public rclcpp::Node {
     msg.stamp = this->now();
     msg.frame_id = "frame";
 
-    auto frame = helper_->borrow_frame(msg.width, msg.height, msg.channels);
+    auto frame = helper_->borrow_frame(msg.width, msg.height, msg.channels,
+                                       /*blocking=*/true);
     if (frame.has_value()) {
       // Fill device buffer with a changing pattern
       const uint64_t size_bytes = frame->size_bytes;

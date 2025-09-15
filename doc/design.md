@@ -1,4 +1,4 @@
-# ROS 2 CUDA IPC Zero‑Copy Transport – Design Doc (v1)
+#ROS 2 CUDA IPC Zero‑Copy Transport – Design Doc(v1)
 
 **Author:** dskkato
 **Date:** 2025‑09‑13
@@ -115,11 +115,11 @@ string  shm_name       // 任意：共有制御ブロック方式を使う場合
 
 ```c++
 struct PoolOptions {
-  uint32_t pool_size = 16;               // スロット数
-  size_t   max_bytes_per_plane = 16<<20; // 例: 16 MiB
-  uint32_t max_planes = 2;               // NV12想定
+  uint32_t pool_size = 16;                // スロット数
+  size_t max_bytes_per_plane = 16 << 20;  // 例: 16 MiB
+  uint32_t max_planes = 2;                // NV12想定
   std::chrono::milliseconds lease_timeout{30};
-  cudaStream_t producer_stream = 0;      // 省略可
+  cudaStream_t producer_stream = 0;  // 省略可
 };
 ```
 
@@ -137,7 +137,7 @@ enum {FREE, IN_USE} + deadline + last_seq_id
 
 ### 5.3 Lifecycle
 
-1. `borrow()` で空きスロット取得
+1. `borrow(blocking)` で空きスロット取得
 2. CPU→GPU転送/色変換/前処理（producer stream）
 3. `cudaEventRecord(ready_evt)`
 4. `make_message()` で `GpuBuffer` 生成・Publish
@@ -198,25 +198,26 @@ enum {FREE, IN_USE} + deadline + last_seq_id
 ```c++
 // Publisher side
 class GpuBufferPool {
-public:
-  explicit GpuBufferPool(const PoolOptions&);
+ public:
+  explicit GpuBufferPool(const PoolOptions &);
   BorrowedSlot borrow();
-  GpuBufferMsg make_message(const BorrowedSlot&, const FrameMeta&);
-  void on_release(uint64_t seq_id, uint32_t slot_id, std::string_view consumer_id);
+  GpuBufferMsg make_message(const BorrowedSlot &, const FrameMeta &);
+  void on_release(uint64_t seq_id, uint32_t slot_id,
+                  std::string_view consumer_id);
 };
 
 // Subscriber side
 class GpuBufferMapper {
-public:
-  OpenedBuffer open(const GpuBufferMsg& msg);            // cached
-  void wait_ready(const OpenedBuffer& buf, cudaStream_t user_stream);
-  void release(const GpuBufferMsg& msg, std::string_view consumer_id);
+ public:
+  OpenedBuffer open(const GpuBufferMsg &msg);  // cached
+  void wait_ready(const OpenedBuffer &buf, cudaStream_t user_stream);
+  void release(const GpuBufferMsg &msg, std::string_view consumer_id);
 };
 ```
 
 ### Python (pybind11)
 
-* `pool = GpuBufferPool(opts)` / `slot = pool.borrow()`
+* `pool = GpuBufferPool(opts)` / `slot = pool.borrow(true)`
 * `mapper = GpuBufferMapper()` / `buf = mapper.open(msg)` / `mapper.wait_ready(buf, stream)`
 * DLPack: `to_torch(buf, shape, dtype, layout)` / `to_cupy(...)`
 
@@ -354,7 +355,7 @@ ros2_cuda_ipc:
 ### 22.1 Minimal Pseudocode – Publisher
 
 ```cpp
-auto slot = pool.borrow();
+auto slot = pool.borrow(true);
 // memcpyAsync host_yuv → slot.dev_ptrs[0/1]
 launch_yuv2bgr_kernel(slot, ...);
 cudaEventRecord(slot.ready_evt, producer_stream);
@@ -362,15 +363,14 @@ auto msg = pool.make_message(slot, meta);
 pub->publish(msg);
 ```
 
-### 22.2 Minimal Pseudocode – Subscriber
+    ## #22.2 Minimal Pseudocode – Subscriber
 
-```cpp
-auto buf = mapper.open(msg);
+```cpp auto buf = mapper.open(msg);
 mapper.wait_ready(buf, my_stream);
 // use buf.dev_ptrs[...] as input (zero-copy)
 mapper.release(msg, consumer_id);
 ```
 
----
+    -- -
 
-**End of Document**
+    **End of Document **

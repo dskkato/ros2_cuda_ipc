@@ -1,6 +1,7 @@
 #ifndef ROS2_CUDA_IPC_CORE_GPU_BUFFER_POOL_HPP_
 #define ROS2_CUDA_IPC_CORE_GPU_BUFFER_POOL_HPP_
 
+#include <condition_variable>
 #include <cstddef>
 #include <mutex>
 #include <optional>
@@ -30,7 +31,12 @@ class GpuBufferPool {
   // Options-based constructor for future extensibility.
   explicit GpuBufferPool(const PoolOptions& opts);
   ~GpuBufferPool();
-  std::optional<std::size_t> borrow();
+  // Borrows a free slot. If blocking is true, waits until a slot becomes
+  // available. When blocking is false, returns std::nullopt immediately if the
+  // pool is exhausted.
+  std::optional<std::size_t> borrow(bool blocking = false);
+  // Expands the pool by the given number of slots. Returns true on success.
+  bool expand_pool(std::size_t new_slots);
   bool release(std::size_t id);
   std::size_t capacity() const { return slots_.size(); }
   // Returns device pointer for a slot (nullptr if not CUDA or invalid).
@@ -55,6 +61,7 @@ class GpuBufferPool {
   bool events_enabled_{false};
   cudaStream_t producer_stream_{nullptr};
   std::mutex mutex_;
+  std::condition_variable cv_;
 };
 
 }  // namespace ros2_cuda_ipc_core

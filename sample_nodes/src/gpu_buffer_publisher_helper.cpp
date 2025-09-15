@@ -17,8 +17,8 @@ GpuBufferPublisherHelper::GpuBufferPublisherHelper(
 
 std::optional<GpuBufferPublisherHelper::Frame>
 GpuBufferPublisherHelper::borrow_frame(uint32_t width, uint32_t height,
-                                       uint32_t channels) {
-  auto slot = pool_.borrow();
+                                       uint32_t channels, bool blocking) {
+  auto slot = pool_.borrow(blocking);
   if (!slot.has_value()) return std::nullopt;
   Frame f;
   f.slot_id = static_cast<uint32_t>(*slot);
