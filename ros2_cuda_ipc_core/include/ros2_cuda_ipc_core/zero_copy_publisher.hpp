@@ -21,7 +21,7 @@ class ZeroCopyPublisher {
   };
 
   ZeroCopyPublisher(rclcpp::Node& node, const std::string& topic,
-                    Options options = {});
+                    Options options = Options());
   ~ZeroCopyPublisher();
 
   using FillCallback = std::function<void(void*, uint64_t, cudaStream_t)>;
