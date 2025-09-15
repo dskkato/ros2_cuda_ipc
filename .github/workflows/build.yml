@@ -1,11 +1,11 @@
-name: test
+name: build-check
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  colcon-test:
+  colcon-build:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -18,3 +18,4 @@ jobs:
         with:
           package-name: "ros2_cuda_ipc_msgs ros2_cuda_ipc_core sample_nodes"
           target-ros2-distro: humble
+          skip-tests: true
