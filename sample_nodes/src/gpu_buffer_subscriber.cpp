@@ -5,7 +5,6 @@
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 #include "ros2_cuda_ipc_core/gpu_buffer_mapper.hpp"
 #include "ros2_cuda_ipc_core/scoped_mapped_frame.hpp"
-#include "ros2_cuda_ipc_core/shm_release.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
 
 class DummySubscriber : public rclcpp::Node {

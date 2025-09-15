@@ -1,6 +1,4 @@
-#include <cuda_runtime_api.h>
-
-#include "ros2_cuda_ipc_core/cuda_support.hpp"
+#include "sample_nodes/sample_cuda_utils.hpp"
 
 namespace sample_nodes {
 
