@@ -1,6 +1,6 @@
 #include "ros2_cuda_ipc_core/gpu_buffer_mapper.hpp"
 
-#include <stdexcept>
+#include <exception>
 
 namespace ros2_cuda_ipc_core {
 

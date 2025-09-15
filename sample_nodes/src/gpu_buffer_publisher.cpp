@@ -4,14 +4,11 @@
 #include <cstring>
 #include <optional>
 #include <rclcpp/rclcpp.hpp>
-#include <unordered_map>
-#include <unordered_set>
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 #include "ros2_cuda_ipc_core/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/lease_manager.hpp"
 #include "ros2_cuda_ipc_core/shm_release.hpp"
-#include "ros2_cuda_ipc_core/version.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
 #include "sample_nodes/gpu_buffer_publisher_helper.hpp"
 #include "sample_nodes/sample_cuda_utils.hpp"

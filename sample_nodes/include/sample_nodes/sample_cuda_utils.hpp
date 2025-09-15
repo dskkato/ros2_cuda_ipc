@@ -2,9 +2,9 @@
 #ifndef SAMPLE_NODES_SAMPLE_CUDA_UTILS_HPP_
 #define SAMPLE_NODES_SAMPLE_CUDA_UTILS_HPP_
 
-#include <cstddef>
+#include <cuda_runtime_api.h>
 
-#include "ros2_cuda_ipc_core/cuda_support.hpp"
+#include <cstddef>
 
 namespace sample_nodes {
 

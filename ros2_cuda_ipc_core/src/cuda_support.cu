@@ -1,9 +1,6 @@
-#include <cuda_runtime_api.h>
-
 #include <cstdio>
 #include <cstring>
 #include <experimental/source_location>
-#include <memory>
 #include <stdexcept>
 #include <string>
 
