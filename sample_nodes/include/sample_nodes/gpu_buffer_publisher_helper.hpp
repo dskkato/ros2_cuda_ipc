@@ -28,8 +28,9 @@ class GpuBufferPublisherHelper {
                            cudaStream_t producer_stream);
 
   // Attempts to borrow a slot and returns basic info for filling GPU memory.
+  // When blocking is true, waits until a slot is available.
   std::optional<Frame> borrow_frame(uint32_t width, uint32_t height,
-                                    uint32_t channels);
+                                    uint32_t channels, bool blocking = false);
 
   // Fills remaining message fields, exports IPC handles, records the ready
   // event and optionally starts a lease. Returns true if plane[0] was

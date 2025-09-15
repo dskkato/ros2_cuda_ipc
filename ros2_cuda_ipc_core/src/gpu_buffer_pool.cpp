@@ -65,21 +65,92 @@ GpuBufferPool::~GpuBufferPool() {
   }
 }
 
-std::optional<std::size_t> GpuBufferPool::borrow() {
+std::optional<std::size_t> GpuBufferPool::borrow(bool blocking) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  auto find_slot = [&]() -> std::optional<std::size_t> {
+    for (std::size_t i = 0; i < slots_.size(); ++i) {
+      if (!slots_[i].in_use) {
+        slots_[i].in_use = true;
+        return i;
+      }
+    }
+    return std::nullopt;
+  };
+
+  while (true) {
+    auto slot = find_slot();
+    if (slot.has_value() || !blocking) {
+      return slot;
+    }
+    cv_.wait(lock);
+  }
+}
+
+bool GpuBufferPool::expand_pool(std::size_t new_slots) {
+  if (new_slots == 0) return true;
+  const bool needs_cuda = (bytes_per_slot_ > 0) || events_enabled_;
+  if (needs_cuda && !cuda_is_available()) return false;
+
   std::lock_guard<std::mutex> lock(mutex_);
-  for (std::size_t i = 0; i < slots_.size(); ++i) {
-    if (!slots_[i].in_use) {
-      slots_[i].in_use = true;
-      return i;
+  const std::size_t old_size = slots_.size();
+  slots_.resize(old_size + new_slots);
+
+  // Resize vectors for CUDA resources if needed
+  if (bytes_per_slot_ > 0) {
+    device_ptrs_.resize(old_size + new_slots, nullptr);
+  }
+  if (events_enabled_) {
+    events_.resize(old_size + new_slots, nullptr);
+  }
+
+  // Allocate CUDA resources for new slots
+  if (bytes_per_slot_ > 0) {
+    for (std::size_t i = old_size; i < slots_.size(); ++i) {
+      void* p = cuda_allocate(bytes_per_slot_);
+      if (!p) {
+        // rollback
+        for (std::size_t j = old_size; j < i; ++j) {
+          if (device_ptrs_[j]) cuda_free(device_ptrs_[j]);
+          if (events_enabled_ && events_[j]) cuda_event_destroy(events_[j]);
+        }
+        slots_.resize(old_size);
+        device_ptrs_.resize(old_size);
+        if (events_enabled_) events_.resize(old_size);
+        return false;
+      }
+      device_ptrs_[i] = p;
     }
   }
-  return std::nullopt;
+  if (events_enabled_) {
+    for (std::size_t i = old_size; i < slots_.size(); ++i) {
+      cudaEvent_t e = cuda_event_create();
+      if (!e) {
+        for (std::size_t j = old_size; j < i; ++j) {
+          if (events_[j]) cuda_event_destroy(events_[j]);
+        }
+        if (bytes_per_slot_ > 0) {
+          for (std::size_t j = old_size; j < i; ++j) {
+            if (device_ptrs_[j]) cuda_free(device_ptrs_[j]);
+          }
+          device_ptrs_.resize(old_size);
+        }
+        slots_.resize(old_size);
+        events_.resize(old_size);
+        return false;
+      }
+      events_[i] = e;
+    }
+  }
+
+  cv_.notify_all();
+  return true;
 }
 
 bool GpuBufferPool::release(std::size_t id) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (id < slots_.size() && slots_[id].in_use) {
     slots_[id].in_use = false;
+    cv_.notify_one();
     return true;
   }
   return false;
