@@ -20,8 +20,8 @@ void* GpuBufferMapper::open_memory(uint32_t slot_id,
   return e.mem;
 }
 
-void* GpuBufferMapper::open_event(uint32_t slot_id,
-                                  const CudaIpcEventHandle& evt_handle) {
+cudaEvent_t GpuBufferMapper::open_event(uint32_t slot_id,
+                                        const CudaIpcEventHandle& evt_handle) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto& e = cache_[slot_id];
   if (!e.evt) {
@@ -41,18 +41,18 @@ void* GpuBufferMapper::get_memory(uint32_t slot_id) const {
   return it->second.mem;
 }
 
-void* GpuBufferMapper::get_event(uint32_t slot_id) const {
+cudaEvent_t GpuBufferMapper::get_event(uint32_t slot_id) const {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = cache_.find(slot_id);
   if (it == cache_.end()) return nullptr;
   return it->second.evt;
 }
 
-bool GpuBufferMapper::wait_ready(uint32_t slot_id, void* stream) const {
+bool GpuBufferMapper::wait_ready(uint32_t slot_id, cudaStream_t stream) const {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = cache_.find(slot_id);
   if (it == cache_.end()) return false;
-  void* evt = it->second.evt;
+  cudaEvent_t evt = it->second.evt;
   if (!evt) return false;
   return cuda_stream_wait_event(stream, evt);
 }

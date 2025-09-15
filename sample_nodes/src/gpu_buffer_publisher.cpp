@@ -133,7 +133,7 @@ class DummyPublisher : public rclcpp::Node {
   int lease_timeout_ms_{3000};
   int expected_consumers_{-1};
   uint64_t count_{0};
-  void* producer_stream_{nullptr};
+  cudaStream_t producer_stream_{nullptr};
   std::string shm_owner_;
 };
 

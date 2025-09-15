@@ -5,7 +5,7 @@ namespace ros2_cuda_ipc_core {
 ScopedMappedFrame::ScopedMappedFrame(GpuBufferMapper& mapper, uint32_t slot_id,
                                      const CudaIpcMemHandle* mem_handle,
                                      const CudaIpcEventHandle* evt_handle,
-                                     void* stream, std::string shm_name,
+                                     cudaStream_t stream, std::string shm_name,
                                      uint64_t seq, bool sync_on_dtor)
     : mapper_(mapper),
       slot_(slot_id),
