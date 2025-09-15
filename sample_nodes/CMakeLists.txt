@@ -20,8 +20,10 @@ set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 add_library(${SAMPLE_CUDA_LIB} STATIC src/sample_cuda_utils.cu)
 ament_target_dependencies(${SAMPLE_CUDA_LIB} ros2_cuda_ipc_core)
 
-target_link_libraries(gpu_buffer_publisher ${SAMPLE_CUDA_LIB} sample_nodes_helpers)
-target_include_directories(gpu_buffer_publisher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+if(TARGET gpu_buffer_publisher)
+  target_link_libraries(gpu_buffer_publisher ${SAMPLE_CUDA_LIB} sample_nodes_helpers)
+  target_include_directories(gpu_buffer_publisher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+endif()
 
 ament_auto_package()
 
