@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include <string>
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
 
@@ -41,6 +42,24 @@ TEST(CudaSupport, NullArgumentValidation) {
   // Handle struct sizes are ABI-stable wrappers (64 bytes)
   EXPECT_EQ(sizeof(CudaIpcMemHandle), static_cast<size_t>(64));
   EXPECT_EQ(sizeof(CudaIpcEventHandle), static_cast<size_t>(64));
+}
+
+TEST(CudaSupport, ErrorMessageIncludesCudaString) {
+  if (!cuda_is_available()) {
+    GTEST_SKIP() << "CUDA device not available";
+  }
+
+  const cudaEvent_t bad_evt = reinterpret_cast<cudaEvent_t>(1);
+  auto err = cudaEventDestroy(bad_evt);
+  const char* err_str = cudaGetErrorString(err);
+  EXPECT_NE(err, cudaSuccess);
+
+  try {
+    cuda_event_destroy(bad_evt);
+    FAIL() << "Expected std::runtime_error";
+  } catch (const std::runtime_error& e) {
+    EXPECT_NE(std::string::npos, std::string(e.what()).find(err_str));
+  }
 }
 
 TEST(CudaSupport, AllocateAndFree) {

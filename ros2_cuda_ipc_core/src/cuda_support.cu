@@ -12,10 +12,11 @@ inline void check_cuda_error(
     cudaError_t err, const std::experimental::source_location& location =
                          std::experimental::source_location::current()) {
   if (err != cudaSuccess) {
+    const char* err_str = cudaGetErrorString(err);
     std::fprintf(stderr, "CUDA error at %s:%u in %s(): %s\n",
                  location.file_name(), location.line(),
-                 location.function_name(), cudaGetErrorString(err));
-    throw std::runtime_error("CUDA error");
+                 location.function_name(), err_str);
+    throw std::runtime_error(std::string("CUDA error: ") + err_str);
   }
 }
 
