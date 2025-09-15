@@ -31,12 +31,11 @@ class GpuBufferPublisherHelper {
   std::optional<Frame> borrow_frame(uint32_t width, uint32_t height,
                                     uint32_t channels);
 
-  // Fills the message fields, exports IPC handles, records the ready event and
-  // optionally starts a lease. Returns true if plane[0] was populated.
-  bool finalize_and_fill(const Frame& f, uint64_t seq_id,
-                         int expected_consumers, std::string_view shm_owner,
-                         uint32_t width, uint32_t height, uint32_t channels,
-                         uint8_t layout, uint8_t format,
+  // Fills remaining message fields, exports IPC handles, records the ready
+  // event and optionally starts a lease. Returns true if plane[0] was
+  // populated.
+  bool finalize_and_fill(const Frame& f, int expected_consumers,
+                         std::string_view shm_owner,
                          ros2_cuda_ipc_msgs::msg::GpuBuffer& out);
 
  private:

@@ -105,9 +105,8 @@ class DummyPublisher : public rclcpp::Node {
               ? static_cast<int>(pub_->get_subscription_count())
               : expected_consumers_;
 
-      bool ok = helper_->finalize_and_fill(
-          *frame, msg.seq_id, expected_count, shm_owner_, msg.width, msg.height,
-          msg.channels, msg.layout, msg.format, msg);
+      bool ok =
+          helper_->finalize_and_fill(*frame, expected_count, shm_owner_, msg);
       if (!ok) {
         RCLCPP_WARN_THROTTLE(
             this->get_logger(), *this->get_clock(), 5000,
