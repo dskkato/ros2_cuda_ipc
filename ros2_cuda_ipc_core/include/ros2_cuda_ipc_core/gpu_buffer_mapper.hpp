@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <mutex>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
@@ -33,6 +35,12 @@ class GpuBufferMapper {
   // event not cached or wait fails.
   bool wait_ready(uint32_t slot_id, cudaStream_t stream) const;
 
+  // Validates ABI version and device UUID for the slot. If a mismatch is
+  // detected compared to cached values, the slot is closed. Returns true when
+  // handles remain valid, false when they were reset due to mismatch.
+  bool validate_handles(uint32_t slot_id, uint32_t abi_version,
+                        std::string_view device_uuid);
+
   // Closes and removes cached resources for a slot.
   void close_slot(uint32_t slot_id);
 
@@ -43,7 +51,12 @@ class GpuBufferMapper {
   struct Entry {
     void* mem{nullptr};
     cudaEvent_t evt{nullptr};
+    uint32_t abi_version{0};
+    std::string device_uuid;
   };
+
+  // Internal helper expecting mutex_ to be locked.
+  void close_slot_locked(uint32_t slot_id);
 
   mutable std::mutex mutex_;
   std::unordered_map<uint32_t, Entry> cache_;

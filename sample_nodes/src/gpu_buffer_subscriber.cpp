@@ -18,22 +18,12 @@ class DummySubscriber : public rclcpp::Node {
     sub_ = this->create_subscription<ros2_cuda_ipc_msgs::msg::GpuBuffer>(
         "gpu_buffer", 10,
         [this](const ros2_cuda_ipc_msgs::msg::GpuBuffer& msg) {
-          // Detect publisher restart or device mismatch and reset mapper
-          if (prev_abi_version_ != 0 && prev_abi_version_ != msg.abi_version) {
-            RCLCPP_WARN(
-                this->get_logger(),
-                "ABI version changed: %u -> %u. Resetting mapper cache.",
-                prev_abi_version_, msg.abi_version);
-            mapper_.reset();
-          }
-          if (!prev_device_id_.empty() && prev_device_id_ != msg.device_uuid) {
+          if (!mapper_.validate_handles(msg.pool_slot_id, msg.abi_version,
+                                        msg.device_uuid)) {
             RCLCPP_WARN(this->get_logger(),
-                        "Device id changed: %s -> %s. Resetting mapper cache.",
-                        prev_device_id_.c_str(), msg.device_uuid.c_str());
-            mapper_.reset();
+                        "Invalidated cached handles for slot %u",
+                        msg.pool_slot_id);
           }
-          prev_abi_version_ = msg.abi_version;
-          prev_device_id_ = msg.device_uuid;
           RCLCPP_INFO(this->get_logger(), "Received seq_id %lu", msg.seq_id);
           auto t0 = std::chrono::steady_clock::now();
           // RAII frame: opens event+mem, waits on stream, decrements SHM on
@@ -66,8 +56,6 @@ class DummySubscriber : public rclcpp::Node {
   rclcpp::Subscription<ros2_cuda_ipc_msgs::msg::GpuBuffer>::SharedPtr sub_;
   cudaStream_t stream_{nullptr};
   ros2_cuda_ipc_core::GpuBufferMapper mapper_;
-  uint32_t prev_abi_version_{0};
-  std::string prev_device_id_;
 };
 
 int main(int argc, char** argv) {

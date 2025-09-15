@@ -57,8 +57,38 @@ bool GpuBufferMapper::wait_ready(uint32_t slot_id, cudaStream_t stream) const {
   return cuda_stream_wait_event(stream, evt);
 }
 
+bool GpuBufferMapper::validate_handles(uint32_t slot_id, uint32_t abi_version,
+                                       std::string_view device_uuid) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = cache_.find(slot_id);
+  if (it == cache_.end()) {
+    Entry e;
+    e.abi_version = abi_version;
+    e.device_uuid = std::string(device_uuid);
+    cache_[slot_id] = std::move(e);
+    return true;
+  }
+  Entry& e = it->second;
+  if (e.abi_version != 0 &&
+      (e.abi_version != abi_version || e.device_uuid != device_uuid)) {
+    close_slot_locked(slot_id);
+    Entry new_e;
+    new_e.abi_version = abi_version;
+    new_e.device_uuid = std::string(device_uuid);
+    cache_[slot_id] = std::move(new_e);
+    return false;
+  }
+  e.abi_version = abi_version;
+  e.device_uuid = std::string(device_uuid);
+  return true;
+}
+
 void GpuBufferMapper::close_slot(uint32_t slot_id) {
   std::lock_guard<std::mutex> lock(mutex_);
+  close_slot_locked(slot_id);
+}
+
+void GpuBufferMapper::close_slot_locked(uint32_t slot_id) {
   auto it = cache_.find(slot_id);
   if (it == cache_.end()) return;
   if (it->second.mem) {
