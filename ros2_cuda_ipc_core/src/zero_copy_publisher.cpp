@@ -12,10 +12,10 @@
 namespace ros2_cuda_ipc_core {
 
 ZeroCopyPublisher::ZeroCopyPublisher(rclcpp::Node& node,
-                                     const std::string& topic,
-                                     const Options& options)
+                                     const std::string& topic, Options options)
     : pub_(
           node.create_publisher<ros2_cuda_ipc_msgs::msg::GpuBuffer>(topic, 10)),
+      clock_(node.get_clock()),
       pool_(options.pool_options) {
   if (cuda_is_available()) {
     producer_stream_ = cuda_stream_create();
@@ -53,7 +53,7 @@ bool ZeroCopyPublisher::publish(ros2_cuda_ipc_msgs::msg::GpuBuffer& msg,
     (void)lease_mgr_->tick();
   }
   msg.seq_id = seq_++;
-  msg.stamp = pub_->get_clock()->now();
+  msg.stamp = clock_->now();
 
   auto slot = pool_.borrow(true);
   if (!slot.has_value()) {

@@ -21,7 +21,7 @@ class ZeroCopyPublisher {
   };
 
   ZeroCopyPublisher(rclcpp::Node& node, const std::string& topic,
-                    const Options& options = Options());
+                    Options options = {});
   ~ZeroCopyPublisher();
 
   using FillCallback = std::function<void(void*, uint64_t, cudaStream_t)>;
@@ -32,6 +32,7 @@ class ZeroCopyPublisher {
 
  private:
   rclcpp::Publisher<ros2_cuda_ipc_msgs::msg::GpuBuffer>::SharedPtr pub_;
+  rclcpp::Clock::SharedPtr clock_;
   GpuBufferPool pool_;
   std::unique_ptr<LeaseManager> lease_mgr_;
   cudaStream_t producer_stream_{nullptr};
