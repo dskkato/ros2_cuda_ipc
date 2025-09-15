@@ -93,7 +93,7 @@ ros2 run sample_nodes gpu_buffer_subscriber
     - 初期化: `helper(pool, &lease, producer_stream)`
     - 借用: `auto f = helper.borrow_frame(width, height, channels)`
     - 書込: `cuda_fill_u8(f.device_ptr, ...)` など
-    - 仕上げ: `helper.finalize_and_fill(f, seq, expected_consumers, owner, w, h, c, layout, format, msg)`
+    - 仕上げ: `helper.finalize_and_fill(f, expected_consumers, owner, msg)`
 
 サンプル Publisher は既に helper を利用する形に差し替え済みです。Subscriber は ScopedMappedFrame を用いて wait と SHM 解放を簡素化しています。
 

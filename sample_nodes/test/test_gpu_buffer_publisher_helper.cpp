@@ -20,12 +20,14 @@ TEST(GpuBufferPublisherHelperTest, MetadataOnlyWhenNoCudaMem) {
   ASSERT_TRUE(f.has_value());
 
   ros2_cuda_ipc_msgs::msg::GpuBuffer msg;
-  bool ok = helper.finalize_and_fill(
-      *f, /*seq=*/1, /*expected=*/0,
-      /*owner=*/"test_owner",
-      /*w=*/16, /*h=*/8, /*c=*/3,
-      /*layout=*/ros2_cuda_ipc_msgs::msg::GpuBuffer::LAYOUT_LINEAR,
-      /*format=*/ros2_cuda_ipc_msgs::msg::GpuBuffer::FORMAT_BGR8, msg);
+  msg.seq_id = 1;
+  msg.layout = ros2_cuda_ipc_msgs::msg::GpuBuffer::LAYOUT_LINEAR;
+  msg.format = ros2_cuda_ipc_msgs::msg::GpuBuffer::FORMAT_BGR8;
+  msg.width = 16;
+  msg.height = 8;
+  msg.channels = 3;
+  bool ok = helper.finalize_and_fill(*f, /*expected=*/0,
+                                     /*owner=*/"test_owner", msg);
   EXPECT_FALSE(ok);
   EXPECT_EQ(msg.plane_count, 0u);
 
@@ -44,12 +46,14 @@ TEST(GpuBufferPublisherHelperTest, KeepsSlotOnLeaseStart) {
   ASSERT_TRUE(f.has_value());
 
   ros2_cuda_ipc_msgs::msg::GpuBuffer msg;
-  bool ok = helper.finalize_and_fill(
-      *f, /*seq=*/2, /*expected=*/2,
-      /*owner=*/"owner",
-      /*w=*/10, /*h=*/10, /*c=*/1,
-      ros2_cuda_ipc_msgs::msg::GpuBuffer::LAYOUT_LINEAR,
-      ros2_cuda_ipc_msgs::msg::GpuBuffer::FORMAT_BGR8, msg);
+  msg.seq_id = 2;
+  msg.layout = ros2_cuda_ipc_msgs::msg::GpuBuffer::LAYOUT_LINEAR;
+  msg.format = ros2_cuda_ipc_msgs::msg::GpuBuffer::FORMAT_BGR8;
+  msg.width = 10;
+  msg.height = 10;
+  msg.channels = 1;
+  bool ok = helper.finalize_and_fill(*f, /*expected=*/2,
+                                     /*owner=*/"owner", msg);
   // Without CUDA mem, plane cannot be populated
   EXPECT_FALSE(ok);
   EXPECT_EQ(msg.plane_count, 0u);
