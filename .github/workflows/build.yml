@@ -1,18 +1,21 @@
-name: test
+name: build-check
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  colcon-test:
-    runs-on: ubuntu-latest
+  colcon-build:
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: ros-tooling/setup-ros@v0.7
         with:
           required-ros-distributions: humble
+      - name: Install CUDA toolkit
+        run: sudo apt-get update && sudo apt-get install -y nvidia-cuda-toolkit
       - uses: ros-tooling/action-ros-ci@v0.3
         with:
-          package-name: sample_nodes_py
+          package-name: "ros2_cuda_ipc_msgs ros2_cuda_ipc_core sample_nodes"
           target-ros2-distro: humble
+          skip-tests: true
