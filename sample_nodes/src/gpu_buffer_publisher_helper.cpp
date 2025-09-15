@@ -29,20 +29,12 @@ GpuBufferPublisherHelper::borrow_frame(uint32_t width, uint32_t height,
 }
 
 bool GpuBufferPublisherHelper::finalize_and_fill(
-    const Frame& f, uint64_t seq_id, int expected_consumers,
-    std::string_view shm_owner, uint32_t width, uint32_t height,
-    uint32_t channels, uint8_t layout, uint8_t format,
+    const Frame& f, int expected_consumers, std::string_view shm_owner,
     ros2_cuda_ipc_msgs::msg::GpuBuffer& out) {
   out.abi_version = ros2_cuda_ipc_core::kAbiVersion;
   auto id = ros2_cuda_ipc_core::cuda_get_device_id_string();
   out.device_uuid = id.empty() ? std::string("unknown") : id;
-  out.seq_id = seq_id;
   out.pool_slot_id = f.slot_id;
-  out.layout = layout;
-  out.format = format;
-  out.width = width;
-  out.height = height;
-  out.channels = channels;
   out.shm_name.clear();
 
   ros2_cuda_ipc_core::CudaIpcMemHandle mh{};
@@ -72,7 +64,7 @@ bool GpuBufferPublisherHelper::finalize_and_fill(
   if (expected_consumers > 0 && lease_mgr_) {
     lease_mgr_->set_owner(std::string(shm_owner));
     auto created =
-        lease_mgr_->start_lease(f.slot_id, seq_id, expected_consumers);
+        lease_mgr_->start_lease(f.slot_id, out.seq_id, expected_consumers);
     if (created) {
       out.shm_name = *created;
     }
