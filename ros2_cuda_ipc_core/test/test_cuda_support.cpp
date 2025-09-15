@@ -30,8 +30,7 @@ TEST(CudaSupport, NullArgumentValidation) {
 
   CudaIpcEventHandle evt{};
   EXPECT_FALSE(cuda_event_get_ipc_handle(nullptr, &evt));
-  EXPECT_FALSE(
-      cuda_event_get_ipc_handle(reinterpret_cast<void*>(0x1), nullptr));
+  EXPECT_FALSE(cuda_event_get_ipc_handle(cudaEvent_t{}, nullptr));
   EXPECT_FALSE(cuda_event_query(nullptr));
   EXPECT_FALSE(cuda_event_record_on_stream(nullptr, nullptr));
 
