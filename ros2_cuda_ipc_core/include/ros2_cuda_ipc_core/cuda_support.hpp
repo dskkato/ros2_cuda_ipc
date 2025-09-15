@@ -18,10 +18,6 @@ struct CudaIpcEventHandle {
   unsigned char reserved[64];
 };
 
-// Aliases for CUDA stream and event handle types.
-using cudaStream_t = ::cudaStream_t;
-using cudaEvent_t = ::cudaEvent_t;
-
 // Returns true if CUDA runtime is available (device count > 0)
 bool cuda_is_available();
 

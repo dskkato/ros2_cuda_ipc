@@ -15,7 +15,7 @@ namespace sample_nodes {
 // - stream: CUDA stream handle (nullptr for default stream)
 // Returns true on success.
 bool cuda_fill_u8(void* device_ptr, unsigned char value, std::size_t size_bytes,
-                  ros2_cuda_ipc_core::cudaStream_t stream);
+                  cudaStream_t stream);
 
 }  // namespace sample_nodes
 
