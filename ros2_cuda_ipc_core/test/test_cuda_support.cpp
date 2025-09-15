@@ -58,7 +58,7 @@ TEST(CudaSupport, ErrorMessageIncludesCudaString) {
     cuda_event_destroy(bad_evt);
     FAIL() << "Expected std::runtime_error";
   } catch (const std::runtime_error& e) {
-    EXPECT_NE(std::string::npos, std::string(e.what()).find(err_str));
+    EXPECT_NE(std::string(e.what()).find(err_str), std::string::npos);
   }
 }
 
