@@ -32,7 +32,7 @@ GpuBufferPool::GpuBufferPool(const PoolOptions& opts)
 
   if (ok && opts.events_enabled) {
     for (std::size_t i = 0; i < opts.pool_size; ++i) {
-      void* e = cuda_event_create();
+      cudaEvent_t e = cuda_event_create();
       if (!e) {
         ok = false;
         break;
@@ -42,7 +42,7 @@ GpuBufferPool::GpuBufferPool(const PoolOptions& opts)
   }
 
   if (!ok) {
-    for (void* e : events_) {
+    for (cudaEvent_t e : events_) {
       if (e) cuda_event_destroy(e);
     }
     for (void* p : device_ptrs_) {
@@ -57,7 +57,7 @@ GpuBufferPool::GpuBufferPool(const PoolOptions& opts)
 }
 
 GpuBufferPool::~GpuBufferPool() {
-  for (void* e : events_) {
+  for (cudaEvent_t e : events_) {
     if (e) cuda_event_destroy(e);
   }
   for (void* p : device_ptrs_) {
@@ -101,7 +101,7 @@ bool GpuBufferPool::ipc_handle(std::size_t id,
 bool GpuBufferPool::record_ready(std::size_t id) {
   if (!events_enabled_) return false;
   if (id >= events_.size()) return false;
-  void* evt = events_[id];
+  cudaEvent_t evt = events_[id];
   if (!evt) return false;
   if (producer_stream_) {
     return cuda_event_record_on_stream(evt, producer_stream_);
@@ -113,15 +113,16 @@ bool GpuBufferPool::ipc_event_handle(std::size_t id,
                                      CudaIpcEventHandle& out_handle) const {
   if (!events_enabled_) return false;
   if (id >= events_.size()) return false;
-  void* evt = events_[id];
+  cudaEvent_t evt = events_[id];
   if (!evt) return false;
   return cuda_event_get_ipc_handle(evt, &out_handle);
 }
 
-bool GpuBufferPool::record_ready_on_stream(std::size_t id, void* stream) {
+bool GpuBufferPool::record_ready_on_stream(std::size_t id,
+                                           cudaStream_t stream) {
   if (!events_enabled_) return false;
   if (id >= events_.size()) return false;
-  void* evt = events_[id];
+  cudaEvent_t evt = events_[id];
   if (!evt) return false;
   return cuda_event_record_on_stream(evt, stream);
 }

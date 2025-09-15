@@ -12,16 +12,13 @@ add_library(sample_nodes_helpers STATIC src/gpu_buffer_publisher_helper.cpp)
 target_include_directories(sample_nodes_helpers PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 ament_target_dependencies(sample_nodes_helpers ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
 
-# Optional CUDA support for demo GPU work in samples
+# Setup CUDA library for GPU utilities
 set(SAMPLE_CUDA_LIB sample_cuda_utils)
 enable_language(CUDA)
 set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 add_library(${SAMPLE_CUDA_LIB} STATIC src/sample_cuda_utils.cu)
-find_package(CUDAToolkit QUIET)
-if(CUDAToolkit_FOUND AND TARGET CUDA::cudart)
-  target_link_libraries(${SAMPLE_CUDA_LIB} CUDA::cudart)
-endif()
+ament_target_dependencies(${SAMPLE_CUDA_LIB} ros2_cuda_ipc_core)
 
 if(TARGET gpu_buffer_publisher)
   target_link_libraries(gpu_buffer_publisher ${SAMPLE_CUDA_LIB} sample_nodes_helpers)

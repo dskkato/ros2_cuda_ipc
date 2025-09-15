@@ -1,6 +1,8 @@
 #ifndef ROS2_CUDA_IPC_CORE_CUDA_SUPPORT_HPP_
 #define ROS2_CUDA_IPC_CORE_CUDA_SUPPORT_HPP_
 
+#include <cuda_runtime_api.h>
+
 #include <cstddef>
 #include <string>
 
@@ -39,35 +41,35 @@ bool cuda_ipc_close_mem_handle(void* device_ptr);
 
 // Creates a CUDA interprocess-capable event. Returns opaque handle or nullptr
 // on failure.
-void* cuda_event_create();
+cudaEvent_t cuda_event_create();
 
 // Destroys a CUDA event previously created or opened. Returns true on success.
-bool cuda_event_destroy(void* evt);
+bool cuda_event_destroy(cudaEvent_t evt);
 
 // Records the event on the default stream (0). Returns true on success.
-bool cuda_event_record(void* evt);
+bool cuda_event_record(cudaEvent_t evt);
 
 // Exports an IPC event handle for a given event. Returns true on success.
-bool cuda_event_get_ipc_handle(void* evt, CudaIpcEventHandle* out_handle);
+bool cuda_event_get_ipc_handle(cudaEvent_t evt, CudaIpcEventHandle* out_handle);
 
 // Opens an IPC event handle in the current process. Returns event or nullptr on
 // failure.
-void* cuda_ipc_open_event_handle(const CudaIpcEventHandle& handle);
+cudaEvent_t cuda_ipc_open_event_handle(const CudaIpcEventHandle& handle);
 
 // Queries event status. Returns true if event has completed (or if
 // unsupported), false if not ready.
-bool cuda_event_query(void* evt);
+bool cuda_event_query(cudaEvent_t evt);
 // Records the event on the specified stream. Returns true on success.
-bool cuda_event_record_on_stream(void* evt, void* stream);
+bool cuda_event_record_on_stream(cudaEvent_t evt, cudaStream_t stream);
 
-// CUDA stream helpers (opaque void* to avoid leaking CUDA headers)
-void* cuda_stream_create();
-bool cuda_stream_destroy(void* stream);
+// CUDA stream helpers
+cudaStream_t cuda_stream_create();
+bool cuda_stream_destroy(cudaStream_t stream);
 // Waits for evt on the given stream. Returns true on success.
-bool cuda_stream_wait_event(void* stream, void* evt);
+bool cuda_stream_wait_event(cudaStream_t stream, cudaEvent_t evt);
 // Optional: synchronize stream (blocks until complete). Returns true on
 // success.
-bool cuda_stream_synchronize(void* stream);
+bool cuda_stream_synchronize(cudaStream_t stream);
 
 // Returns a stable device identifier string for the current device.
 // Prefer UUID when available; otherwise falls back to PCI bus id.

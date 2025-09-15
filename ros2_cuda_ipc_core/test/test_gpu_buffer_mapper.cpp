@@ -11,7 +11,7 @@ TEST(GpuBufferMapperTest, EventOpenCacheAndWait) {
   }
 
   // Create an interprocess-capable event in this process (exporter side)
-  void* exporter_evt = cuda_event_create();
+  cudaEvent_t exporter_evt = cuda_event_create();
   ASSERT_NE(exporter_evt, nullptr);
 
   CudaIpcEventHandle evt_handle{};
@@ -21,19 +21,19 @@ TEST(GpuBufferMapperTest, EventOpenCacheAndWait) {
   const uint32_t slot_id = 3;
 
   // Open the event via IPC (consumer side) and check caching behavior
-  void* opened_evt_1 = mapper.open_event(slot_id, evt_handle);
+  cudaEvent_t opened_evt_1 = mapper.open_event(slot_id, evt_handle);
   if (opened_evt_1 == nullptr) {
     // Some driver/runtime combinations may not permit opening our own IPC
     // event handle within the same process. Treat as an environment skip.
     GTEST_SKIP() << "cudaIpcOpenEventHandle returned nullptr in-process";
   }
 
-  void* opened_evt_2 = mapper.open_event(slot_id, evt_handle);
+  cudaEvent_t opened_evt_2 = mapper.open_event(slot_id, evt_handle);
   EXPECT_EQ(opened_evt_1, opened_evt_2) << "Mapper should cache event per slot";
 
   // Create a stream and wait on the opened event. First record the exporter
   // event so the wait can complete successfully.
-  void* stream = cuda_stream_create();
+  cudaStream_t stream = cuda_stream_create();
   ASSERT_NE(stream, nullptr);
 
   ASSERT_TRUE(cuda_event_record(exporter_evt));

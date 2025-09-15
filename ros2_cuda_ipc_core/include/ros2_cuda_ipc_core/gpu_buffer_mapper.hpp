@@ -22,15 +22,16 @@ class GpuBufferMapper {
 
   // Opens and caches an event for a given slot. Returns event pointer, or
   // nullptr on failure.
-  void* open_event(uint32_t slot_id, const CudaIpcEventHandle& evt_handle);
+  cudaEvent_t open_event(uint32_t slot_id,
+                         const CudaIpcEventHandle& evt_handle);
 
   // Returns cached pointers (nullptr if none).
   void* get_memory(uint32_t slot_id) const;
-  void* get_event(uint32_t slot_id) const;
+  cudaEvent_t get_event(uint32_t slot_id) const;
 
   // Waits on cached event for slot on the provided stream. Returns false if
   // event not cached or wait fails.
-  bool wait_ready(uint32_t slot_id, void* stream) const;
+  bool wait_ready(uint32_t slot_id, cudaStream_t stream) const;
 
   // Closes and removes cached resources for a slot.
   void close_slot(uint32_t slot_id);
@@ -41,7 +42,7 @@ class GpuBufferMapper {
  private:
   struct Entry {
     void* mem{nullptr};
-    void* evt{nullptr};
+    cudaEvent_t evt{nullptr};
   };
 
   mutable std::mutex mutex_;

@@ -12,7 +12,7 @@ namespace sample_nodes {
 
 GpuBufferPublisherHelper::GpuBufferPublisherHelper(
     ros2_cuda_ipc_core::GpuBufferPool& pool,
-    ros2_cuda_ipc_core::LeaseManager* lease_mgr, void* producer_stream)
+    ros2_cuda_ipc_core::LeaseManager* lease_mgr, cudaStream_t producer_stream)
     : pool_(pool), lease_mgr_(lease_mgr), stream_(producer_stream) {}
 
 std::optional<GpuBufferPublisherHelper::Frame>
