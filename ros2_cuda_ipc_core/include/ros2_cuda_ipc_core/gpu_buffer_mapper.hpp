@@ -55,6 +55,10 @@ class GpuBufferMapper {
     std::string device_uuid;
   };
 
+  // Sets ABI version and device UUID on an Entry.
+  static void set_entry_metadata(Entry& e, uint32_t abi_version,
+                                 std::string_view device_uuid);
+
   // Internal helper expecting mutex_ to be locked.
   void close_slot_locked(uint32_t slot_id);
 
