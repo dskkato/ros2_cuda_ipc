@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(ros2_cuda_ipc_msgs REQUIRED)
 
 # Always build with CUDA support (simplified core)
 enable_language(CUDA)
@@ -18,6 +20,8 @@ set(SOURCES
   src/shm_release.cpp
   src/lease_manager.cpp
   src/scoped_mapped_frame.cpp
+  src/zero_copy_publisher.cpp
+  src/zero_copy_subscriber.cpp
   src/cuda_support.cu
 )
 
@@ -30,6 +34,7 @@ target_include_directories(${PROJECT_NAME}
 )
 target_compile_definitions(${PROJECT_NAME} PUBLIC ROS2_CUDA_IPC_WITH_CUDA=1)
 target_link_libraries(${PROJECT_NAME} CUDA::cudart)
+ament_target_dependencies(${PROJECT_NAME} rclcpp ros2_cuda_ipc_msgs)
 
 install(TARGETS ${PROJECT_NAME}
   EXPORT export_${PROJECT_NAME}
