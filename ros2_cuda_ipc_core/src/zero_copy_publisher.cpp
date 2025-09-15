@@ -16,8 +16,14 @@ ZeroCopyPublisher::ZeroCopyPublisher(rclcpp::Node& node,
     : pub_(
           node.create_publisher<ros2_cuda_ipc_msgs::msg::GpuBuffer>(topic, 10)),
       pool_(pool_opts),
-      lease_mgr_(pool_, lease_timeout_ms),
-      stream_(pool_opts.producer_stream) {
+      lease_mgr_(pool_, lease_timeout_ms) {
+  if (pool_opts.producer_stream) {
+    stream_ = pool_opts.producer_stream;
+    owns_stream_ = false;
+  } else {
+    stream_ = cuda_stream_create();
+    owns_stream_ = (stream_ != nullptr);
+  }
   // Create unique SHM owner name based on node FQN, time and pid
   auto base = sanitize_shm_owner(node.get_fully_qualified_name());
   const auto now = std::chrono::system_clock::now();
@@ -32,7 +38,7 @@ ZeroCopyPublisher::ZeroCopyPublisher(rclcpp::Node& node,
 }
 
 ZeroCopyPublisher::~ZeroCopyPublisher() {
-  if (stream_) {
+  if (owns_stream_ && stream_) {
     (void)cuda_stream_destroy(stream_);
     stream_ = nullptr;
   }
@@ -87,9 +93,13 @@ bool ZeroCopyPublisher::publish(ros2_cuda_ipc_msgs::msg::GpuBuffer& msg,
     }
   }
 
-  if (expected_consumers > 0) {
-    auto created =
-        lease_mgr_.start_lease(slot_id, msg.seq_id, expected_consumers);
+  int consumers = expected_consumers;
+  if (consumers < 0) {
+    consumers = static_cast<int>(pub_->get_subscription_count());
+  }
+
+  if (consumers > 0) {
+    auto created = lease_mgr_.start_lease(slot_id, msg.seq_id, consumers);
     if (created) {
       msg.shm_name = *created;
     }

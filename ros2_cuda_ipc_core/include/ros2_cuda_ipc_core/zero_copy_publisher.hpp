@@ -26,9 +26,11 @@ class ZeroCopyPublisher {
   ~ZeroCopyPublisher();
 
   // Publishes a message. The caller fills in metadata fields of msg except for
-  // plane information. expected_consumers <= 0 means release immediately after
-  // publish. The provided callback may be empty; if non-empty it is invoked
-  // with the borrowed device pointer and size before the message is finalized.
+  // plane information. If expected_consumers < 0 the current subscription
+  // count of the underlying publisher is used. expected_consumers == 0 releases
+  // immediately after publish. The provided callback may be empty; if
+  // non-empty it is invoked with the borrowed device pointer and size before
+  // the message is finalized.
   bool publish(ros2_cuda_ipc_msgs::msg::GpuBuffer& msg, int expected_consumers,
                const FillCallback& fill_cb);
 
@@ -37,6 +39,7 @@ class ZeroCopyPublisher {
   GpuBufferPool pool_;
   LeaseManager lease_mgr_;
   cudaStream_t stream_{nullptr};
+  bool owns_stream_{false};
   std::string shm_owner_;
 };
 

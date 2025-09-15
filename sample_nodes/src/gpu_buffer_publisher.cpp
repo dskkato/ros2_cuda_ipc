@@ -44,6 +44,7 @@ class DummyPublisher : public rclcpp::Node {
     msg.stamp = this->now();
     msg.frame_id = "frame";
 
+    // -1 for expected_consumers triggers auto-detection of subscription count.
     pub_->publish(
         msg, /*expected_consumers=*/-1,
         [this](void* ptr, uint64_t size, cudaStream_t stream) {
