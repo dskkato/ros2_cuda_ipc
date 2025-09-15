@@ -6,11 +6,8 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include "ros2_cuda_ipc_core/cuda_support.hpp"
-#include "ros2_cuda_ipc_core/gpu_buffer_pool.hpp"
-#include "ros2_cuda_ipc_core/lease_manager.hpp"
-#include "ros2_cuda_ipc_core/shm_release.hpp"
+#include "ros2_cuda_ipc_core/zero_copy_publisher.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_buffer.hpp"
-#include "sample_nodes/gpu_buffer_publisher_helper.hpp"
 #include "sample_nodes/sample_cuda_utils.hpp"
 
 class DummyPublisher : public rclcpp::Node {
@@ -28,7 +25,8 @@ class DummyPublisher : public rclcpp::Node {
       producer_stream_ = ros2_cuda_ipc_core::cuda_stream_create();
       opts.producer_stream = producer_stream_;
     }
-    pool_ = std::make_unique<ros2_cuda_ipc_core::GpuBufferPool>(opts);
+    zcp_ = std::make_unique<ros2_cuda_ipc_core::ZeroCopyPublisher>(
+        opts, /*lease_timeout_ms=*/lease_timeout_ms_, /*shm_owner=*/"");
 
     timer_ = this->create_wall_timer(1s, [this]() { publish_once(); });
 
@@ -54,13 +52,9 @@ class DummyPublisher : public rclcpp::Node {
       shm_owner_ = ros2_cuda_ipc_core::sanitize_shm_owner(buf);
     }
 
-    // Initialize lease manager
-    lease_mgr_ = std::make_unique<ros2_cuda_ipc_core::LeaseManager>(
-        *pool_, lease_timeout_ms_);
-    lease_mgr_->set_owner(shm_owner_);
-    // Initialize publisher helper
-    helper_ = std::make_unique<sample_nodes::GpuBufferPublisherHelper>(
-        *pool_, lease_mgr_.get(), producer_stream_);
+    // Configure wrapper owner and timeout
+    zcp_->set_owner(shm_owner_);
+    zcp_->set_timeout_ms(lease_timeout_ms_);
   }
 
   ~DummyPublisher() {
@@ -68,17 +62,12 @@ class DummyPublisher : public rclcpp::Node {
       (void)ros2_cuda_ipc_core::cuda_stream_destroy(producer_stream_);
       producer_stream_ = nullptr;
     }
-    if (lease_mgr_) {
-      lease_mgr_->cleanup();
-    }
+    // No explicit cleanup needed; ZeroCopyPublisher manages leases
   }
 
  private:
   void publish_once() {
-    // Enforce lease timeout and SHM refcount releases
-    if (lease_mgr_) {
-      (void)lease_mgr_->tick();
-    }
+    // Tick handled inside produce_and_publish
     ros2_cuda_ipc_msgs::msg::GpuBuffer msg;
     msg.seq_id = count_++;
     msg.layout = ros2_cuda_ipc_msgs::msg::GpuBuffer::LAYOUT_LINEAR;
@@ -89,45 +78,33 @@ class DummyPublisher : public rclcpp::Node {
     msg.stamp = this->now();
     msg.frame_id = "frame";
 
-    auto frame = helper_->borrow_frame(msg.width, msg.height, msg.channels,
-                                       /*blocking=*/true);
-    if (frame.has_value()) {
-      // Fill device buffer with a changing pattern
-      const uint64_t size_bytes = frame->size_bytes;
+    const int expected_count =
+        expected_consumers_ < 0
+            ? static_cast<int>(pub_->get_subscription_count())
+            : expected_consumers_;
+
+    auto fill = [&](void* dev, uint32_t w, uint32_t h, uint32_t c,
+                    cudaStream_t s) {
+      const uint64_t size_bytes = static_cast<uint64_t>(w) * h * c;
       unsigned char pattern = static_cast<unsigned char>(count_ & 0xFF);
-      (void)sample_nodes::cuda_fill_u8(frame->device_ptr, pattern, size_bytes,
-                                       producer_stream_);
+      (void)sample_nodes::cuda_fill_u8(dev, pattern, size_bytes, s);
+    };
 
-      const int expected_count =
-          expected_consumers_ < 0
-              ? static_cast<int>(pub_->get_subscription_count())
-              : expected_consumers_;
-
-      bool ok =
-          helper_->finalize_and_fill(*frame, expected_count, shm_owner_, msg);
-      if (!ok) {
-        RCLCPP_WARN_THROTTLE(
-            this->get_logger(), *this->get_clock(), 5000,
-            "CUDA IPC handle unavailable. Publishing metadata only.");
-      } else {
-        RCLCPP_INFO(this->get_logger(),
-                    "Publishing seq=%lu (slot %u), expected consumers=%d",
-                    msg.seq_id, frame->slot_id, expected_count);
-      }
+    bool ok = zcp_->produce_and_publish(*pub_, msg, expected_count, fill,
+                                        /*blocking=*/true);
+    if (!ok) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+                           "Publishing metadata only (no CUDA mem/slot)");
     } else {
-      msg.plane_count = 0;
-      RCLCPP_WARN(this->get_logger(),
-                  "Pool exhausted; publishing metadata only");
+      RCLCPP_INFO(this->get_logger(),
+                  "Published seq=%lu, expected consumers=%d", msg.seq_id,
+                  expected_count);
     }
-
-    pub_->publish(msg);
   }
 
   rclcpp::Publisher<ros2_cuda_ipc_msgs::msg::GpuBuffer>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr timer_;
-  std::unique_ptr<ros2_cuda_ipc_core::GpuBufferPool> pool_;
-  std::unique_ptr<ros2_cuda_ipc_core::LeaseManager> lease_mgr_;
-  std::unique_ptr<sample_nodes::GpuBufferPublisherHelper> helper_;
+  std::unique_ptr<ros2_cuda_ipc_core::ZeroCopyPublisher> zcp_;
   int lease_timeout_ms_{3000};
   int expected_consumers_{-1};
   uint64_t count_{0};

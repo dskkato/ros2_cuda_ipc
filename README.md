@@ -76,26 +76,72 @@ ros2 run sample_nodes gpu_buffer_subscriber
 備考
 - Publisher はメッセージに `abi_version` と `device_uuid` を埋め込みます。Subscriber はそれらが変化した場合にマッピングキャッシュを自動リセットします。
 
-## サンプル簡素化のためのヘルパー
+## ゼロコピーラッパ API（推奨）
 
-- **LeaseManager**: SHM 参照カウントとタイムアウトに基づくスロット自動解放を管理。
-  - 実装: `ros2_cuda_ipc_core/lease_manager.hpp`
-  - 使い方: `LeaseManager lm(pool, lease_timeout_ms); lm.set_owner(owner);` 毎ループ `lm.tick()`
+Publisher / Subscriber 双方で、最小コードでゼロコピー通信を行えるラッパを提供します。
 
-- **ScopedMappedFrame**: Subscriber 側での RAII ヘルパー。イベント open + wait、メモリ open の再利用、破棄時に SHM decrement。
-  - 実装: `ros2_cuda_ipc_core/scoped_mapped_frame.hpp`
-  - 使い方: `ScopedMappedFrame frame(mapper, slot, &mem, &evt, stream, shm_name, seq, true);`
+- Publisher 側: `ros2_cuda_ipc_core::ZeroCopyPublisher`
+- Subscriber 側: `ros2_cuda_ipc_core::ZeroCopySubscriber`
 
-- **GpuBufferPublisherHelper**: Publisher 側の定型処理を集約（借用→GPU書込→イベント→メッセージ→リース）。
-  - 実装: `sample_nodes/include/sample_nodes/gpu_buffer_publisher_helper.hpp`
-  - ビルドターゲット: `sample_nodes_helpers`（サンプル内の再利用用ライブラリ）
-  - 典型手順:
-    - 初期化: `helper(pool, &lease, producer_stream)`
-    - 借用: `auto f = helper.borrow_frame(width, height, channels)`
-    - 書込: `cuda_fill_u8(f.device_ptr, ...)` など
-    - 仕上げ: `helper.finalize_and_fill(f, expected_consumers, owner, msg)`
+### Publisher: ZeroCopyPublisher の使い方
 
-サンプル Publisher は既に helper を利用する形に差し替え済みです。Subscriber は ScopedMappedFrame を用いて wait と SHM 解放を簡素化しています。
+初期化（プールやイベント、プロデューサストリームの設定）:
+
+```cpp
+ros2_cuda_ipc_core::PoolOptions opts;
+opts.pool_size = 2;                 // スロット数
+opts.bytes_per_slot = 4*1024*1024;  // スロットサイズ（GPUメモリ確保）
+opts.events_enabled = true;         // イベント同期
+opts.producer_stream = ros2_cuda_ipc_core::cuda_is_available()
+                           ? ros2_cuda_ipc_core::cuda_stream_create()
+                           : nullptr;
+
+ros2_cuda_ipc_core::ZeroCopyPublisher zcp(opts, /*lease_timeout_ms=*/3000, /*shm_owner=*/"my_pub");
+```
+
+1 発行の流れ（借用→GPU 書込→イベント記録→SHM リース→publish）:
+
+```cpp
+ros2_cuda_ipc_msgs::msg::GpuBuffer msg;
+msg.seq_id = seq++;
+msg.layout = ros2_cuda_ipc_msgs::msg::GpuBuffer::LAYOUT_LINEAR;
+msg.format = ros2_cuda_ipc_msgs::msg::GpuBuffer::FORMAT_BGR8;
+msg.width = 640; msg.height = 480; msg.channels = 3;
+msg.stamp = now(); msg.frame_id = "frame";
+
+int expected = static_cast<int>(pub->get_subscription_count()); // -1 で自動指定可
+
+auto fn = [](void* dev, uint32_t w, uint32_t h, uint32_t c, cudaStream_t s){
+  const uint64_t bytes = static_cast<uint64_t>(w)*h*c;
+  // ここで GPU へ書き込み（例: cudaMemsetAsync 等）
+};
+
+bool ok = zcp.produce_and_publish(*pub, msg, expected, fn, /*blocking=*/true);
+// ok=false の場合はメタデータのみ publish（plane_count=0）
+```
+
+主な引数・挙動:
+- `expected_consumers` > 0: SHM リースを開始（各 Subscriber は処理後に参照カウントを decrement）。
+- `expected_consumers` == 0: publish 後すぐにスロットを pool に release。
+- `expected_consumers` < 0: 呼び出し側で自動的に購読数から決定するなどの前処理を推奨。
+- `blocking` が false かつ空きスロットなし: メタデータのみ publish。
+
+### Subscriber: ZeroCopySubscriber の使い方
+
+受信した `GpuBuffer` を 1 呼び出しで open + wait + 処理 + SHM decrement（RAII）:
+
+```cpp
+ros2_cuda_ipc_core::ZeroCopySubscriber zcs; // CUDA 環境なら内部で stream を生成
+
+sub = this->create_subscription<GpuBuffer>("gpu_buffer", 10,
+  [&](const GpuBuffer& msg){
+    zcs.consume(msg, [](void* dev, uint32_t w, uint32_t h, uint32_t c, cudaStream_t s){
+      // dev を読み取り専用で使用。処理を s 上に enqueue。
+    }, /*sync_on_dtor=*/true);
+  });
+```
+
+内部では `GpuBufferMapper` のキャッシュを用いて IPC ハンドルの open を再利用し、イベントは `cudaStreamWaitEvent` で同期します。破棄時に SHM 参照カウントを 1 つ減らします。
 
 ---
 
@@ -144,8 +190,7 @@ colcon build \
   - `test_lease_manager`（SHM リリースとタイムアウト解放を確認）
   - `test_scoped_mapped_frame`（破棄時の SHM decrement を確認）
 
-- サンプル側のテスト:
-  - `sample_nodes/test/test_gpu_buffer_publisher_helper`（CUDA メモリが無い場合のメタデータ配信へのフォールバック等）
+- サンプル側のテスト: なし（サンプルは実行用）。
 
 ビルドとテスト実行例:
 
