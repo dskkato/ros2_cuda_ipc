@@ -16,8 +16,10 @@ class ZeroCopyPublisher {
  public:
   struct Options {
     PoolOptions pool_options;
-    int lease_timeout_ms{3000};
+    int lease_timeout_ms;
     std::string shm_owner;
+
+    Options() : pool_options(), lease_timeout_ms(3000), shm_owner() {}
   };
 
   ZeroCopyPublisher(rclcpp::Node& node, const std::string& topic,
