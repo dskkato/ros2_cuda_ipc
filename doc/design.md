@@ -363,14 +363,15 @@ auto msg = pool.make_message(slot, meta);
 pub->publish(msg);
 ```
 
-    ## #22.2 Minimal Pseudocode – Subscriber
+### 22.2 Minimal Pseudocode – Subscriber
 
-```cpp auto buf = mapper.open(msg);
+```cpp
+auto buf = mapper.open(msg);
 mapper.wait_ready(buf, my_stream);
 // use buf.dev_ptrs[...] as input (zero-copy)
 mapper.release(msg, consumer_id);
 ```
 
-    -- -
+---
 
-    **End of Document **
+**End of Document**

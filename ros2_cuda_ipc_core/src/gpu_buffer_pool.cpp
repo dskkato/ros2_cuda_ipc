@@ -128,11 +128,13 @@ bool GpuBufferPool::expand_pool(std::size_t new_slots) {
         for (std::size_t j = old_size; j < slots_.size(); ++j) {
           if (events_[j]) cuda_event_destroy(events_[j]);
         }
-        for (std::size_t j = old_size; j < slots_.size(); ++j) {
-          if (device_ptrs_[j]) cuda_free(device_ptrs_[j]);
+        if (bytes_per_slot_ > 0) {
+          for (std::size_t j = old_size; j < slots_.size(); ++j) {
+            if (device_ptrs_[j]) cuda_free(device_ptrs_[j]);
+          }
+          device_ptrs_.resize(old_size);
         }
         slots_.resize(old_size);
-        device_ptrs_.resize(old_size);
         events_.resize(old_size);
         return false;
       }
