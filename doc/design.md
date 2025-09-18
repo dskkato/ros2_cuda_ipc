@@ -1,377 +1,440 @@
-#ROS 2 CUDA IPC Zero‑Copy Transport – Design Doc(v1)
+# GPU Zero-Copy Transport Design
 
-**Author:** dskkato
-**Date:** 2025‑09‑13
-**Status:** Draft (for review)
-**Repo (planned):** `dskkato/ros2_cuda_ipc`
+## 背景
 
----
+* ROS 2 標準のゼロコピー (LoanedMessage 等) は **CPU メモリ**のみを対象とする。
+* GPU バッファ (VRAM) をプロセス間・ノード間でコピーせず渡すために、**CUDA IPC** を利用する。
+* アプリ側では「画像」「点群」として自然に扱える API を提供しつつ、ROS msg はシンプルで相互運用性が高いものとする。
 
-## 0. Executive Summary
+## 層構造
 
-同一ホスト同一GPU上で、ROS 2の別プロセス間におけるGPUメモリのゼロコピー受け渡しを実現する。CUDA IPC（メモリ＋イベント）を用い、DDS上では小さなハンドルとメタデータのみを配送。Publisher がメモリープールを所有・管理し、複数Subscriber（ビデオエンコード／プレビュー生成／DNN推論）が同時に read-only 参照する。
+### 1. ワイヤ層 (ROS msg)
 
----
+#### BufferCore
 
-## 1. Goals & Non‑Goals
+* CUDA IPC ハンドル (mem_handle, event_handle)
+* 参照カウント用共有メモリ名 (shm_name)
+* 識別情報 (device_id, slot_id, generation)
+* バイトサイズ (byte_size)
+* これだけで GPU バッファの受け渡しが可能。
 
-### Goals
+```msg
+# gpu_zero_copy_msgs/msg/BufferCore.msg
 
-* 別プロセス間（ROS 2ノード間）で**ゼロコピー**でGPUメモリを共有
-* **同一GPUデバイス前提**（device\_uuid一致チェック）
-* Publisher管理の**固定長メモリープール**（スロット数/サイズ上限の設定可能）
-* 複数Subscriberの**同時読み取り**（read-only）
-* **CUDAイベント**によるproduce完了同期、開放はPublisher主導（Release通知）
-* 画像（NV12/BGR/RGBA）・点群（SoA/AoS）をまずサポート
-* C++/Python 双方から利用可能（pybind11 + DLPackユーティリティ）
+# CUDA IPC handles (opaque bytes)
+uint8[64] mem_handle        # cudaIpcMemHandle_t
+uint8[64] event_handle      # cudaIpcEventHandle_t
 
-### Non‑Goals
+# Shared memory for reference counting
+string shm_name
 
-* 異なるGPU/異なるホスト間共有、DMA‑BUF/GPUDirect RDMA 等のサポート
-* 書き込み共有（基本はread-only。書込みは将来の派生）
-* ROS 2 LoanedMessage/DDS共有メモリとの統合（本設計の対象外）
+# Identification
+uint32 device_id
+uint32 slot_id
+uint32 generation
 
----
-
-## 2. Requirements
-
-### Functional
-
-* ROS 2メッセージでGPUバッファの**ハンドル＋メタデータ**をpublishする
-* Subscriberは初回にIPCハンドルをopen→以後キャッシュ再利用
-* Release通知（共有制御ブロック SHM）によりスロット再利用
-
-### Non‑Functional
-
-* **低レイテンシ**：イベント同期 + キャッシュでIPCコスト最小化
-* **堅牢性**：Subscriberクラッシュ時のタイムアウト回収
-* **観測性**：メトリクス（貸出数、タイムアウト、開放遅延）
-* **バージョン互換**：メッセージ/ABIにversion埋め込み
-
----
-
-## 3. System Architecture
-
-```
-[Camera/ColorConvert (Publisher)]
-  ├─ GPU Memory Pool (N slots)
-  ├─ cudaEvent per slot (produce-ready)
-  ├─ Exported cudaIpcMemHandle_t / cudaIpcEventHandle_t
-  └─ Publish GpuBuffer msg  ─────►  DDS (ROS 2)  ─────►  [Encoder/Preview/DNN (Subscribers)]
-                                                      ├─ Open (cached)
-                                                      ├─ cudaStreamWaitEvent
-                                                      └─ Use zero-copy & Release
+# Size
+uint64 byte_size
 ```
 
-### Components
+#### GpuImage
 
-* **ros2\_cuda\_ipc\_msgs**: `GpuBuffer.msg`
-* **ros2\_cuda\_ipc\_core**: C++コア（Pool/Mapper、IPCラッパ、管理）
-* **ros2\_cuda\_ipc\_py**: pybind11バインディング + DLPackブリッジ
-* **sample\_nodes**: Publisher/Subscriber最小実装
+* BufferCore を内包。
+* 追加情報: dtype, shape, strides（GPU向け汎用レイアウト）。
 
----
+```msg
+# gpu_zero_copy_msgs/msg/GpuImage.msg
+# 画像としての薄メタを付与。時刻/座標は Header に集約。
 
-## 4. Message & Service Definitions
+std_msgs/Header header         # stamp, frame_id
 
-### 4.1 `GpuPlane.msg`
+# 汎用レイアウト（GPU向け、機械可読）
+uint8  dtype                    # enum: 0=U8,1=U16,2=F16,3=F32,...
+uint32[3] shape                 # {H, W, C}（未使用次元は0でも可）
+uint64[3] strides               # バイト単位: {strideH, strideW, strideC}
+                                # 典型: strideH = step, strideW = C*sizeof(T), strideC = sizeof(T)
 
+gpu_zero_copy_msgs/BufferCore core # data buffer
 ```
-uint64 size_bytes
-uint64 pitch_bytes
-uint8  ipc_mem_handle[64]
-```
+#### GpuPointCloud2
+    
+* BufferCore を内包。
+* 追加情報: width, height, is_dense, point_step, row_step, fields[]。
 
+```msg
+# gpu_zero_copy_msgs/msg/GpuPointCloud2.msg
+# 点群としての薄メタを付与。時刻/座標は Header に集約。
 
-### 4.2 `GpuBuffer.msg`
+std_msgs/Header                 header       # stamp, frame_id
 
-```
-uint32   abi_version
-string   device_uuid  // `cudaDeviceProp::uuid` 文字列
-uint64   seq_id       // フレーム番号
-uint32   pool_slot_id // プール内スロット
-uint8    plane_count
-uint8    format       // constants: FORMAT_BGR8, FORMAT_RGBA8, FORMAT_NV12, FORMAT_YUV420, FORMAT_FP16, FORMAT_FP32, FORMAT_PCL_XYZ, ...
-uint8    layout       // constants: LAYOUT_LINEAR, LAYOUT_PITCHED, LAYOUT_CHW, LAYOUT_NCHW, LAYOUT_AOS, LAYOUT_SOA
-uint32   width
-uint32   height
-uint32   channels
-GpuPlane[] planes     // per plane
-uint8   ipc_event_handle[64]
-builtin_interfaces/Time stamp
-string  frame_id
-string  shm_name       // 任意：共有制御ブロック方式を使う場合
-```
+# Dimensions & layout
+uint32 height
+uint32 width
 
-> 備考: 64バイトはCUDA IPCハンドルの最大サイズ想定。実装時に静的\_assert。
+sensor_msgs/PointField[] fields
 
-（Release サービスは削除。Release は SHM 制御ブロックの参照カウントで行う）
+uint32 point_step                             # bytes per point
+uint32 row_step                               # bytes per row (if organized)
 
----
+# Reuse standard PointField for structure
+gpu_zero_copy_msgs/BufferCore  core           # data buffer
 
-## 5. Publisher‑Side Memory Pool
-
-### 5.1 Options
-
-```c++
-struct PoolOptions {
-  uint32_t pool_size = 16;                // スロット数
-  size_t max_bytes_per_plane = 16 << 20;  // 例: 16 MiB
-  uint32_t max_planes = 2;                // NV12想定
-  std::chrono::milliseconds lease_timeout{30};
-  cudaStream_t producer_stream = 0;  // 省略可
-};
+bool   is_dense
 ```
 
-### 5.2 Slot Structure
+memo:
+* core.byte_size >= row_step * height
+* 各 fields[i].offset + sizeof(type) * count <= point_step
+* width * height == N ⇒ point_step > 0
 
-```c++
-void* dev_ptrs[max_planes]
-size_t sizes[max_planes]
-size_t pitches[max_planes]
-cudaEvent_t ready_evt
-cudaIpcMemHandle_t mem_hdl[ax_planes]
-cudaIpcEventHandle_t evt_hdl
-enum {FREE, IN_USE} + deadline + last_seq_id
-```
+### 2. 内部型 (C++ View)
 
-### 5.3 Lifecycle
+#### BufferView
 
-1. `borrow(blocking)` で空きスロット取得
-2. CPU→GPU転送/色変換/前処理（producer stream）
-3. `cudaEventRecord(ready_evt)`
-4. `make_message()` で `GpuBuffer` 生成・Publish
-5. Release通知 or タイムアウトで `FREE` へ
-
----
-
-## 6. Subscriber‑Side Mapping
-
-* 初回のみ: `cudaIpcOpenMemHandle` / `cudaIpcOpenEventHandle`（`pool_slot_id`でキャッシュ）
-* フレームごと: `cudaStreamWaitEvent(ready_evt)` → 利用 → `release()`（SHM の `refcnt--`）
-* キャッシュ失効: Publisherリスタート検知（`abi_version`/`device_uuid`/`seq_id`逆転 など）で `Close + Reopen`
-
----
-
-## 7. Synchronization & Concurrency
-
-* **produce完了**: `cudaEventRecord` → Subscriberは各自の`cudaStream`で `cudaStreamWaitEvent`
-* **読み取り同時実行**: 複数Subscriberが同一スロットを参照可能（read-only）
-* **解放**: 共有制御ブロック（SHM）の `refcnt==0` で再利用
-* **タイムアウト**: `lease_timeout` 超過で強制再利用（ログ/カウンタ増分）
-
----
-
-## 8. Data Formats
-
-### 8.1 Images
-
-* Formats: `FORMAT_NV12`, `FORMAT_YUV420`, `FORMAT_BGR8`, `FORMAT_RGBA8`（将来: `FORMAT_P010`, `FORMAT_FP16`）
-* Layout: `LAYOUT_LINEAR` or `LAYOUT_PITCHED`（`pitch_bytes` で通知）
-* 多平面: 平面ごとに `mem_handle` を渡す。イベントはフレーム単位で1つ。
-
-### 8.2 Point Clouds
-
-* Layout: `AOS`（x,y,z,i, …） / `SOA`（channels × N）
-* Precision: `FP32` 推奨（将来: `FP16`）
-* メタ: `channels`, `channel_mask`（将来拡張）
-
----
-
-## 9. ROS 2 Integration
-
-* パッケージ:
-  * `ros2_cuda_ipc_msgs`
-  * `ros2_cuda_ipc_core`
-  * `ros2_cuda_ipc_py`
-* QoS: 
-  * 映像用途は `best_effort + keep_last(pool_size)` を推奨
-* LifecycleNode:
-  * `on_configure` でプール確保、`on_cleanup` で破棄
-* 名前空間:
-  * `/<camera_ns>/gpu_buffers` など
-
----
-
-## 10. Public APIs (C++)
-
-```c++
-// Publisher side
-class GpuBufferPool {
- public:
-  explicit GpuBufferPool(const PoolOptions &);
-  BorrowedSlot borrow();
-  GpuBufferMsg make_message(const BorrowedSlot &, const FrameMeta &);
-  void on_release(uint64_t seq_id, uint32_t slot_id,
-                  std::string_view consumer_id);
-};
-
-// Subscriber side
-class GpuBufferMapper {
- public:
-  OpenedBuffer open(const GpuBufferMsg &msg);  // cached
-  void wait_ready(const OpenedBuffer &buf, cudaStream_t user_stream);
-  void release(const GpuBufferMsg &msg, std::string_view consumer_id);
-};
-```
-
-### Python (pybind11)
-
-* `pool = GpuBufferPool(opts)` / `slot = pool.borrow(true)`
-* `mapper = GpuBufferMapper()` / `buf = mapper.open(msg)` / `mapper.wait_ready(buf, stream)`
-* DLPack: `to_torch(buf, shape, dtype, layout)` / `to_cupy(...)`
-
----
-
-## 11. Example Sequences
-
-### 11.1 YUV→BGR変換→3 Consumer
-
-```
-Publisher (ColorConvert)
-  borrow → memcpyAsync(YUV) → kernel_yuv2bgr → EventRecord → Publish(GpuBuffer)
-
-Encoder/Preview/DNN (Subscribers)
-  open(cache) → StreamWaitEvent → use_zero_copy → release() [SHM]
-
-Publisher
-  refcnt==0（SHM） or timeout → FREE
-```
-
-### 11.2 再接続・再初期化
-
-```
-Subscriber detects abi_version change or device_uuid mismatch
-  → Close all opened handles → Re-open on next message
-```
-
----
-
-## 12. Error Handling & Recovery
-
-* **Device mismatch**: `device_uuid` 不一致→フレームをスキップ、警告
-* **cudaIpcOpen\*失敗**: サブスクライバは該当フレームをスキップ
-* **Release未達**: タイムアウトで回収（メトリクス記録）
-* **プール枯渇**: 設定で `drop_oldest` or `backpressure`
-* **Publisher再起動**: `abi_version` でSubscriberに再openを促す
-
----
-
-## 13. Performance Considerations
-
-* スロット単位の**IPCハンドル再利用**（open/closeコストを回避）
-* `PITCHED` を前提に最適化、カーネルは `pitch` 対応
-* 可能なら NV12のままエンコーダへ直結（前処理の重複回避）
-* メトリクス: フレーム遅延、wait時間、開放までの時間、ドロップ数
-
----
-
-## 14. Security / Safety
-
-* 同一GPUのみ許可（UUIDチェック）
-* 既定は read-only（書込み要求は別型/フラグで明示）
-* タイムアウト再利用は**遅延アクセスの危険**があるためログ + アラート
-
----
-
-## 15. Configuration
-
-```yaml
-ros2_cuda_ipc:
-  pool_size: 16
-  max_bytes_per_plane: 16777216   # 16 MiB
-  max_planes: 2
-  lease_timeout_ms: 30
-  expected_consumers: 3           # 省略可（未指定ならタイムアウト制）
-  image:
-    default_format: FORMAT_NV12
-    layout: LAYOUT_PITCHED
-```
-
----
-
-## 16. Build & Packaging
-
-* **CMake**: `find_package(rclcpp rclpy)`、`CUDA::cuda_driver` 連携
-* **Targets**: `libros2_cuda_ipc_core.so`, `ros2_cuda_ipc_msgs`, `ros2_cuda_ipc_py`
-* **Python**: `pybind11` + `setuptools`（`scikit-build-core`推奨）
-
----
-
-## 17. Testing Plan
-
-### Unit
-
-* Pool借用/返却、タイムアウト、メタ生成
-* IPC open/closeのキャッシュ動作、異常系（デバイス不一致）
-
-### Integration (on single GPU)
-
-* Publisher + 3 Subscribers のE2E（NV12→BGR→エンコード/縮小/推論ダミー）
-* ストレス: 高FPS, 大解像度, 長時間、Subscriberクラッシュ注入
-
-### Performance
-
-* レイテンシ分解: produce→event, event→wait, wait→consume
-* プールサイズ/timeout/平面数のスイープ
-
----
-
-## 18. Rollout Plan
-
-1. **P0**: 画像単平面（BGR/RGBA）、SHM Release、C++のみ
-2. **P1**: NV12多平面、pybind11、DLPack
-3. **P2**: 点群、監視メトリクス/可視化
-4. **P3**: 上位サンプル（FFmpeg NVENC、TensorRT/PyTorch）
-
----
-
-## 19. Alternatives Considered
-
-* **ROS 2 LoanedMessage / iceoryx**: CPU共有向け。GPUメモリ共有は非対象
-* **CUDA MPS**: 同一コンテキスト共有に有用だがプロセス境界でのメモリ共有とは別解
-* **DMA‑BUF / EGLStream**: 異プロセス/異デバイスや表示系に強いが依存が重い
-
----
-
-## 20. Risks & Mitigations
-
-* **Release漏れ**: タイムアウト + SHM refcnt
-* **IPCハンドル肥大**: スロット再利用設計でopen頻度を最小化
-* **ABIドリフト**: `abi_version` を上げて互換性崩壊を検知
-
----
-
-## 21. Open Questions
-
-* `expected_consumers` を静的に宣言するか、動的検出するか？
-* Python側のストリーム管理（カスタム`cudaStream_t`の公開範囲）
-* 点群の標準化（PCL互換メタ or 独自簡素メタ）
-
----
-
-## 22. Appendix
-
-### 22.1 Minimal Pseudocode – Publisher
+  * BufferCore.msg を開いた状態 (dev_ptr, ready_evt, RAII)。
+  * データの解釈は持たない。
 
 ```cpp
-auto slot = pool.borrow(true);
-// memcpyAsync host_yuv → slot.dev_ptrs[0/1]
-launch_yuv2bgr_kernel(slot, ...);
-cudaEventRecord(slot.ready_evt, producer_stream);
-auto msg = pool.make_message(slot, meta);
-pub->publish(msg);
+// BufferView: GPUバッファそのものの借用ビュー（意味付けなし）
+struct BufferView {
+  // === リソース（必ず有効時は同一 device 上） ===
+  void*       dev_ptr = nullptr;     // デバイス先頭
+  cudaEvent_t ready_evt = nullptr;   // "書き終わり" を示すイベント（他プロセス発行）
+  int         device_id = 0;
+  uint64_t    byte_size = 0;
+
+  // === 運用メタ（安全・再利用のため） ===
+  uint32_t slot_id = 0;
+  uint32_t generation = 0;
+  std::shared_ptr<void> lease;       // 共有メモリrefcntのRAIIハンドル
+  // （実装は環境依存。ここでは型非公開のpimplでもOK）
+
+  // === ライフサイクル ===
+  BufferView() = default;
+  ~BufferView();                     // cudaIpcCloseMemHandle / evt破棄（必要なら）
+  BufferView(BufferView&&) noexcept;
+  BufferView& operator=(BufferView&&) noexcept;
+  BufferView(const BufferView&) = delete;
+  BufferView& operator=(const BufferView&) = delete;
+
+  // === 最小アクセサ／ユーティリティ ===
+  template<class T = void> T* data() const noexcept { return static_cast<T*>(dev_ptr); }
+  bool valid() const noexcept { return dev_ptr != nullptr; }
+
+  // 自分のストリームで書き終わりを待つ（非ブロッキング同期の起点）
+  cudaError_t wait(cudaStream_t s) const noexcept {
+    return ready_evt ? cudaStreamWaitEvent(s, ready_evt, 0) : cudaSuccess;
+  }
+};
 ```
 
-### 22.2 Minimal Pseudocode – Subscriber
+**方針**
+
+* 同期は提供するが強制しない：wait(stream) を呼ぶかは利用側の責務。
+* move-only：ダングリングや二重 close を防ぐ。
+* 解釈ゼロ：幅やレイアウトは一切持たない（下位互換と拡張性の源）。
+
+#### ImageView（BufferView + 薄い解釈）
 
 ```cpp
-auto buf = mapper.open(msg);
-mapper.wait_ready(buf, my_stream);
-// use buf.dev_ptrs[...] as input (zero-copy)
-mapper.release(msg, consumer_id);
+// image_view.hpp
+#pragma once
+#include <cstdint>
+#include <string>
+#include "buffer_view.hpp"
+
+// 画素型（必要十分な最小セット。用途に応じて拡張可）
+enum class DType : uint8_t {
+  U8 = 0, U16 = 1,
+  F32 = 2, F64 = 3,
+  S16 = 4, S32 = 5, U32 = 6
+};
+
+struct ImageView {
+  // === 開かれたGPUバッファ（RAIIは BufferView が担保） ===
+  BufferView core;
+
+  // === 汎用レイアウト（GPU/機械向け） ===
+  // shape = {H, W, C}, strides は "バイト" 単位のストライド
+  DType   dtype         = DType::U8;
+  uint32_t shape[3]     = {0, 0, 0};     // {rows, cols, channels}
+  uint64_t strides[3]   = {0, 0, 0};     // {strideH, strideW, strideC}
+
+  // === 任意：互換/可読（空文字なら未設定） ===
+  std::string encoding;                  // 例: "rgb8","mono16","32FC1" 等
+
+  // === move-only ===
+  ImageView() = default;
+  ~ImageView() = default;                // リソース解放は core の RAII に委譲
+  ImageView(ImageView&&) noexcept = default;
+  ImageView& operator=(ImageView&&) noexcept = default;
+  ImageView(const ImageView&) = delete;
+  ImageView& operator=(const ImageView&) = delete;
+
+  // === 最小アクセサ ===
+  uint32_t rows()      const noexcept { return shape[0]; }
+  uint32_t cols()      const noexcept { return shape[1]; }
+  uint32_t channels()  const noexcept { return shape[2]; }
+  uint64_t strideH()   const noexcept { return strides[0]; }  // bytes per row (pitch/step)
+  uint64_t strideW()   const noexcept { return strides[1]; }  // bytes per column step
+  uint64_t strideC()   const noexcept { return strides[2]; }  // bytes per channel step
+  bool     valid()     const noexcept { return core.valid() && rows()>0 && cols()>0; }
+
+  // 画素1要素あたりのバイト数（簡易版）
+  uint32_t elem_size_bytes() const noexcept {
+    switch (dtype) {
+      case DType::U8:  return 1;
+      case DType::U16: return 2;
+      case DType::F32: return 4;
+      case DType::F64: return 8;
+      case DType::S16: return 2;
+      case DType::S32: return 4;
+      case DType::U32: return 4;
+    }
+    return 1;
+  }
+
+  // 同期（必要なら呼ぶ。どのストリームで待つかは呼び手が決める）
+  cudaError_t wait(cudaStream_t s) const noexcept { return core.wait(s); }
+
+  // === カーネルに渡すPODビュー（ABIを安定させるなら別ヘッダで固定化推奨） ===
+  struct DeviceView {
+    uint8_t* data;            // base ptr
+    int      height, width, channels;
+    uint64_t strideH, strideW, strideC; // bytes
+    uint8_t  dtype;           // DType の値（uint8_tに格納）
+  };
+
+  DeviceView as_device_view() const noexcept {
+    return DeviceView{
+      core.data<uint8_t>(),
+      static_cast<int>(rows()),
+      static_cast<int>(cols()),
+      static_cast<int>(channels()),
+      strideH(), strideW(), strideC(),
+      static_cast<uint8_t>(dtype)
+    };
+  }
+
+  // === 防御的チェック（任意で利用） ===
+  bool sanity_check() const noexcept {
+    if (!valid() || rows()==0 || cols()==0 || channels()==0) return false;
+    const uint64_t last_row  = (rows()-1)     * strideH();
+    const uint64_t last_col  = (cols()-1)     * strideW();
+    const uint64_t last_chan = (channels()-1) * strideC();
+    const uint64_t needed    = last_row + last_col + last_chan + elem_size_bytes();
+    return core.byte_size >= needed;
+  }
+};
 ```
 
----
+**ポイント**
 
-**End of Document**
+* POD な DeviceView を用意：そのまま kernel 引数に渡せる。
+* strideC を持つ：画像処理でピクセル内のチャンネル間隔が重要な場合があるため。
+* elem_size_bytes() は簡易版：複雑な型はアプリ側で管理。
+
+#### 点群：PointCloud2View（BufferView + layout）
+
+```cpp
+// PointCloud2View: sensor_msgs/PointCloud2 の layout をGPU向けにそのまま保持
+struct PointCloud2View {
+  BufferView core;
+
+  // layout（sensor_msgs/PointCloud2 準拠）
+  uint32_t height = 1;
+  uint32_t width  = 0;
+  uint32_t point_step = 0;   // bytes per point
+  uint32_t row_step   = 0;   // bytes per row
+  bool     is_dense   = true;
+
+  // fields はCPU側メタ。GPUカーネルでは name 参照は避け、offset/datatype に落とす
+  struct Field {
+    std::string name;
+    uint32_t offset;
+    uint8_t datatype;
+    uint32_t count;
+  };
+  std::vector<Field> fields;
+
+  // よく使うフィールドのオフセットをキャッシュしておくと便利（任意）
+  int x_off=-1, y_off=-1, z_off=-1, intensity_off=-1, rgb_off=-1;
+
+  // デバイス側POD（文字列を排除したメタ）
+  struct DeviceField {
+    uint32_t offset;
+    uint8_t datatype;
+    uint32_t count;
+  };
+  struct DeviceView {
+    uint8_t* data;
+    int      width, height;
+    size_t   point_step, row_step;
+    bool     is_dense;
+    // 可変長fieldsは用途に応じて最大数を決める or 別バッファで渡す
+    const DeviceField* fields; // GPU側にコピー済みのメタ配列を指す想定
+    int      num_fields;
+  };
+
+  // デバイス用メタ配列の用意は呼び出し側の責務（頻繁に変わらないのでキャッシュ推奨）
+  DeviceView as_device_view(const DeviceField* d_fields, int n) const noexcept {
+    return DeviceView{
+      core.data<uint8_t>(),
+      static_cast<int>(width),
+      static_cast<int>(height),
+      point_step, row_step,
+      is_dense,
+      d_fields, n
+    };
+  }
+
+  size_t num_points() const noexcept { return static_cast<size_t>(width) * height; }
+  cudaError_t wait(cudaStream_t s) const noexcept { return core.wait(s); }
+};
+```
+
+**ポイント**
+
+* フィールド名はCPU側だけで扱い、GPU には offset/datatype を渡す。
+* DeviceField 配列は デバイスメモリに一度コピーしてキャッシュするとよい。
+
+### 3. 変換層 (TypeAdapter)
+
+対応表:
+
+* `BufferCore.msg  ⇄ BufferView`
+* `GpuImage.msg    ⇄ ImageView`
+* `GpuPointCloud2.msg ⇄ PointCloud2View`
+
+Adapter の責務は **Open/Close とメタ転写のみ**。
+
+* コピーは行わない。
+* 同期 (cudaStreamWaitEvent) はユーザ側の責務。
+
+publisher/subscriberの役割:
+* Publisher: cudaIpcGet*Handle でハンドル生成 → msg に格納。
+* Subscriber: cudaIpcOpen*Handle で dev_ptr/event を開く。
+
+memo:
+* cudaIpcOpenEventHandle で開いた イベントの破棄は受信側では不要（破棄は送信側が責任）。
+
+Error handling ポリシー:
+convert_to_custom (ROS→View) で cudaIpcOpen*Handle する際の失敗ケースと方針について:
+
+**主な失敗ケース**  
+1. ハンドル期限切れ / 送信側で解放済み
+    * cudaErrorInvalidResourceHandle が返る。
+2. デバイス不一致（別 GPU に open しようとした）
+    * cudaErrorInvalidDevice。
+3. 世代不一致 / バッファ再利用による衝突
+    * 自前で slot_id + generation を比較し検出する。
+4. IPC Event が開けない
+    * 同様に cudaErrorInvalidResourceHandle。
+
+**推奨ポリシー**
+* convert_to_custom 内では例外を投げない。
+  * rclcpp::TypeAdapter 経由だと例外伝播が難しい。
+  * 代わりに「無効な View (dev_ptr==nullptr)」を返す。
+* Subscriber 側のコールバックで view.valid() を必ず確認。
+  * 無効ならログ出力して破棄。
+  * QoS が reliable でも再送は要求しない（上位レイヤの責務にする）。
+    * Is this a transient error? or permanent?
+* Publisher 側での convert_to_ros_message は失敗しない前提（ハンドル生成失敗は publish 前に検出すべき）。
+
+Example:
+
+```cpp
+// type_adapter_buffer_view.hpp
+#pragma once
+#include <rclcpp/type_adapter.hpp>
+#include <gpu_zero_copy_msgs/msg/buffer_core.hpp>
+#include "buffer_view.hpp"
+
+namespace rclcpp {
+template<>
+struct TypeAdapter<BufferView, gpu_zero_copy_msgs::msg::BufferCore> {
+  using is_specialized = std::true_type;
+  using custom_type = BufferView;
+  using ros_message_type = gpu_zero_copy_msgs::msg::BufferCore;
+
+  // Subscriber側：ROS→View（ここで Open＋refcnt++）
+  static void convert_to_custom(const ros_message_type& src, custom_type& dst);
+
+  // Publisher側：View→ROS（ハンドル生成は別レイヤで、ここはメタ転写のみ）
+  static void convert_to_ros_message(const custom_type& src, ros_message_type& dst);
+};
+} // namespace rclcpp
+```
+
+Implementation (convert_to_custom):
+
+```cpp
+static void convert_to_custom(const ros_message_type& src, custom_type& dst) {
+  // try open memory
+  void* ptr = nullptr;
+  auto err = cudaIpcOpenMemHandle(&ptr, src.mem_handle, cudaIpcMemLazyEnablePeerAccess);
+  if (err != cudaSuccess) {
+    RCLCPP_WARN(rclcpp::get_logger("BufferView"),
+                "Failed to open CUDA IPC handle: %s", cudaGetErrorString(err));
+    dst = BufferView{};  // invalid view
+    return;
+  }
+
+  // 同様に event handle を開く
+  cudaEvent_t evt{};
+  err = cudaIpcOpenEventHandle(&evt, src.event_handle);
+  if (err != cudaSuccess) {
+    RCLCPP_WARN(rclcpp::get_logger("BufferView"),
+                "Failed to open CUDA IPC event handle: %s", cudaGetErrorString(err));
+    cudaIpcCloseMemHandle(ptr);
+    dst = BufferView{};
+    return;
+  }
+
+  // 正常なら view を構築
+  dst.dev_ptr = ptr;
+  dst.ready_evt = evt;
+  dst.device_id = src.device_id;
+  dst.byte_size = src.byte_size;
+  dst.slot_id = src.slot_id;
+  dst.generation = src.generation;
+  // lease 管理は別処理で attach
+}
+```
+
+TODO:
+* Adapter のテンプレート化（ImageView, PointCloud2View）
+
+### 4. アプリ層
+
+* Publisher
+  * バッファプール管理, 書き込み, cudaEventRecord, ハンドル取得, ROS msg 生成・publish。
+* Subscriber
+  * TypeAdapter によって Open 済みの View を受け取る。
+  * アプリは View の `dev_ptr` と `ready_evt` を使い、任意のストリームで同期・処理。
+
+## 命名規則
+
+* **ROS msg**: `BufferCore`, `GpuImage`, `GpuPointCloud2`
+* **C++ 内部型**: `BufferView`, `ImageView`, `PointCloud2View`
+
+→ 「View」という語は C++ 側のみで使用。ROS msg 側はシンプルな名前で機能を表す。
+
+## 運用設計のポイント
+
+* **Adapter は同期をしない**：Open/Close のみ。ユーザがストリーム同期を行う。
+* **RAII 一貫**：View の寿命 = ハンドル寿命。ムーブ可、コピー不可。
+* **ROS msg の薄メタ**：ros2 topic echo / bag で内容が即読める程度に情報を追加。
+* **TypeNegotiation 余地**： future work。
+* エラー発生時は「TypeAdapterエラーハンドリングポリシー」に従う
+
+## フロー例
+
+1. Publisher:
+   * スロットを取得 → GPU に書き込み → cudaEventRecord
+   * cudaIpcGet*Handle → BufferCore に格納
+   * GpuImage/GpuPointCloud2 を publish
+2. Subscriber:
+   * ROS msg を受信 → Adapter が View を返す
+   * `cudaStreamWaitEvent(my_stream, view.ready_evt, 0)`
+   * カーネル呼び出しで view.dev_ptr を利用
