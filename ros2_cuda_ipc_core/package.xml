@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ros2_cuda_ipc_core</name>
+  <version>0.1.0</version>
+  <description>Core C++ utilities for ROS 2 GPU zero-copy transport using CUDA IPC.</description>
+  <maintainer email="dskkato@example.com">dskkato</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rcpputils</depend>
+  <depend>ros2_cuda_ipc_msgs</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+</package>

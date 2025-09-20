@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ros2_cuda_ipc_msgs</name>
+  <version>0.1.0</version>
+  <description>Message definitions for ROS 2 GPU zero-copy transport using CUDA IPC.</description>
+  <maintainer email="dskkato@example.com">dskkato</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <build_depend>rosidl_default_generators</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+</package>
