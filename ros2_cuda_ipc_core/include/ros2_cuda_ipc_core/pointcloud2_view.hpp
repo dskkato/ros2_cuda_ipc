@@ -51,10 +51,10 @@ struct PointCloud2View {
 
   PointCloud2View() = default;
   ~PointCloud2View() = default;
+  PointCloud2View(const PointCloud2View &) = default;
+  PointCloud2View &operator=(const PointCloud2View &) = default;
   PointCloud2View(PointCloud2View &&) noexcept = default;
   PointCloud2View &operator=(PointCloud2View &&) noexcept = default;
-  PointCloud2View(const PointCloud2View &) = delete;
-  PointCloud2View &operator=(const PointCloud2View &) = delete;
 
   size_t num_points() const noexcept {
     return static_cast<size_t>(width) * height;

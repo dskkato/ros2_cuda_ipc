@@ -23,10 +23,10 @@ struct BufferView {
 
   BufferView() = default;
   ~BufferView();
+  BufferView(const BufferView &other);
+  BufferView &operator=(const BufferView &other);
   BufferView(BufferView &&other) noexcept;
   BufferView &operator=(BufferView &&other) noexcept;
-  BufferView(const BufferView &) = delete;
-  BufferView &operator=(const BufferView &) = delete;
 
   template <class T = void>
   T *data() const noexcept {
@@ -47,17 +47,30 @@ struct BufferView {
   }
   bool handles_ready() const noexcept { return handles_ready_; }
 
-  void mark_opened_via_ipc(bool memory_opened, bool event_opened) noexcept {
-    opened_mem_via_ipc_ = memory_opened;
-    opened_event_via_ipc_ = event_opened;
-  }
+  void mark_opened_via_ipc(bool memory_opened, bool event_opened) noexcept;
 
  private:
+  struct ControlBlock {
+    void *dev_ptr = nullptr;
+    cudaEvent_t ready_evt = nullptr;
+    bool opened_mem_via_ipc = false;
+    bool opened_event_via_ipc = false;
+
+    ControlBlock() = default;
+    ControlBlock(void *ptr, cudaEvent_t evt, bool mem_opened, bool evt_opened)
+        : dev_ptr(ptr),
+          ready_evt(evt),
+          opened_mem_via_ipc(mem_opened),
+          opened_event_via_ipc(evt_opened) {}
+    ~ControlBlock();
+  };
+
+  void ensure_control_block() noexcept;
+
   cudaIpcMemHandle_t mem_handle_{};
   cudaIpcEventHandle_t event_handle_{};
   bool handles_ready_ = false;
-  bool opened_mem_via_ipc_ = false;
-  bool opened_event_via_ipc_ = false;
+  std::shared_ptr<ControlBlock> control_;
 };
 
 }  // namespace ros2_cuda_ipc_core

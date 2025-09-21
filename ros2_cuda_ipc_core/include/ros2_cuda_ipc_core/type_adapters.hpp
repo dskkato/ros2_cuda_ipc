@@ -244,3 +244,11 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
 };
 
 }  // namespace rclcpp
+
+RCLCPP_USING_CUSTOM_TYPE_AS_ROS_MESSAGE_TYPE(
+    ros2_cuda_ipc_core::BufferView, ros2_cuda_ipc_msgs::msg::BufferCore);
+RCLCPP_USING_CUSTOM_TYPE_AS_ROS_MESSAGE_TYPE(ros2_cuda_ipc_core::ImageView,
+                                             ros2_cuda_ipc_msgs::msg::GpuImage);
+RCLCPP_USING_CUSTOM_TYPE_AS_ROS_MESSAGE_TYPE(
+    ros2_cuda_ipc_core::PointCloud2View,
+    ros2_cuda_ipc_msgs::msg::GpuPointCloud2);
