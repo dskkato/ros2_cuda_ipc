@@ -177,10 +177,10 @@ struct TypeAdapter<ros2_cuda_ipc_core::ImageView,
 };
 
 template <>
-struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
+struct TypeAdapter<ros2_cuda_ipc_core::GpuPointCloud2View,
                    ros2_cuda_ipc_msgs::msg::GpuPointCloud2> {
   using is_specialized = std::true_type;
-  using custom_type = ros2_cuda_ipc_core::PointCloud2View;
+  using custom_type = ros2_cuda_ipc_core::GpuPointCloud2View;
   using ros_message_type = ros2_cuda_ipc_msgs::msg::GpuPointCloud2;
 
   static void convert_to_custom(const ros_message_type &msg,
@@ -190,11 +190,11 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
         ros2_cuda_ipc_core::BufferView,
         ros2_cuda_ipc_msgs::msg::BufferCore>::convert_to_custom(msg.core, core);
     if (!core.valid()) {
-      view = ros2_cuda_ipc_core::PointCloud2View{};
+      view = custom_type{};
       return;
     }
 
-    custom_type converted;
+    ros2_cuda_ipc_core::PointCloud2View converted;
     converted.core = std::move(core);
     converted.height = msg.height;
     converted.width = msg.width;
@@ -203,27 +203,31 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
     converted.is_dense = msg.is_dense;
     converted.fields.reserve(msg.fields.size());
     for (const auto &field : msg.fields) {
-      custom_type::Field f;
+      ros2_cuda_ipc_core::PointCloud2View::Field f;
       f.name = field.name;
       f.offset = field.offset;
       f.datatype = field.datatype;
       f.count = field.count;
       converted.fields.emplace_back(std::move(f));
     }
-
-    view = std::move(converted);
+    custom_type wrapped;
+    wrapped.header = msg.header;
+    wrapped.pointcloud = std::move(converted);
+    view = std::move(wrapped);
   }
 
   static void convert_to_ros_message(const custom_type &view,
                                      ros_message_type &msg) {
-    msg.height = view.height;
-    msg.width = view.width;
-    msg.point_step = view.point_step;
-    msg.row_step = view.row_step;
-    msg.is_dense = view.is_dense;
+    msg.header = view.header;
+    const auto &pc = view.pointcloud;
+    msg.height = pc.height;
+    msg.width = pc.width;
+    msg.point_step = pc.point_step;
+    msg.row_step = pc.row_step;
+    msg.is_dense = pc.is_dense;
     msg.fields.clear();
-    msg.fields.reserve(view.fields.size());
-    for (const auto &field : view.fields) {
+    msg.fields.reserve(pc.fields.size());
+    for (const auto &field : pc.fields) {
       sensor_msgs::msg::PointField f;
       f.name = field.name;
       f.offset = field.offset;
@@ -234,7 +238,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
 
     TypeAdapter<
         ros2_cuda_ipc_core::BufferView,
-        ros2_cuda_ipc_msgs::msg::BufferCore>::convert_to_ros_message(view.core,
+        ros2_cuda_ipc_msgs::msg::BufferCore>::convert_to_ros_message(pc.core,
                                                                      msg.core);
   }
 };

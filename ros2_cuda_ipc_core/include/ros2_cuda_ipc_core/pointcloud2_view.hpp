@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <std_msgs/msg/header.hpp>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,11 @@ struct PointCloud2View {
                       device_fields,
                       n};
   }
+};
+
+struct GpuPointCloud2View {
+  std_msgs::msg::Header header;
+  PointCloud2View pointcloud;
 };
 
 }  // namespace ros2_cuda_ipc_core

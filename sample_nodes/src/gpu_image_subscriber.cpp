@@ -8,7 +8,6 @@
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
-#include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 
 namespace sample_nodes {
 
@@ -27,7 +26,7 @@ class GpuImageSubscriberNode : public rclcpp::Node {
 
     rclcpp::SubscriptionOptions options;
     options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-    subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
+    subscription_ = create_subscription<ros2_cuda_ipc_core::ImageView>(
         "gpu_image", rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
         std::bind(&GpuImageSubscriberNode::on_image, this,
                   std::placeholders::_1),
@@ -44,11 +43,7 @@ class GpuImageSubscriberNode : public rclcpp::Node {
   }
 
  private:
-  void on_image(const ros2_cuda_ipc_msgs::msg::GpuImage &msg) {
-    ros2_cuda_ipc_core::ImageView view;
-    rclcpp::TypeAdapter<
-        ros2_cuda_ipc_core::ImageView,
-        ros2_cuda_ipc_msgs::msg::GpuImage>::convert_to_custom(msg, view);
+  void on_image(const ros2_cuda_ipc_core::ImageView &view) {
     if (!view.core.valid()) {
       RCLCPP_WARN(get_logger(), "Received invalid GPU image view");
       return;
@@ -83,8 +78,7 @@ class GpuImageSubscriberNode : public rclcpp::Node {
                 static_cast<unsigned>(host[0]));
   }
 
-  rclcpp::Subscription<ros2_cuda_ipc_msgs::msg::GpuImage>::SharedPtr
-      subscription_;
+  rclcpp::Subscription<ros2_cuda_ipc_core::ImageView>::SharedPtr subscription_;
   cudaStream_t stream_ = nullptr;
   std::size_t frame_counter_ = 0;
 };

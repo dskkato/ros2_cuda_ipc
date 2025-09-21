@@ -8,7 +8,6 @@
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/pointcloud2_view.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
-#include "ros2_cuda_ipc_msgs/msg/gpu_point_cloud2.hpp"
 
 namespace sample_nodes {
 
@@ -27,12 +26,11 @@ class GpuPointCloudSubscriberNode : public rclcpp::Node {
 
     rclcpp::SubscriptionOptions options;
     options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-    subscription_ =
-        create_subscription<ros2_cuda_ipc_msgs::msg::GpuPointCloud2>(
-            "gpu_pointcloud", rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
-            std::bind(&GpuPointCloudSubscriberNode::on_pointcloud, this,
-                      std::placeholders::_1),
-            options);
+    subscription_ = create_subscription<ros2_cuda_ipc_core::GpuPointCloud2View>(
+        "gpu_pointcloud", rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
+        std::bind(&GpuPointCloudSubscriberNode::on_pointcloud, this,
+                  std::placeholders::_1),
+        options);
 
     RCLCPP_INFO(get_logger(),
                 "Listening for GPU point clouds on /gpu_pointcloud");
@@ -46,11 +44,8 @@ class GpuPointCloudSubscriberNode : public rclcpp::Node {
   }
 
  private:
-  void on_pointcloud(const ros2_cuda_ipc_msgs::msg::GpuPointCloud2 &msg) {
-    ros2_cuda_ipc_core::PointCloud2View view;
-    rclcpp::TypeAdapter<
-        ros2_cuda_ipc_core::PointCloud2View,
-        ros2_cuda_ipc_msgs::msg::GpuPointCloud2>::convert_to_custom(msg, view);
+  void on_pointcloud(const ros2_cuda_ipc_core::GpuPointCloud2View &msg) {
+    const auto &view = msg.pointcloud;
     if (!view.core.valid()) {
       RCLCPP_WARN(get_logger(), "Received invalid GPU point cloud view");
       return;
@@ -89,7 +84,7 @@ class GpuPointCloudSubscriberNode : public rclcpp::Node {
                 ++frame_counter_, msg.header.frame_id.c_str(), x, y, z);
   }
 
-  rclcpp::Subscription<ros2_cuda_ipc_msgs::msg::GpuPointCloud2>::SharedPtr
+  rclcpp::Subscription<ros2_cuda_ipc_core::GpuPointCloud2View>::SharedPtr
       subscription_;
   cudaStream_t stream_ = nullptr;
   std::size_t frame_counter_ = 0;

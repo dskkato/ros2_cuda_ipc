@@ -3,7 +3,6 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
-#include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "sample_nodes/gpu_image_publisher_helper.hpp"
 
 namespace sample_nodes {
@@ -63,7 +62,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
 
     rclcpp::PublisherOptions options;
     options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-    publisher_ = create_publisher<ros2_cuda_ipc_msgs::msg::GpuImage>(
+    publisher_ = create_publisher<ros2_cuda_ipc_core::ImageView>(
         "gpu_image", rclcpp::QoS(rclcpp::KeepLast(10)).reliable(), options);
 
     if (publish_timer_period_ <= 0.0) {
@@ -92,18 +91,11 @@ class GpuImagePublisherNode : public rclcpp::Node {
 
     view->header.stamp = now();
     view->header.frame_id = frame_id_;
-    ros2_cuda_ipc_msgs::msg::GpuImage msg;
-    msg.header = view->header;
-    rclcpp::TypeAdapter<
-        ros2_cuda_ipc_core::ImageView,
-        ros2_cuda_ipc_msgs::msg::GpuImage>::convert_to_ros_message(*view, msg);
-    msg.header.stamp = now();
-    msg.header.frame_id = frame_id_;
-    publisher_->publish(msg);
+    publisher_->publish(*view);
     ++frame_counter_;
   }
 
-  rclcpp::Publisher<ros2_cuda_ipc_msgs::msg::GpuImage>::SharedPtr publisher_;
+  rclcpp::Publisher<ros2_cuda_ipc_core::ImageView>::SharedPtr publisher_;
   std::unique_ptr<sample_nodes::GpuImagePublisherHelper> helper_;
   rclcpp::TimerBase::SharedPtr timer_;
   double publish_timer_period_ = 30.0;
