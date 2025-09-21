@@ -26,7 +26,7 @@ class GpuPointCloudSubscriberNode : public rclcpp::Node {
 
     rclcpp::SubscriptionOptions options;
     options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-    subscription_ = create_subscription<ros2_cuda_ipc_core::GpuPointCloud2View>(
+    subscription_ = create_subscription<ros2_cuda_ipc_core::PointCloud2View>(
         "gpu_pointcloud", rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
         std::bind(&GpuPointCloudSubscriberNode::on_pointcloud, this,
                   std::placeholders::_1),
@@ -44,8 +44,7 @@ class GpuPointCloudSubscriberNode : public rclcpp::Node {
   }
 
  private:
-  void on_pointcloud(const ros2_cuda_ipc_core::GpuPointCloud2View &msg) {
-    const auto &view = msg.pointcloud;
+  void on_pointcloud(const ros2_cuda_ipc_core::PointCloud2View &view) {
     if (!view.core.valid()) {
       RCLCPP_WARN(get_logger(), "Received invalid GPU point cloud view");
       return;
@@ -81,10 +80,10 @@ class GpuPointCloudSubscriberNode : public rclcpp::Node {
     RCLCPP_INFO(get_logger(),
                 "PointCloud frame %zu received frame_id=%s first_point=(%.3f, "
                 "%.3f, %.3f)",
-                ++frame_counter_, msg.header.frame_id.c_str(), x, y, z);
+                ++frame_counter_, view.header.frame_id.c_str(), x, y, z);
   }
 
-  rclcpp::Subscription<ros2_cuda_ipc_core::GpuPointCloud2View>::SharedPtr
+  rclcpp::Subscription<ros2_cuda_ipc_core::PointCloud2View>::SharedPtr
       subscription_;
   cudaStream_t stream_ = nullptr;
   std::size_t frame_counter_ = 0;

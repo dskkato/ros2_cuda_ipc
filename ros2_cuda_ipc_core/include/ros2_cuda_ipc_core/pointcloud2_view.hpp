@@ -34,6 +34,7 @@ struct PointCloud2View {
     int num_fields;
   };
 
+  std_msgs::msg::Header header;
   BufferView core;
   uint32_t height = 1;
   uint32_t width = 0;
@@ -74,11 +75,6 @@ struct PointCloud2View {
                       device_fields,
                       n};
   }
-};
-
-struct GpuPointCloud2View {
-  std_msgs::msg::Header header;
-  PointCloud2View pointcloud;
 };
 
 }  // namespace ros2_cuda_ipc_core

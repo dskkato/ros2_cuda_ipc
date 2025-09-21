@@ -255,41 +255,40 @@ TEST_F(TypeAdapterTest, PointCloudViewRoundTripTransfersLayout) {
   field_z.offset = 8;
   msg.fields = {field_x, field_y, field_z};
 
-  ros2_cuda_ipc_core::GpuPointCloud2View view;
+  ros2_cuda_ipc_core::PointCloud2View view;
   rclcpp::TypeAdapter<
-      ros2_cuda_ipc_core::GpuPointCloud2View,
+      ros2_cuda_ipc_core::PointCloud2View,
       ros2_cuda_ipc_msgs::msg::GpuPointCloud2>::convert_to_custom(msg, view);
-  EXPECT_TRUE(view.pointcloud.core.valid());
+  EXPECT_TRUE(view.core.valid());
   EXPECT_EQ(view.header.frame_id, "frame_pc");
-  EXPECT_EQ(view.pointcloud.width, 2u);
-  EXPECT_EQ(view.pointcloud.fields.size(), 3u);
-  view.pointcloud.core.reset();
+  EXPECT_EQ(view.width, 2u);
+  EXPECT_EQ(view.fields.size(), 3u);
+  view.core.reset();
 
   ::shm_unlink(shm_name.c_str());
 
-  ros2_cuda_ipc_core::GpuPointCloud2View emit;
+  ros2_cuda_ipc_core::PointCloud2View emit;
   emit.header.frame_id = "frame";
-  emit.pointcloud.core.device_id = 1;
-  emit.pointcloud.core.byte_size = 120;
-  emit.pointcloud.core.slot_id = 5;
-  emit.pointcloud.core.generation = 9;
-  emit.pointcloud.core.shm_name = "/pc_demo";
+  emit.core.device_id = 1;
+  emit.core.byte_size = 120;
+  emit.core.slot_id = 5;
+  emit.core.generation = 9;
+  emit.core.shm_name = "/pc_demo";
   cudaIpcMemHandle_t dummy_mem{};
   cudaIpcEventHandle_t dummy_evt{};
-  emit.pointcloud.core.set_ipc_handles(dummy_mem, dummy_evt);
-  emit.pointcloud.height = 1;
-  emit.pointcloud.width = 10;
-  emit.pointcloud.point_step = 12;
-  emit.pointcloud.row_step = 120;
-  emit.pointcloud.is_dense = true;
-  emit.pointcloud.fields = {
-      {"x", 0u, sensor_msgs::msg::PointField::FLOAT32, 1u},
-      {"y", 4u, sensor_msgs::msg::PointField::FLOAT32, 1u},
-      {"z", 8u, sensor_msgs::msg::PointField::FLOAT32, 1u}};
+  emit.core.set_ipc_handles(dummy_mem, dummy_evt);
+  emit.height = 1;
+  emit.width = 10;
+  emit.point_step = 12;
+  emit.row_step = 120;
+  emit.is_dense = true;
+  emit.fields = {{"x", 0u, sensor_msgs::msg::PointField::FLOAT32, 1u},
+                 {"y", 4u, sensor_msgs::msg::PointField::FLOAT32, 1u},
+                 {"z", 8u, sensor_msgs::msg::PointField::FLOAT32, 1u}};
 
   ros2_cuda_ipc_msgs::msg::GpuPointCloud2 out_msg;
   rclcpp::TypeAdapter<
-      ros2_cuda_ipc_core::GpuPointCloud2View,
+      ros2_cuda_ipc_core::PointCloud2View,
       ros2_cuda_ipc_msgs::msg::GpuPointCloud2>::convert_to_ros_message(emit,
                                                                        out_msg);
   EXPECT_EQ(out_msg.header.frame_id, "frame");

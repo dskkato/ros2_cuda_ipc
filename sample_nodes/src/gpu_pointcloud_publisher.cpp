@@ -31,7 +31,7 @@ class GpuPointCloudPublisherNode : public rclcpp::Node {
 
     rclcpp::PublisherOptions options;
     options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-    publisher_ = create_publisher<ros2_cuda_ipc_core::GpuPointCloud2View>(
+    publisher_ = create_publisher<ros2_cuda_ipc_core::PointCloud2View>(
         "gpu_pointcloud", rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
         options);
 
@@ -58,16 +58,13 @@ class GpuPointCloudPublisherNode : public rclcpp::Node {
       return;
     }
 
-    ros2_cuda_ipc_core::GpuPointCloud2View msg;
-    msg.header.stamp = now();
-    msg.header.frame_id = frame_id_;
-    msg.pointcloud = std::move(*view);
-    publisher_->publish(msg);
+    view->header.stamp = now();
+    view->header.frame_id = frame_id_;
+    publisher_->publish(*view);
     ++frame_counter_;
   }
 
-  rclcpp::Publisher<ros2_cuda_ipc_core::GpuPointCloud2View>::SharedPtr
-      publisher_;
+  rclcpp::Publisher<ros2_cuda_ipc_core::PointCloud2View>::SharedPtr publisher_;
   std::unique_ptr<sample_nodes::GpuPointCloudPublisherHelper> helper_;
   rclcpp::TimerBase::SharedPtr timer_;
   double publish_rate_hz_ = 10.0;
