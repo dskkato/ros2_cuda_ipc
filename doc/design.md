@@ -106,16 +106,16 @@ struct BufferView {
   // === 運用メタ（安全・再利用のため） ===
   uint32_t slot_id = 0;
   uint32_t generation = 0;
-  std::shared_ptr<void> lease;       // 共有メモリrefcntのRAIIハンドル
-  // （実装は環境依存。ここでは型非公開のpimplでもOK）
+  std::string shm_name;                // LeaseHandle のキー
+  std::shared_ptr<LeaseHandle> lease;  // 共有メモリrefcntのRAIIハンドル
 
   // === ライフサイクル ===
   BufferView() = default;
-  ~BufferView();                     // cudaIpcCloseMemHandle / evt破棄（必要なら）
+  ~BufferView();
+  BufferView(const BufferView&);
+  BufferView& operator=(const BufferView&);
   BufferView(BufferView&&) noexcept;
   BufferView& operator=(BufferView&&) noexcept;
-  BufferView(const BufferView&) = delete;
-  BufferView& operator=(const BufferView&) = delete;
 
   // === 最小アクセサ／ユーティリティ ===
   template<class T = void> T* data() const noexcept { return static_cast<T*>(dev_ptr); }
@@ -125,14 +125,40 @@ struct BufferView {
   cudaError_t wait(cudaStream_t s) const noexcept {
     return ready_evt ? cudaStreamWaitEvent(s, ready_evt, 0) : cudaSuccess;
   }
+
+  void reset() noexcept;             // dev_ptr/evt を破棄し lease を解放
+  void set_ipc_handles(const cudaIpcMemHandle_t& mem,
+                       const cudaIpcEventHandle_t& evt) noexcept;
+  bool handles_ready() const noexcept;
+
+private:
+  struct ControlBlock {
+    void* dev_ptr = nullptr;
+    cudaEvent_t ready_evt = nullptr;
+    bool opened_mem_via_ipc = false;
+    bool opened_event_via_ipc = false;
+    ~ControlBlock();                 // cudaIpcCloseMemHandle / cudaEventDestroy
+  };
+
+  void ensure_control_block() noexcept;  // コピー時に共有する shared_ptr を確保
+  std::shared_ptr<ControlBlock> control_;
+  cudaIpcMemHandle_t mem_handle_{};      // Publisher から渡されたハンドル
+  cudaIpcEventHandle_t event_handle_{};
+  bool handles_ready_ = false;
 };
 ```
 
 **方針**
 
 * 同期は提供するが強制しない：wait(stream) を呼ぶかは利用側の責務。
-* move-only：ダングリングや二重 close を防ぐ。
+* Control block を shared_ptr で共有し、`cudaIpcClose*` を一度だけ実行しつつコピー可能にする。
 * 解釈ゼロ：幅やレイアウトは一切持たない（下位互換と拡張性の源）。
+
+Control block は BufferView が保持する開いた CUDA リソース（`dev_ptr`/`ready_evt`）と
+「自分で Open したのか？」というフラグを持つ。BufferView をコピーしても Control block
+が共有されるため、最後の 1 つが破棄されるタイミングでのみ `cudaIpcCloseMemHandle`
+や `cudaEventDestroy` を呼べる。TypeAdapter のユーザー定義型が CopyConstructible である
+という rclcpp の要件を満たすための仕組みである。
 
 #### ImageView（BufferView + 薄い解釈）
 
@@ -163,13 +189,13 @@ struct ImageView {
   // === 任意：互換/可読（空文字なら未設定） ===
   std::string encoding;                  // 例: "rgb8","mono16","32FC1" 等
 
-  // === move-only ===
+  // === BufferView を共有する借用ビュー（コピー可能） ===
   ImageView() = default;
   ~ImageView() = default;                // リソース解放は core の RAII に委譲
+  ImageView(const ImageView&) = default;
+  ImageView& operator=(const ImageView&) = default;
   ImageView(ImageView&&) noexcept = default;
   ImageView& operator=(ImageView&&) noexcept = default;
-  ImageView(const ImageView&) = delete;
-  ImageView& operator=(const ImageView&) = delete;
 
   // === 最小アクセサ ===
   uint32_t rows()      const noexcept { return shape[0]; }
@@ -233,6 +259,7 @@ struct ImageView {
 * POD な DeviceView を用意：そのまま kernel 引数に渡せる。
 * strideC を持つ：画像処理でピクセル内のチャンネル間隔が重要な場合があるため。
 * elem_size_bytes() は簡易版：複雑な型はアプリ側で管理。
+* ImageView 自体も BufferView の Control block を共有するためコピー可能。
 
 #### 点群：PointCloud2View（BufferView + layout）
 
@@ -297,6 +324,7 @@ struct PointCloud2View {
 
 * フィールド名はCPU側だけで扱い、GPU には offset/datatype を渡す。
 * DeviceField 配列は デバイスメモリに一度コピーしてキャッシュするとよい。
+* BufferView が Control block を共有するため、この View もコピー可能。
 
 ### 3. 変換層 (TypeAdapter)
 
@@ -423,7 +451,7 @@ TODO:
 ## 運用設計のポイント
 
 * **Adapter は同期をしない**：Open/Close のみ。ユーザがストリーム同期を行う。
-* **RAII 一貫**：View の寿命 = ハンドル寿命。ムーブ可、コピー不可。
+* **RAII 一貫**：View の寿命 = ハンドル寿命。Control block と LeaseHandle を共有しつつコピー可。
 * **ROS msg の薄メタ**：ros2 topic echo / bag で内容が即読める程度に情報を追加。
 * **TypeNegotiation 余地**： future work。
 * エラー発生時は「TypeAdapterエラーハンドリングポリシー」に従う

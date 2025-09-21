@@ -13,6 +13,11 @@
 `LeaseHandle`は、ゼロコピー配信用バッファプールの各スロット (slot) に対し、プロセス間での利用寿命（lease）を参照カウントで管理する軽量RAIIユーティリティである。
 GPUメモリやCUDA IPCとは疎結合で、(`shm_name`, `slot_id`, `generation`) をキーに 共有メモリ(SHM) 上のメタへアタッチし、`refcnt`を増減する。
 
+Subscriber 側で生成する `BufferView` は、この `LeaseHandle` を `std::shared_ptr` で保持しつつ、
+CUDA IPC の Open/Close を司る Control block も共有する。これにより TypeAdapter の
+ユーザー定義型が CopyConstructible であるという rclcpp の要件を満たしながら、最後の
+インスタンス破棄でのみ `cudaIpcClose*` / `cudaEventDestroy` が実行される。
+
 ## 目的/要件
 
 * 目的
@@ -167,8 +172,11 @@ private:
 
 * TypeAdapter（ROS→View） は、まず`LeaseHandle::acquire()`を試みる。
   * 成功：Lease が有効になった時点で CUDA IPC open を行い、View を構築。
+    * BufferView は Control block (`shared_ptr`) を共有し、コピー後も `cudaIpcClose*` や
+      `cudaEventDestroy` が 1 度だけ実行される。
   * 失敗：無効 View を返してコールバック側で破棄（例外は使わない）。
-* View の RAII により、スコープ終了で自動的に`refcnt--`。
+* View の RAII（Control block + LeaseHandle）により、最後の View 破棄で
+  `cudaIpcClose*` / `cudaEventDestroy` / `refcnt--` が連鎖的に実行される。
 
 
 # 付録：運用ガイド
@@ -297,8 +305,13 @@ classDiagram
     +uint64      byte_size
     +uint32      slot_id
     +uint32      generation
-    +shared_ptr<void> lease  // LeaseHandleを保持
+    +string      shm_name
+    +shared_ptr<LeaseHandle> lease
+    +BufferView(const BufferView&)
+    +operator=(const BufferView&)
     +wait(stream) : cudaError_t
+    +reset() : void
+    -shared_ptr<ControlBlock> control_
   }
 
   class ImageView {
@@ -316,10 +329,20 @@ classDiagram
     +ImageView -> BufferCore.msg
   }
 
+  class ControlBlock {
+    <<RAII>>
+    -void* dev_ptr
+    -cudaEvent_t ready_evt
+    -bool opened_mem_via_ipc
+    -bool opened_event_via_ipc
+    +~ControlBlock()
+  }
+
   BufferCore_msg <.. TypeAdapter : 入力
   TypeAdapter --> ImageView : 生成
   ImageView *-- BufferView : 集約(保持)
   BufferView o-- LeaseHandle : 所有(共有ptr)
+  BufferView o-- ControlBlock : 所有(共有ptr)
 ```
 
 ### シーケンス図
