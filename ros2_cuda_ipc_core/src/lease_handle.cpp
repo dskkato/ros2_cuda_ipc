@@ -19,6 +19,9 @@ namespace {
 constexpr uint32_t kShmMagic = 0x4C534531;  // 'LSE1'
 constexpr uint32_t kLayoutVersion = 1;
 
+/**
+ * @brief Shared memory header structure.
+ */
 struct ShmHeader {
   uint32_t magic;
   uint32_t layout_version;
@@ -26,10 +29,23 @@ struct ShmHeader {
   uint32_t reserved;
 };
 
+/**
+ * @brief Treat a uint32_t reference as an atomic<uint32_t>.
+ *
+ * This is used to avoid adding padding to the SlotMeta struct.
+ *
+ * @param value Reference to a uint32_t variable.
+ * @return std::atomic<uint32_t>&
+ */
 inline std::atomic<uint32_t> &as_atomic(uint32_t &value) {
   return reinterpret_cast<std::atomic<uint32_t> &>(value);
 }
 
+/**
+ * @brief Get the logger for the lease handle.
+ *
+ * @return rclcpp::Logger
+ */
 rclcpp::Logger lease_logger() {
   static rclcpp::Logger logger =
       rclcpp::get_logger("ros2_cuda_ipc_core.LeaseHandle");

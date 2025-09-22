@@ -23,7 +23,6 @@ class LeaseHandle {
   static LeaseHandle acquire(const std::string &shm_name, uint32_t slot_id,
                              uint32_t generation);
 
-  LeaseHandle() = default;
   ~LeaseHandle();
 
   LeaseHandle(LeaseHandle &&other) noexcept;
@@ -39,6 +38,7 @@ class LeaseHandle {
   struct Mapping;
   struct SlotMeta;
 
+  LeaseHandle() = default;
   LeaseHandle(std::shared_ptr<Mapping> mapping, SlotMeta *slot,
               uint32_t slot_id, uint32_t generation);
 

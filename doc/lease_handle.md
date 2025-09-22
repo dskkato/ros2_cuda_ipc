@@ -13,6 +13,10 @@
 `LeaseHandle`は、ゼロコピー配信用バッファプールの各スロット (slot) に対し、プロセス間での利用寿命（lease）を参照カウントで管理する軽量RAIIユーティリティである。
 GPUメモリやCUDA IPCとは疎結合で、(`shm_name`, `slot_id`, `generation`) をキーに 共有メモリ(SHM) 上のメタへアタッチし、`refcnt`を増減する。
 
+共有メモリのマッピングはプロセス全体で `std::shared_ptr` を介してキャッシュされ、`LeaseHandle` は静的関数を通じて
+必要時に `mmap` し、複数ハンドル間で再利用する。インスタンス化は `acquire()` のみから行われ、ハンドルは
+参照カウントを保持するための最小限の状態（マッピング共有ポインタとスロットメタ情報）だけを格納する。
+
 Subscriber 側で生成する `BufferView` は、この `LeaseHandle` を `std::shared_ptr` で保持しつつ、
 CUDA IPC の Open/Close を司る Control block も共有する。これにより TypeAdapter の
 ユーザー定義型が CopyConstructible であるという rclcpp の要件を満たしながら、最後の
@@ -57,8 +61,8 @@ struct ShmHeader {
 };
 
 struct SlotMeta {
-  std::atomic<uint32_t> generation; // Publisher が publish前に更新
-  std::atomic<uint32_t> refcnt;     // 全Subscriberで増減
+  uint32_t generation;  // as_atomic() で std::atomic<uint32_t> として扱う
+  uint32_t refcnt;      // 同上
 };
 
 struct ShmArea {
@@ -67,7 +71,9 @@ struct ShmArea {
 };
 ```
 
-実装では`std::atomic`をそのままSHMに置くのではなく、`atomic_ref<uint32_t>`などでprocess-sharedを明示する方針が望ましい。
+実装では共有メモリ互換性を保つため `uint32_t` をそのまま配置し、必要な場面で `as_atomic()` ヘルパーを通じて
+`std::atomic<uint32_t>` 参照に再解釈して操作する。C++20 の `std::atomic_ref` と同じ意図で、配置レイアウトを
+崩さずにアトミック操作だけを付与している。
 
 ## ライフサイクル/状態遷移
 
@@ -98,7 +104,8 @@ BufferCore{ shm_name, slot_id, generation, mem_handle, event_handle, byte_size, 
 
 2. 利用（use）
 TypeAdapter が BufferView / ImageView / PointCloud2View を構築して返す。
-利用者は必要に応じて view.core.wait(stream) を呼び、カーネルを stream に投入。
+`LeaseHandle` は View の内部で `std::shared_ptr` として保持され、利用者は必要に応じて
+`view.core.wait(stream)` を呼び、カーネルを stream に投入。
 
 3. 解放（release）
 View の破棄に伴い、内部で保持する LeaseHandle のデストラクタが呼ばれ、refcnt.fetch_sub(1, acq_rel)。
@@ -119,8 +126,15 @@ public:
   // 空き slot を選択（refcnt==0 の slot_id を返す）
   static std::optional<uint32_t> choose_empty_slot(const std::string& shm_name);
 
+  // 参照用ヘルパー
+  static std::optional<uint32_t> current_generation(const std::string& shm_name,
+                                                    uint32_t slot_id);
+  static std::optional<uint32_t> current_refcount(const std::string& shm_name,
+                                                  uint32_t slot_id);
+
   // 世代番号をインクリメント（publish 直前に呼ぶ）
-  static uint32_t bump_generation(const std::string& shm_name, uint32_t slot_id);
+  static std::optional<uint32_t> bump_generation(const std::string& shm_name,
+                                                 uint32_t slot_id);
 
   // ==============================
   // Subscriber 側ユーティリティ
@@ -132,8 +146,7 @@ public:
                              uint32_t slot_id,
                              uint32_t generation);
 
-  LeaseHandle() = default;
-  ~LeaseHandle();                       // validなら refcnt-- / detach（条件付き）
+  ~LeaseHandle();  // valid なら refcnt--
   LeaseHandle(LeaseHandle&&) noexcept;
   LeaseHandle& operator=(LeaseHandle&&) noexcept;
   LeaseHandle(const LeaseHandle&) = delete;
@@ -144,14 +157,25 @@ public:
   uint32_t generation() const noexcept;
 
 private:
-  struct Mapping;                       // SHMマッピングのpimpl
-  std::shared_ptr<Mapping> map_;        // SHM lifetime共有
-  SlotMeta* ptr_ = nullptr;             // slots[slot_id] へのポインタ
+  struct Mapping;
+  struct SlotMeta;
+
+  LeaseHandle() = default;
+  LeaseHandle(std::shared_ptr<Mapping> mapping,
+              SlotMeta* slot,
+              uint32_t slot_id,
+              uint32_t generation);
+
+  void release() noexcept;
+
+  std::shared_ptr<Mapping> mapping_;
+  SlotMeta* slot_meta_ = nullptr;
   uint32_t slot_id_ = 0;
   uint32_t generation_ = 0;
 
   static std::shared_ptr<Mapping> attach(const std::string& shm_name);
-  static void detach(std::shared_ptr<Mapping>&);
+  static std::mutex& registry_mutex();
+  static std::unordered_map<std::string, std::shared_ptr<Mapping>>& registry();
 };
 ```
 
@@ -159,7 +183,7 @@ private:
 
 * 例外非依存：acquire() は無効ハンドルで返す＋ログ（WARN/DEBUG）に留める。
 * move-only：二重解放を防止。
-* SHM lifetime：map_ を shared_ptr で共有し、最後の LeaseHandle 破棄で detach。
+* SHM lifetime：`Mapping` を `shared_ptr` で共有し、`munmap()` は `Mapping` のデストラクタで処理する。
 
 ## 並行性 / メモリ順序（最小規定）
 
