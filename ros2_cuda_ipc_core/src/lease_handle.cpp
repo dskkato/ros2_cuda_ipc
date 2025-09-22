@@ -319,6 +319,21 @@ LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
   return LeaseHandle(std::move(mapping), slot, slot_id, generation);
 }
 
+bool LeaseHandle::return_slot(const std::string &shm_name, uint32_t slot_id) {
+  auto mapping = attach(shm_name);
+  if (!mapping || slot_id >= mapping->capacity) {
+    return false;
+  }
+
+  auto &ref = as_atomic(mapping->slots[slot_id].refcnt);
+  if (ref.load(std::memory_order_acquire) != 0) {
+    return false;
+  }
+
+  push_free_slot(*mapping, slot_id);
+  return true;
+}
+
 void LeaseHandle::push_free_slot(Mapping &mapping, uint32_t slot_id) {
   auto &head = as_atomic(mapping.header->free_head);
   auto &next = as_atomic(mapping.slots[slot_id].next_free);
@@ -345,21 +360,6 @@ std::optional<uint32_t> LeaseHandle::pop_free_slot(Mapping &mapping) {
     }
   }
   return std::nullopt;
-}
-
-bool LeaseHandle::return_slot(const std::string &shm_name, uint32_t slot_id) {
-  auto mapping = attach(shm_name);
-  if (!mapping || slot_id >= mapping->capacity) {
-    return false;
-  }
-
-  auto &ref = as_atomic(mapping->slots[slot_id].refcnt);
-  if (ref.load(std::memory_order_acquire) != 0) {
-    return false;
-  }
-
-  push_free_slot(*mapping, slot_id);
-  return true;
 }
 
 }  // namespace ros2_cuda_ipc_core
