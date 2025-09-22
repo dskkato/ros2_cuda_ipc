@@ -8,7 +8,6 @@
 #include <atomic>
 #include <cerrno>
 #include <cstring>
-#include <limits>
 #include <mutex>
 #include <optional>
 #include <rclcpp/logging.hpp>
@@ -188,7 +187,7 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
     return nullptr;
   }
 
-  struct stat st {};  // NOLINT
+  struct stat st {};
   if (fstat(fd, &st) != 0) {
     RCLCPP_WARN(lease_logger(), "lease:attach fstat failed name=%s errno=%d",
                 shm_name.c_str(), errno);
@@ -280,7 +279,7 @@ LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
                                  uint32_t generation) {
   auto mapping = attach(shm_name);
   if (!mapping || slot_id >= mapping->capacity) {
-    return {};
+    return LeaseHandle{};
   }
   SlotMeta *slot = &mapping->slots[slot_id];
   auto &gen = as_atomic(slot->generation);
@@ -291,13 +290,13 @@ LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
     RCLCPP_DEBUG(lease_logger(),
                  "lease:gen_mismatch slot=%u expected=%u observed=%u", slot_id,
                  generation, observed_gen);
-    return {};
+    return LeaseHandle{};
   }
 
   const uint32_t prev = ref.fetch_add(1, std::memory_order_acq_rel);
   if (prev == UINT32_MAX) {
     RCLCPP_ERROR(lease_logger(), "lease:ref_overflow slot=%u", slot_id);
-    return {};
+    return LeaseHandle{};
   }
 
   const uint32_t recheck_gen = gen.load(std::memory_order_acquire);
@@ -306,7 +305,7 @@ LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
     RCLCPP_DEBUG(lease_logger(),
                  "lease:gen_race slot=%u expected=%u observed=%u", slot_id,
                  generation, recheck_gen);
-    return {};
+    return LeaseHandle{};
   }
 
   return LeaseHandle(std::move(mapping), slot, slot_id, generation);
