@@ -20,11 +20,12 @@ class LeaseHandle {
   /// \return true when the memory is initialized successfully.
   static bool init(const std::string &shm_name, uint32_t capacity);
 
-  /// Find a slot whose reference count has dropped to zero.
+  /// Pop the next free slot from the internal free list.
   ///
   /// \param shm_name Shared-memory name to query.
   /// \return slot id on success; std::nullopt when no free slot exists or the
-  /// mapping cannot be attached.
+  /// mapping cannot be attached. Callers must eventually hand the slot to a
+  /// subscriber or return it via return_slot().
   static std::optional<uint32_t> choose_empty_slot(const std::string &shm_name);
 
   /// Read the current generation value for a slot.
@@ -64,6 +65,16 @@ class LeaseHandle {
   static LeaseHandle acquire(const std::string &shm_name, uint32_t slot_id,
                              uint32_t generation);
 
+  /// Return a slot to the free list without altering its generation.
+  /// Used by publishers when a reservation fails before handing off to
+  /// subscribers.
+  ///
+  /// \param shm_name Shared-memory name containing the slot metadata.
+  /// \param slot_id Slot index to requeue.
+  /// \return true when the slot was requeued; false if the slot was invalid or
+  /// still held by a subscriber.
+  static bool return_slot(const std::string &shm_name, uint32_t slot_id);
+
   /// Release any held lease on destruction.
   ~LeaseHandle();
 
@@ -100,6 +111,8 @@ class LeaseHandle {
   static std::shared_ptr<Mapping> attach(const std::string &shm_name);
   static std::mutex &registry_mutex();
   static std::unordered_map<std::string, std::shared_ptr<Mapping>> &registry();
+  static void push_free_slot(Mapping &mapping, uint32_t slot_id);
+  static std::optional<uint32_t> pop_free_slot(Mapping &mapping);
 };
 
 }  // namespace ros2_cuda_ipc_core

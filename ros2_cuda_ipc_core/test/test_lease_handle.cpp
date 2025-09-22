@@ -38,6 +38,8 @@ TEST(LeaseHandleTest, AcquireReleaseLifecycle) {
         ros2_cuda_ipc_core::LeaseHandle::choose_empty_slot(shm_name);
     ASSERT_TRUE(other_slot.has_value());
     EXPECT_NE(other_slot.value(), slot.value());
+    EXPECT_TRUE(ros2_cuda_ipc_core::LeaseHandle::return_slot(
+        shm_name, other_slot.value()));
 
     auto ref = ros2_cuda_ipc_core::LeaseHandle::current_refcount(shm_name,
                                                                  slot.value());
@@ -71,6 +73,33 @@ TEST(LeaseHandleTest, GenerationMismatchReturnsInvalid) {
   auto lease = ros2_cuda_ipc_core::LeaseHandle::acquire(shm_name, slot.value(),
                                                         gen.value() + 1);
   EXPECT_FALSE(lease.valid());
+
+  ::shm_unlink(shm_name.c_str());
+}
+
+TEST(LeaseHandleTest, ReturnSlotRespectsRefcount) {
+  const std::string shm_name = make_unique_shm_name("lease_return");
+  ASSERT_TRUE(ros2_cuda_ipc_core::LeaseHandle::init(shm_name, 1));
+
+  auto slot = ros2_cuda_ipc_core::LeaseHandle::choose_empty_slot(shm_name);
+  ASSERT_TRUE(slot.has_value());
+
+  auto gen =
+      ros2_cuda_ipc_core::LeaseHandle::bump_generation(shm_name, slot.value());
+  ASSERT_TRUE(gen.has_value());
+
+  {
+    auto lease = ros2_cuda_ipc_core::LeaseHandle::acquire(
+        shm_name, slot.value(), gen.value());
+    ASSERT_TRUE(lease.valid());
+
+    EXPECT_FALSE(
+        ros2_cuda_ipc_core::LeaseHandle::return_slot(shm_name, slot.value()));
+  }
+
+  auto recycled = ros2_cuda_ipc_core::LeaseHandle::choose_empty_slot(shm_name);
+  ASSERT_TRUE(recycled.has_value());
+  EXPECT_EQ(recycled.value(), slot.value());
 
   ::shm_unlink(shm_name.c_str());
 }

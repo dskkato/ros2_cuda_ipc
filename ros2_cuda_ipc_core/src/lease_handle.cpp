@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <optional>
 #include <rclcpp/logging.hpp>
@@ -17,7 +18,8 @@ namespace ros2_cuda_ipc_core {
 namespace {
 
 constexpr uint32_t kShmMagic = 0x4C534531;  // 'LSE1'
-constexpr uint32_t kLayoutVersion = 1;
+constexpr uint32_t kLayoutVersion = 2;
+constexpr uint32_t kInvalidSlot = std::numeric_limits<uint32_t>::max();
 
 /// Shared memory header structure stored at the start of the shared-memory
 /// segment.
@@ -25,7 +27,7 @@ struct ShmHeader {
   uint32_t magic;
   uint32_t layout_version;
   uint32_t capacity;
-  uint32_t reserved;
+  uint32_t free_head;
 };
 
 /// Treat a `uint32_t` reference as an `std::atomic<uint32_t>` to apply atomic
@@ -49,6 +51,7 @@ rclcpp::Logger lease_logger() {
 struct LeaseHandle::SlotMeta {
   uint32_t generation;
   uint32_t refcnt;
+  uint32_t next_free;
 };
 
 struct LeaseHandle::Mapping {
@@ -119,6 +122,8 @@ void LeaseHandle::release() noexcept {
   if (previous == 0) {
     RCLCPP_ERROR(lease_logger(), "lease:refcnt_underflow slot=%u", slot_id_);
     ref.store(0, std::memory_order_release);
+  } else if (previous == 1 && mapping_) {
+    push_free_slot(*mapping_, slot_id_);
   }
 
   slot_meta_ = nullptr;
@@ -161,12 +166,14 @@ bool LeaseHandle::init(const std::string &shm_name, uint32_t capacity) {
   header->magic = kShmMagic;
   header->layout_version = kLayoutVersion;
   header->capacity = capacity;
-  header->reserved = 0;
+  header->free_head = capacity > 0 ? 0 : kInvalidSlot;
 
   auto *slots = reinterpret_cast<SlotMeta *>(header + 1);
   for (uint32_t i = 0; i < capacity; ++i) {
     as_atomic(slots[i].generation).store(0u, std::memory_order_relaxed);
     as_atomic(slots[i].refcnt).store(0u, std::memory_order_relaxed);
+    const uint32_t next = (i + 1u < capacity) ? (i + 1u) : kInvalidSlot;
+    as_atomic(slots[i].next_free).store(next, std::memory_order_relaxed);
   }
 
   munmap(addr, size);
@@ -241,14 +248,7 @@ std::optional<uint32_t> LeaseHandle::choose_empty_slot(
   if (!mapping || mapping->capacity == 0) {
     return std::nullopt;
   }
-
-  for (uint32_t i = 0; i < mapping->capacity; ++i) {
-    auto &ref = as_atomic(mapping->slots[i].refcnt);
-    if (ref.load(std::memory_order_acquire) == 0) {
-      return i;
-    }
-  }
-  return std::nullopt;
+  return pop_free_slot(*mapping);
 }
 
 std::optional<uint32_t> LeaseHandle::current_generation(
@@ -317,6 +317,49 @@ LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
   }
 
   return LeaseHandle(std::move(mapping), slot, slot_id, generation);
+}
+
+void LeaseHandle::push_free_slot(Mapping &mapping, uint32_t slot_id) {
+  auto &head = as_atomic(mapping.header->free_head);
+  auto &next = as_atomic(mapping.slots[slot_id].next_free);
+
+  uint32_t current_head = head.load(std::memory_order_acquire);
+  do {
+    next.store(current_head, std::memory_order_relaxed);
+  } while (!head.compare_exchange_weak(current_head, slot_id,
+                                       std::memory_order_release,
+                                       std::memory_order_acquire));
+}
+
+std::optional<uint32_t> LeaseHandle::pop_free_slot(Mapping &mapping) {
+  auto &head = as_atomic(mapping.header->free_head);
+
+  uint32_t current = head.load(std::memory_order_acquire);
+  while (current != kInvalidSlot) {
+    auto &slot_next = as_atomic(mapping.slots[current].next_free);
+    const uint32_t next = slot_next.load(std::memory_order_acquire);
+    if (head.compare_exchange_weak(current, next, std::memory_order_acq_rel,
+                                   std::memory_order_acquire)) {
+      slot_next.store(kInvalidSlot, std::memory_order_relaxed);
+      return current;
+    }
+  }
+  return std::nullopt;
+}
+
+bool LeaseHandle::return_slot(const std::string &shm_name, uint32_t slot_id) {
+  auto mapping = attach(shm_name);
+  if (!mapping || slot_id >= mapping->capacity) {
+    return false;
+  }
+
+  auto &ref = as_atomic(mapping->slots[slot_id].refcnt);
+  if (ref.load(std::memory_order_acquire) != 0) {
+    return false;
+  }
+
+  push_free_slot(*mapping, slot_id);
+  return true;
 }
 
 }  // namespace ros2_cuda_ipc_core

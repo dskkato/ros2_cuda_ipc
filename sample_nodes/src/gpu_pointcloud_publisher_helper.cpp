@@ -120,70 +120,70 @@ GpuPointCloudPublisherHelper::produce(float value,
       static_cast<uint64_t>(config_.width) * config_.height;
   std::vector<float> host_cloud(point_count * 3, value);
 
-  for (std::size_t attempt = 0; attempt < slots_.size(); ++attempt) {
-    auto slot_index = (next_slot_ + static_cast<uint32_t>(attempt)) %
-                      static_cast<uint32_t>(slots_.size());
-    auto &slot = slots_[slot_index];
-
-    auto refcnt = ros2_cuda_ipc_core::LeaseHandle::current_refcount(
-        config_.shm_name, slot.index);
-    if (!refcnt.has_value()) {
-      RCLCPP_WARN(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
-                  "Unable to query refcount for slot %u", slot.index);
-      continue;
-    }
-    if (refcnt.value() != 0) {
-      continue;
-    }
-
-    auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
-        config_.shm_name, slot.index);
-    if (!gen.has_value()) {
-      RCLCPP_WARN(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
-                  "Failed to bump generation for slot %u", slot.index);
-      continue;
-    }
-    slot.generation = gen.value();
-
-    cudaError_t err = cudaMemcpy(slot.device_ptr, host_cloud.data(),
-                                 cloud_size_bytes_, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-      RCLCPP_ERROR(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
-                   "cudaMemcpy failed: %s", cuda_error_to_string(err).c_str());
-      return std::nullopt;
-    }
-
-    err = cudaEventRecord(slot.event, stream_);
-    if (err != cudaSuccess) {
-      RCLCPP_ERROR(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
-                   "cudaEventRecord failed: %s",
-                   cuda_error_to_string(err).c_str());
-      return std::nullopt;
-    }
-
-    ros2_cuda_ipc_core::PointCloud2View view;
-    view.core.dev_ptr = slot.device_ptr;
-    view.core.ready_evt = slot.event;
-    view.core.device_id = config_.device_index;
-    view.core.byte_size = cloud_size_bytes_;
-    view.core.slot_id = slot.index;
-    view.core.generation = slot.generation;
-    view.core.shm_name = config_.shm_name;
-    view.core.set_ipc_handles(slot.mem_handle, slot.event_handle);
-    view.height = config_.height;
-    view.width = config_.width;
-    view.point_step = point_step_;
-    view.row_step = point_step_ * config_.width;
-    view.is_dense = config_.is_dense;
-    view.fields = fields_;
-
-    next_slot_ = (slot.index + 1) % static_cast<uint32_t>(slots_.size());
-    return view;
+  auto free_slot =
+      ros2_cuda_ipc_core::LeaseHandle::choose_empty_slot(config_.shm_name);
+  if (!free_slot.has_value()) {
+    RCLCPP_WARN(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
+                "No available GPU slots (all leases in use)");
+    return std::nullopt;
   }
 
-  RCLCPP_WARN(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
-              "No available GPU slots (all leases in use)");
-  return std::nullopt;
+  const uint32_t slot_index = free_slot.value();
+  if (slot_index >= slots_.size()) {
+    RCLCPP_ERROR(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
+                 "Slot index %u out of range", slot_index);
+    ros2_cuda_ipc_core::LeaseHandle::return_slot(config_.shm_name, slot_index);
+    return std::nullopt;
+  }
+
+  auto &slot = slots_[slot_index];
+
+  auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(config_.shm_name,
+                                                              slot.index);
+  if (!gen.has_value()) {
+    RCLCPP_WARN(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
+                "Failed to bump generation for slot %u", slot.index);
+    ros2_cuda_ipc_core::LeaseHandle::return_slot(config_.shm_name, slot.index);
+    return std::nullopt;
+  }
+  slot.generation = gen.value();
+
+  cudaError_t err = cudaMemcpy(slot.device_ptr, host_cloud.data(),
+                               cloud_size_bytes_, cudaMemcpyHostToDevice);
+  if (err != cudaSuccess) {
+    RCLCPP_ERROR(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
+                 "cudaMemcpy failed: %s", cuda_error_to_string(err).c_str());
+    ros2_cuda_ipc_core::LeaseHandle::return_slot(config_.shm_name, slot.index);
+    return std::nullopt;
+  }
+
+  err = cudaEventRecord(slot.event, stream_);
+  if (err != cudaSuccess) {
+    RCLCPP_ERROR(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
+                 "cudaEventRecord failed: %s",
+                 cuda_error_to_string(err).c_str());
+    ros2_cuda_ipc_core::LeaseHandle::return_slot(config_.shm_name, slot.index);
+    return std::nullopt;
+  }
+
+  ros2_cuda_ipc_core::PointCloud2View view;
+  view.core.dev_ptr = slot.device_ptr;
+  view.core.ready_evt = slot.event;
+  view.core.device_id = config_.device_index;
+  view.core.byte_size = cloud_size_bytes_;
+  view.core.slot_id = slot.index;
+  view.core.generation = slot.generation;
+  view.core.shm_name = config_.shm_name;
+  view.core.set_ipc_handles(slot.mem_handle, slot.event_handle);
+  view.height = config_.height;
+  view.width = config_.width;
+  view.point_step = point_step_;
+  view.row_step = point_step_ * config_.width;
+  view.is_dense = config_.is_dense;
+  view.fields = fields_;
+
+  next_slot_ = (slot.index + 1) % static_cast<uint32_t>(slots_.size());
+  return view;
 }
 
 }  // namespace sample_nodes
