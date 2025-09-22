@@ -23,7 +23,6 @@ add_library(${PROJECT_NAME}
   src/image_view.cpp
   src/pointcloud2_view.cpp
   src/lease_handle.cpp
-  src/cuda_support.cpp
 )
 
 target_include_directories(${PROJECT_NAME}

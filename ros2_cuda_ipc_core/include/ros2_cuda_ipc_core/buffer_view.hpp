@@ -6,7 +6,6 @@
 #include <memory>
 #include <string>
 
-#include "ros2_cuda_ipc_core/cuda_support.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 
 namespace ros2_cuda_ipc_core {

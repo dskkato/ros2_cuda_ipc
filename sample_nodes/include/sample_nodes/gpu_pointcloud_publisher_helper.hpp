@@ -3,15 +3,11 @@
 #include <cuda_runtime_api.h>
 
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/pointcloud2_view.hpp"
-#include "sensor_msgs/msg/point_field.hpp"
 
 namespace sample_nodes {
 

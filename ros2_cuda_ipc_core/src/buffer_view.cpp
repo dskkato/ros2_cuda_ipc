@@ -6,10 +6,10 @@ namespace ros2_cuda_ipc_core {
 
 BufferView::ControlBlock::~ControlBlock() {
   if (dev_ptr && opened_mem_via_ipc) {
-    CudaSupport::close_ipc_memory(dev_ptr);
+    cudaIpcCloseMemHandle(dev_ptr);
   }
   if (ready_evt && opened_event_via_ipc) {
-    CudaSupport::destroy_event(ready_evt);
+    cudaEventDestroy(ready_evt);
   }
 }
 
@@ -80,7 +80,7 @@ cudaError_t BufferView::wait(cudaStream_t stream) const noexcept {
   if (!ready_evt) {
     return cudaSuccess;
   }
-  return CudaSupport::stream_wait_event(stream, ready_evt, 0);
+  return cudaStreamWaitEvent(stream, ready_evt, 0);
 }
 
 void BufferView::reset() noexcept {

@@ -138,7 +138,6 @@ colcon build \
 ```
 
 - テスト: `ros2_cuda_ipc_core` には以下の gtest が含まれます（環境により skip あり）
-  - `test_cuda_support`（CUDA ありで実行）
   - `test_gpu_buffer_pool`（CUDA 依存なし）
   - `test_gpu_buffer_mapper`（一部環境で同一プロセスの IPC event open が不可 → スキップ分岐あり）
   - `test_lease_manager`（SHM リリースとタイムアウト解放を確認）

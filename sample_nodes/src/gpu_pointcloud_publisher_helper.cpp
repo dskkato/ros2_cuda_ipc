@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "rclcpp/logging.hpp"
+#include "sensor_msgs/msg/point_field.hpp"
 
 namespace sample_nodes {
 namespace {

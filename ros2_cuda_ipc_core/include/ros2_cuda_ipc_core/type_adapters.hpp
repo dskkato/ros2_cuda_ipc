@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cuda_runtime_api.h>
+
 #include <algorithm>
 #include <cstring>
 #include <memory>
@@ -86,12 +88,11 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
 
     cudaIpcMemHandle_t mem_handle = ros2_cuda_ipc_core::to_cuda_mem_handle(msg);
     void *dev_ptr = nullptr;
-    auto err = ros2_cuda_ipc_core::CudaSupport::open_ipc_memory(
-        &dev_ptr, mem_handle, cudaIpcMemLazyEnablePeerAccess);
+    auto err = cudaIpcOpenMemHandle(&dev_ptr, mem_handle,
+                                    cudaIpcMemLazyEnablePeerAccess);
     if (err != cudaSuccess) {
       RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
-                  "cudaIpcOpenMemHandle failed: %s",
-                  ros2_cuda_ipc_core::CudaSupport::error_string(err));
+                  "cudaIpcOpenMemHandle failed: %s", cudaGetErrorString(err));
       view = ros2_cuda_ipc_core::BufferView{};
       return;
     }
@@ -99,12 +100,11 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     cudaEvent_t evt{};
     cudaIpcEventHandle_t event_handle =
         ros2_cuda_ipc_core::to_cuda_event_handle(msg);
-    err = ros2_cuda_ipc_core::CudaSupport::open_ipc_event(&evt, event_handle);
+    err = cudaIpcOpenEventHandle(&evt, event_handle);
     if (err != cudaSuccess) {
-      ros2_cuda_ipc_core::CudaSupport::close_ipc_memory(dev_ptr);
+      cudaIpcCloseMemHandle(dev_ptr);
       RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
-                  "cudaIpcOpenEventHandle failed: %s",
-                  ros2_cuda_ipc_core::CudaSupport::error_string(err));
+                  "cudaIpcOpenEventHandle failed: %s", cudaGetErrorString(err));
       view = ros2_cuda_ipc_core::BufferView{};
       return;
     }

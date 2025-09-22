@@ -1,3 +1,4 @@
+#include <cuda_runtime_api.h>
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -9,7 +10,6 @@
 #include <string>
 
 #include "ros2_cuda_ipc_core/buffer_view.hpp"
-#include "ros2_cuda_ipc_core/cuda_support.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
@@ -22,29 +22,6 @@ std::string make_unique_shm_name(const std::string &prefix) {
   oss << "/" << prefix << "_" << ::getpid() << "_" << counter.fetch_add(1);
   return oss.str();
 }
-
-cudaError_t fake_open_mem_handle(void **ptr, const cudaIpcMemHandle_t &,
-                                 unsigned int) {
-  static uint8_t dummy_buffer[256];
-  *ptr = dummy_buffer;
-  return cudaSuccess;
-}
-
-cudaError_t fake_close_mem_handle(void *) { return cudaSuccess; }
-
-cudaError_t fake_open_event_handle(cudaEvent_t *evt,
-                                   const cudaIpcEventHandle_t &) {
-  *evt = reinterpret_cast<cudaEvent_t>(0x1);
-  return cudaSuccess;
-}
-
-cudaError_t fake_destroy_event(cudaEvent_t) { return cudaSuccess; }
-
-cudaError_t fake_stream_wait_event(cudaStream_t, cudaEvent_t, unsigned int) {
-  return cudaSuccess;
-}
-
-const char *fake_error_string(cudaError_t) { return "ok"; }
 
 class TypeAdapterTest : public ::testing::Test {
  protected:
@@ -63,35 +40,72 @@ class TypeAdapterTest : public ::testing::Test {
   }
 
   void SetUp() override {
-    ros2_cuda_ipc_core::CudaSupport::Hooks hooks;
-    hooks.open_mem_handle = fake_open_mem_handle;
-    hooks.close_mem_handle = fake_close_mem_handle;
-    hooks.open_event_handle = fake_open_event_handle;
-    hooks.destroy_event = fake_destroy_event;
-    hooks.stream_wait_event = fake_stream_wait_event;
-    hooks.get_error_string = fake_error_string;
-    ros2_cuda_ipc_core::CudaSupport::set_hooks(hooks);
-  }
+    int device_count = 0;
+    auto err = cudaGetDeviceCount(&device_count);
+    if (err != cudaSuccess || device_count == 0) {
+      GTEST_SKIP() << "CUDA device not available for tests";
+    }
 
-  void TearDown() override { ros2_cuda_ipc_core::CudaSupport::reset_hooks(); }
+    err = cudaSetDevice(0);
+    if (err != cudaSuccess) {
+      GTEST_SKIP() << "Failed to select CUDA device 0";
+    }
+  }
 };
 
 }  // namespace
 
 TEST_F(TypeAdapterTest, ConvertToCustomSuccess) {
+  struct CudaAllocation {
+    void *ptr = nullptr;
+    cudaEvent_t event = nullptr;
+
+    ~CudaAllocation() {
+      if (event) {
+        cudaEventDestroy(event);
+      }
+      if (ptr) {
+        cudaFree(ptr);
+      }
+    }
+
+    void release() {
+      if (event) {
+        EXPECT_EQ(cudaSuccess, cudaEventDestroy(event));
+        event = nullptr;
+      }
+      if (ptr) {
+        EXPECT_EQ(cudaSuccess, cudaFree(ptr));
+        ptr = nullptr;
+      }
+    }
+  } allocation;
+
   const std::string shm_name = make_unique_shm_name("adapter");
   ASSERT_TRUE(ros2_cuda_ipc_core::LeaseHandle::init(shm_name, 1));
   auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(shm_name, 0);
   ASSERT_TRUE(gen.has_value());
+
+  constexpr size_t kBufferSize = 1024;
+  ASSERT_EQ(cudaSuccess, cudaMalloc(&allocation.ptr, kBufferSize));
+  ASSERT_EQ(cudaSuccess, cudaEventCreateWithFlags(
+                             &allocation.event,
+                             cudaEventDisableTiming | cudaEventInterprocess));
+
+  cudaIpcMemHandle_t mem_handle{};
+  ASSERT_EQ(cudaSuccess, cudaIpcGetMemHandle(&mem_handle, allocation.ptr));
+  cudaIpcEventHandle_t event_handle{};
+  ASSERT_EQ(cudaSuccess,
+            cudaIpcGetEventHandle(&event_handle, allocation.event));
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
   msg.slot_id = 0;
   msg.device_id = 1;
   msg.generation = gen.value();
-  msg.byte_size = 1024;
-  msg.mem_handle.fill(0);
-  msg.event_handle.fill(0);
+  msg.byte_size = kBufferSize;
+  std::memcpy(msg.mem_handle.data(), &mem_handle, sizeof(mem_handle));
+  std::memcpy(msg.event_handle.data(), &event_handle, sizeof(event_handle));
 
   ros2_cuda_ipc_core::BufferView view;
   rclcpp::TypeAdapter<
@@ -110,6 +124,8 @@ TEST_F(TypeAdapterTest, ConvertToCustomSuccess) {
   EXPECT_EQ(refcnt.value(), 1u);
 
   view.reset();
+  allocation.release();
+
   refcnt = ros2_cuda_ipc_core::LeaseHandle::current_refcount(shm_name, 0);
   ASSERT_TRUE(refcnt.has_value());
   EXPECT_EQ(refcnt.value(), 0u);
