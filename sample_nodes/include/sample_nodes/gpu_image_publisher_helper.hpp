@@ -49,7 +49,6 @@ class GpuImagePublisherHelper {
   std::vector<Slot> slots_;
   cudaStream_t stream_ = nullptr;
   uint64_t frame_size_bytes_ = 0;
-  uint32_t next_slot_ = 0;
 
   void initialise_shm();
   void allocate_slots();

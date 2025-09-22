@@ -182,7 +182,6 @@ GpuPointCloudPublisherHelper::produce(float value,
   view.is_dense = config_.is_dense;
   view.fields = fields_;
 
-  next_slot_ = (slot.index + 1) % static_cast<uint32_t>(slots_.size());
   return view;
 }
 

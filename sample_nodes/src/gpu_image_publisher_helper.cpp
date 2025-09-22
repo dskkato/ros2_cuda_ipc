@@ -199,7 +199,6 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
   view.encoding = "rgb8";
   view.header.frame_id = frame_id;
 
-  next_slot_ = (slot.index + 1) % static_cast<uint32_t>(slots_.size());
   return view;
 }
 

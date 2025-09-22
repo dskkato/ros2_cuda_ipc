@@ -50,7 +50,6 @@ class GpuPointCloudPublisherHelper {
   std::vector<Slot> slots_;
   cudaStream_t stream_ = nullptr;
   uint64_t cloud_size_bytes_ = 0;
-  uint32_t next_slot_ = 0;
   uint32_t point_step_ = 0;
   std::vector<ros2_cuda_ipc_core::PointCloud2View::Field> fields_;
 
