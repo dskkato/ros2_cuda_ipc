@@ -4,7 +4,7 @@
   <version>0.1.0</version>
   <description>Demo publisher/subscriber nodes showcasing ROS 2 CUDA IPC zero-copy transport.</description>
   <maintainer email="dskkato@example.com">dskkato</maintainer>
-  <license>Apache-2.0</license>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

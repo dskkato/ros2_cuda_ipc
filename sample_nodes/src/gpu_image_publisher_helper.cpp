@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <stdexcept>
-#include <thread>
 
 #include "rclcpp/logging.hpp"
 

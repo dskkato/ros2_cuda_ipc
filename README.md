@@ -154,3 +154,11 @@ colcon build --packages-select ros2_cuda_ipc_core sample_nodes --cmake-args -DBU
 colcon test --packages-select ros2_cuda_ipc_core sample_nodes
 colcon test-result --verbose
 ```
+
+## ライセンス
+
+* MIT License
+* Copyright (c) 2025 dskkato
+* All rights reserved.
+
+See [LICENSE](LICENSE) for details.
