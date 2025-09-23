@@ -126,7 +126,7 @@ TEST(LeaseHandleTest, PendingDecrementedOnAcquire) {
     auto pending = ros2_cuda_ipc_core::LeaseHandle::current_pending(
         shm_name, slot.value());
     ASSERT_TRUE(pending.has_value());
-    EXPECT_EQ(pending.value(), 0u);
+    EXPECT_EQ(pending.value(), 1u);
   }
 
   {
@@ -136,8 +136,29 @@ TEST(LeaseHandleTest, PendingDecrementedOnAcquire) {
     auto pending = ros2_cuda_ipc_core::LeaseHandle::current_pending(
         shm_name, slot.value());
     ASSERT_TRUE(pending.has_value());
-    EXPECT_EQ(pending.value(), 0u);
+    EXPECT_EQ(pending.value(), 1u);
   }
+
+  ::shm_unlink(shm_name.c_str());
+}
+
+TEST(LeaseHandleTest, ForceClearPendingResetsCounterWhenIdle) {
+  const std::string shm_name = make_unique_shm_name("lease_force_clear");
+  ASSERT_TRUE(ros2_cuda_ipc_core::LeaseHandle::init(shm_name, 1));
+
+  auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(shm_name, 0, 2);
+  ASSERT_TRUE(gen.has_value());
+
+  auto pending = ros2_cuda_ipc_core::LeaseHandle::current_pending(shm_name, 0);
+  ASSERT_TRUE(pending.has_value());
+  EXPECT_EQ(pending.value(), 2u);
+
+  EXPECT_TRUE(
+      ros2_cuda_ipc_core::LeaseHandle::force_clear_pending(shm_name, 0));
+
+  pending = ros2_cuda_ipc_core::LeaseHandle::current_pending(shm_name, 0);
+  ASSERT_TRUE(pending.has_value());
+  EXPECT_EQ(pending.value(), 0u);
 
   ::shm_unlink(shm_name.c_str());
 }

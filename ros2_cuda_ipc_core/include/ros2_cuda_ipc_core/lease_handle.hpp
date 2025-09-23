@@ -61,6 +61,14 @@ class LeaseHandle {
   static std::optional<uint32_t> current_pending(const std::string &shm_name,
                                                  uint32_t slot_id);
 
+  /// Forcefully reset the pending counter for a slot when the publisher decides
+  /// the payload has expired (e.g., TTL elapsed).
+  ///
+  /// The counter is only cleared when the reference count is zero to avoid
+  /// interfering with active consumers.
+  static bool force_clear_pending(const std::string &shm_name,
+                                  uint32_t slot_id);
+
   /// Acquire a lease for a slot if the generation matches and increment its
   /// reference count.
   ///

@@ -302,6 +302,29 @@ std::optional<uint32_t> LeaseHandle::bump_generation(
   return next;
 }
 
+bool LeaseHandle::force_clear_pending(const std::string &shm_name,
+                                      uint32_t slot_id) {
+  auto mapping = attach(shm_name);
+  if (!mapping || slot_id >= mapping->capacity) {
+    return false;
+  }
+
+  SlotMeta *slot = &mapping->slots[slot_id];
+  auto &pending = as_atomic(slot->pending);
+  const uint32_t observed_pending = pending.load(std::memory_order_acquire);
+  if (observed_pending == 0) {
+    return true;
+  }
+
+  auto &ref = as_atomic(slot->refcnt);
+  if (ref.load(std::memory_order_acquire) != 0) {
+    return false;
+  }
+
+  pending.store(0, std::memory_order_release);
+  return true;
+}
+
 LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
                                  uint32_t generation) {
   auto mapping = attach(shm_name);

@@ -2,6 +2,7 @@
 
 #include <cuda_runtime_api.h>
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -20,6 +21,7 @@ class GpuPointCloudPublisherHelper {
     std::size_t slot_count = 4;
     int device_index = 0;
     bool is_dense = true;
+    std::chrono::milliseconds pending_ttl{300};
   };
 
   explicit GpuPointCloudPublisherHelper(const Config &config);
@@ -44,19 +46,25 @@ class GpuPointCloudPublisherHelper {
     cudaIpcMemHandle_t mem_handle{};
     cudaIpcEventHandle_t event_handle{};
     uint32_t generation = 0;
+    std::chrono::steady_clock::time_point pending_deadline{};
   };
 
   Config config_;
   std::vector<Slot> slots_;
   cudaStream_t stream_ = nullptr;
   uint64_t cloud_size_bytes_ = 0;
-  uint32_t next_slot_ = 0;
   uint32_t point_step_ = 0;
   std::vector<ros2_cuda_ipc_core::PointCloud2View::Field> fields_;
 
   void initialise_shm();
   void allocate_slots();
   void destroy_slots() noexcept;
+  void reclaim_stale_pending();
+  static bool deadline_reached(
+      const std::chrono::steady_clock::time_point &deadline,
+      const std::chrono::steady_clock::time_point &now) {
+    return deadline.time_since_epoch().count() != 0 && now >= deadline;
+  }
 };
 
 }  // namespace sample_nodes

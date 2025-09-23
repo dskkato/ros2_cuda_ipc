@@ -96,6 +96,7 @@ BufferCore{ shm_name, slot_id, generation, mem_handle, event_handle, byte_size, 
 
 5. 再利用チェック
 次回同じ slot を使う前に 必ず `refcnt==0 && pending==0` を再確認。どちらかが非ゼロならその slot はスキップ／隔離する。
+必要に応じて Publisher 側で TTL を設け、期限切れの slot に対して `force_clear_pending()` を呼び出して pending を強制的に 0 に戻すことでリソースを回収する。
 
 ### Subscriber
 
@@ -145,6 +146,10 @@ public:
   static std::optional<uint32_t> bump_generation(const std::string& shm_name,
                                                  uint32_t slot_id,
                                                  uint32_t pending);
+
+  // TTL等で pending を強制開放するためのヘルパー（refcnt==0 の場合のみ0に戻す）
+  static bool force_clear_pending(const std::string& shm_name,
+                                  uint32_t slot_id);
 
   // ==============================
   // Subscriber 側ユーティリティ

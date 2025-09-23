@@ -1,5 +1,6 @@
 #include "sample_nodes/gpu_pointcloud_publisher_helper.hpp"
 
+#include <chrono>
 #include <stdexcept>
 #include <vector>
 
@@ -119,6 +120,8 @@ GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
       static_cast<uint64_t>(config_.width) * config_.height;
   std::vector<float> host_cloud(point_count * 3, value);
 
+  reclaim_stale_pending();
+
   auto free_slot =
       ros2_cuda_ipc_core::LeaseHandle::choose_empty_slot(config_.shm_name);
   if (!free_slot.has_value()) {
@@ -143,6 +146,13 @@ GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
     return std::nullopt;
   }
   slot.generation = gen.value();
+
+  const auto now = std::chrono::steady_clock::now();
+  if (subscriber_count > 0 && config_.pending_ttl.count() > 0) {
+    slot.pending_deadline = now + config_.pending_ttl;
+  } else {
+    slot.pending_deadline = {};
+  }
 
   cudaError_t err = cudaMemcpy(slot.device_ptr, host_cloud.data(),
                                cloud_size_bytes_, cudaMemcpyHostToDevice);
@@ -176,8 +186,46 @@ GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
   view.is_dense = config_.is_dense;
   view.fields = fields_;
 
-  next_slot_ = (slot.index + 1) % static_cast<uint32_t>(slots_.size());
   return view;
+}
+
+void GpuPointCloudPublisherHelper::reclaim_stale_pending() {
+  if (config_.pending_ttl.count() <= 0) {
+    return;
+  }
+
+  const auto now = std::chrono::steady_clock::now();
+  auto logger = rclcpp::get_logger("GpuPointCloudPublisherHelper");
+
+  for (auto &slot : slots_) {
+    if (!deadline_reached(slot.pending_deadline, now)) {
+      continue;
+    }
+
+    auto pending = ros2_cuda_ipc_core::LeaseHandle::current_pending(
+        config_.shm_name, slot.index);
+    if (!pending.has_value()) {
+      continue;
+    }
+    if (pending.value() == 0) {
+      slot.pending_deadline = {};
+      continue;
+    }
+
+    auto refcnt = ros2_cuda_ipc_core::LeaseHandle::current_refcount(
+        config_.shm_name, slot.index);
+    if (!refcnt.has_value() || refcnt.value() != 0) {
+      continue;
+    }
+
+    if (ros2_cuda_ipc_core::LeaseHandle::force_clear_pending(config_.shm_name,
+                                                             slot.index)) {
+      RCLCPP_WARN(
+          logger, "Force-cleared pending lease slot=%u after %lld ms timeout",
+          slot.index, static_cast<long long>(config_.pending_ttl.count()));
+      slot.pending_deadline = {};
+    }
+  }
 }
 
 }  // namespace sample_nodes
