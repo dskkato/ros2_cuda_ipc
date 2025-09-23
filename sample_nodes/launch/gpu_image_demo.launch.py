@@ -19,11 +19,19 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
     )
 
-    subscriber = Node(
-        package='sample_nodes',
-        executable='gpu_image_subscriber',
-        name='gpu_image_subscriber',
-        output='screen',
-    )
+    subscribers = [
+        Node(
+            package='sample_nodes',
+            executable='gpu_image_subscriber',
+            name='gpu_image_subscriber',
+            output='screen',
+        ),
+        Node(
+            package='sample_nodes',
+            executable='gpu_image_subscriber',
+            name='gpu_image_subscriber_2',
+            output='screen',
+        ),
+    ]
 
-    return LaunchDescription([publisher, subscriber])
+    return LaunchDescription([publisher, *subscribers])

@@ -18,11 +18,19 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
     )
 
-    subscriber = Node(
-        package='sample_nodes',
-        executable='gpu_pointcloud_subscriber',
-        name='gpu_pointcloud_subscriber',
-        output='screen',
-    )
+    subscribers = [
+        Node(
+            package='sample_nodes',
+            executable='gpu_pointcloud_subscriber',
+            name='gpu_pointcloud_subscriber',
+            output='screen',
+        ),
+        Node(
+            package='sample_nodes',
+            executable='gpu_pointcloud_subscriber',
+            name='gpu_pointcloud_subscriber_2',
+            output='screen',
+        ),
+    ]
 
-    return LaunchDescription([publisher, subscriber])
+    return LaunchDescription([publisher, *subscribers])
