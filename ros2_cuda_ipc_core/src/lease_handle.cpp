@@ -17,7 +17,7 @@ namespace ros2_cuda_ipc_core {
 namespace {
 
 constexpr uint32_t kShmMagic = 0x4C534531;  // 'LSE1'
-constexpr uint32_t kLayoutVersion = 1;
+constexpr uint32_t kLayoutVersion = 2;
 
 /// Shared memory header structure stored at the start of the shared-memory
 /// segment.
@@ -25,7 +25,7 @@ struct ShmHeader {
   uint32_t magic;
   uint32_t layout_version;
   uint32_t capacity;
-  uint32_t reserved;
+  uint32_t consumer_count;
 };
 
 /// Treat a `uint32_t` reference as an `std::atomic<uint32_t>` to apply atomic
@@ -49,6 +49,8 @@ rclcpp::Logger lease_logger() {
 struct LeaseHandle::SlotMeta {
   uint32_t generation;
   uint32_t refcnt;
+  uint32_t pending;
+  uint32_t reserved;
 };
 
 struct LeaseHandle::Mapping {
@@ -161,12 +163,14 @@ bool LeaseHandle::init(const std::string &shm_name, uint32_t capacity) {
   header->magic = kShmMagic;
   header->layout_version = kLayoutVersion;
   header->capacity = capacity;
-  header->reserved = 0;
+  header->consumer_count = 0;
 
   auto *slots = reinterpret_cast<SlotMeta *>(header + 1);
   for (uint32_t i = 0; i < capacity; ++i) {
     as_atomic(slots[i].generation).store(0u, std::memory_order_relaxed);
     as_atomic(slots[i].refcnt).store(0u, std::memory_order_relaxed);
+    as_atomic(slots[i].pending).store(0u, std::memory_order_relaxed);
+    slots[i].reserved = 0;
   }
 
   munmap(addr, size);
@@ -244,7 +248,9 @@ std::optional<uint32_t> LeaseHandle::choose_empty_slot(
 
   for (uint32_t i = 0; i < mapping->capacity; ++i) {
     auto &ref = as_atomic(mapping->slots[i].refcnt);
-    if (ref.load(std::memory_order_acquire) == 0) {
+    auto &pending = as_atomic(mapping->slots[i].pending);
+    if (ref.load(std::memory_order_acquire) == 0 &&
+        pending.load(std::memory_order_acquire) == 0) {
       return i;
     }
   }
@@ -271,15 +277,28 @@ std::optional<uint32_t> LeaseHandle::current_refcount(
   return ref.load(std::memory_order_acquire);
 }
 
-std::optional<uint32_t> LeaseHandle::bump_generation(
+std::optional<uint32_t> LeaseHandle::current_pending(
     const std::string &shm_name, uint32_t slot_id) {
   auto mapping = attach(shm_name);
   if (!mapping || slot_id >= mapping->capacity) {
     return std::nullopt;
   }
-  auto &gen = as_atomic(mapping->slots[slot_id].generation);
+  auto &pending = as_atomic(mapping->slots[slot_id].pending);
+  return pending.load(std::memory_order_acquire);
+}
+
+std::optional<uint32_t> LeaseHandle::bump_generation(
+    const std::string &shm_name, uint32_t slot_id, uint32_t pending_count) {
+  auto mapping = attach(shm_name);
+  if (!mapping || slot_id >= mapping->capacity) {
+    return std::nullopt;
+  }
+  SlotMeta *slot = &mapping->slots[slot_id];
+  auto &gen = as_atomic(slot->generation);
   const uint32_t next = gen.load(std::memory_order_relaxed) + 1;
   gen.store(next, std::memory_order_release);
+  auto &pending = as_atomic(slot->pending);
+  pending.store(pending_count, std::memory_order_release);
   return next;
 }
 

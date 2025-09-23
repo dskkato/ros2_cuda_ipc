@@ -51,7 +51,7 @@ class GpuPointCloudPublisherNode : public rclcpp::Node {
   void on_timer() {
     const float value =
         fill_value_base_ + static_cast<float>(frame_counter_ % 256) * 0.01F;
-    auto view = helper_->produce(value, frame_id_);
+    auto view = helper_->produce(publisher_->get_subscription_count(), value);
     if (!view.has_value()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Failed to produce GPU point cloud");

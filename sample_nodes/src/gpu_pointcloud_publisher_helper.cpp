@@ -110,8 +110,7 @@ void GpuPointCloudPublisherHelper::destroy_slots() noexcept {
 }
 
 std::optional<ros2_cuda_ipc_core::PointCloud2View>
-GpuPointCloudPublisherHelper::produce(float value,
-                                      const std::string &frame_id) {
+GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
   if (slots_.empty()) {
     return std::nullopt;
   }
@@ -137,7 +136,7 @@ GpuPointCloudPublisherHelper::produce(float value,
     }
 
     auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
-        config_.shm_name, slot.index);
+        config_.shm_name, slot.index, subscriber_count);
     if (!gen.has_value()) {
       RCLCPP_WARN(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
                   "Failed to bump generation for slot %u", slot.index);

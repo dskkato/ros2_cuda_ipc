@@ -31,8 +31,8 @@ class GpuImagePublisherHelper {
   GpuImagePublisherHelper(GpuImagePublisherHelper &&) = delete;
   GpuImagePublisherHelper &operator=(GpuImagePublisherHelper &&) = delete;
 
-  std::optional<ros2_cuda_ipc_core::ImageView> produce(
-      uint8_t fill_value, const std::string &frame_id);
+  std::optional<ros2_cuda_ipc_core::ImageView> produce(size_t subscriber_count,
+                                                       uint8_t fill_value);
   uint64_t frame_size_bytes() const noexcept { return frame_size_bytes_; }
 
  private:

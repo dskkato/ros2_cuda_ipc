@@ -33,7 +33,7 @@ class GpuPointCloudPublisherHelper {
       delete;
 
   std::optional<ros2_cuda_ipc_core::PointCloud2View> produce(
-      float value, const std::string &frame_id);
+      size_t subscriber_count, float value);
   uint64_t cloud_size_bytes() const noexcept { return cloud_size_bytes_; }
 
  private:

@@ -119,7 +119,7 @@ void GpuImagePublisherHelper::destroy_slots() noexcept {
 }
 
 std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
-    uint8_t fill_value, const std::string &frame_id) {
+    size_t subscriber_count, uint8_t fill_value) {
   if (slots_.empty()) {
     return std::nullopt;
   }
@@ -141,7 +141,7 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
     }
 
     auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
-        config_.shm_name, slot.index);
+        config_.shm_name, slot.index, subscriber_count);
     if (!gen.has_value()) {
       RCLCPP_WARN(rclcpp::get_logger("GpuImagePublisherHelper"),
                   "Failed to bump generation for slot %u", slot.index);
@@ -192,7 +192,6 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
         static_cast<uint64_t>(config_.width) * config_.channels * elem_size,
         static_cast<uint64_t>(config_.channels) * elem_size, elem_size};
     view.encoding = "rgb8";
-    view.header.frame_id = frame_id;
 
     next_slot_ = (slot.index + 1) % static_cast<uint32_t>(slots_.size());
     return view;

@@ -20,7 +20,8 @@ class LeaseHandle {
   /// \return true when the memory is initialized successfully.
   static bool init(const std::string &shm_name, uint32_t capacity);
 
-  /// Find a slot whose reference count has dropped to zero.
+  /// Find a slot whose reference and pending counters have both dropped to
+  /// zero.
   ///
   /// \param shm_name Shared-memory name to query.
   /// \return slot id on success; std::nullopt when no free slot exists or the
@@ -45,12 +46,19 @@ class LeaseHandle {
   static std::optional<uint32_t> current_refcount(const std::string &shm_name,
                                                   uint32_t slot_id);
 
-  /// Advance the generation number for a slot before publishing new data.
+  /// Advance the generation number for a slot before publishing new data and
+  /// seed the pending consumer count.
   ///
   /// \param shm_name Shared-memory name to update.
   /// \param slot_id Slot index inside the pool.
+  /// \param pending Number of consumers expected to acquire the payload.
   /// \return next generation number; std::nullopt when the slot is invalid.
   static std::optional<uint32_t> bump_generation(const std::string &shm_name,
+                                                 uint32_t slot_id,
+                                                 uint32_t pending);
+
+  /// Read the current pending count for a slot.
+  static std::optional<uint32_t> current_pending(const std::string &shm_name,
                                                  uint32_t slot_id);
 
   /// Acquire a lease for a slot if the generation matches and increment its

@@ -82,7 +82,8 @@ class GpuImagePublisherNode : public rclcpp::Node {
  private:
   void on_timer() {
     const uint8_t fill_value = static_cast<uint8_t>(frame_counter_ & 0xFF);
-    auto view = helper_->produce(fill_value, frame_id_);
+    auto view =
+        helper_->produce(publisher_->get_subscription_count(), fill_value);
     if (!view.has_value()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Failed to produce GPU frame");
