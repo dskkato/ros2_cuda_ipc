@@ -106,8 +106,18 @@ TEST(LeaseHandleTest, PendingDecrementedOnAcquire) {
   auto slot = ros2_cuda_ipc_core::LeaseHandle::choose_empty_slot(shm_name);
   ASSERT_TRUE(slot.has_value());
   auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(shm_name,
-                                                              slot.value(), 0);
+                                                              slot.value(), 2);
   ASSERT_TRUE(gen.has_value());
+
+  {
+    auto lease = ros2_cuda_ipc_core::LeaseHandle::acquire(
+        shm_name, slot.value(), gen.value());
+    ASSERT_TRUE(lease.valid());
+    auto pending = ros2_cuda_ipc_core::LeaseHandle::current_pending(
+        shm_name, slot.value());
+    ASSERT_TRUE(pending.has_value());
+    EXPECT_EQ(pending.value(), 1u);
+  }
 
   {
     auto lease = ros2_cuda_ipc_core::LeaseHandle::acquire(

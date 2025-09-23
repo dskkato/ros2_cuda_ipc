@@ -311,6 +311,7 @@ LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
   SlotMeta *slot = &mapping->slots[slot_id];
   auto &gen = as_atomic(slot->generation);
   auto &ref = as_atomic(slot->refcnt);
+  auto &pending = as_atomic(slot->pending);
 
   const uint32_t observed_gen = gen.load(std::memory_order_acquire);
   if (observed_gen != generation) {
@@ -333,6 +334,15 @@ LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
                  "lease:gen_race slot=%u expected=%u observed=%u", slot_id,
                  generation, recheck_gen);
     return LeaseHandle{};
+  }
+
+  uint32_t observed_pending = pending.load(std::memory_order_acquire);
+  while (observed_pending != 0) {
+    if (pending.compare_exchange_weak(observed_pending, observed_pending - 1,
+                                      std::memory_order_acq_rel,
+                                      std::memory_order_acquire)) {
+      break;
+    }
   }
 
   return LeaseHandle(std::move(mapping), slot, slot_id, generation);

@@ -124,82 +124,76 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
     return std::nullopt;
   }
 
-  for (std::size_t attempt = 0; attempt < slots_.size(); ++attempt) {
-    auto slot_index = (next_slot_ + static_cast<uint32_t>(attempt)) %
-                      static_cast<uint32_t>(slots_.size());
-    auto &slot = slots_[slot_index];
-
-    auto refcnt = ros2_cuda_ipc_core::LeaseHandle::current_refcount(
-        config_.shm_name, slot.index);
-    if (!refcnt.has_value()) {
-      RCLCPP_WARN(rclcpp::get_logger("GpuImagePublisherHelper"),
-                  "Unable to query refcount for slot %u", slot.index);
-      continue;
-    }
-    if (refcnt.value() != 0) {
-      continue;  // try another slot
-    }
-
-    auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
-        config_.shm_name, slot.index, subscriber_count);
-    if (!gen.has_value()) {
-      RCLCPP_WARN(rclcpp::get_logger("GpuImagePublisherHelper"),
-                  "Failed to bump generation for slot %u", slot.index);
-      continue;
-    }
-    slot.generation = gen.value();
-
-    cudaError_t err = cudaMemsetAsync(slot.device_ptr, fill_value,
-                                      frame_size_bytes_, stream_);
-    if (err != cudaSuccess) {
-      RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
-                   "cudaMemsetAsync failed: %s",
-                   cuda_error_to_string(err).c_str());
-      return std::nullopt;
-    }
-
-    err = cudaEventRecord(slot.event, stream_);
-    if (err != cudaSuccess) {
-      RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
-                   "cudaEventRecord failed: %s",
-                   cuda_error_to_string(err).c_str());
-      return std::nullopt;
-    }
-
-    // optional wait to ensure data ready for demo (event ensures consumer
-    // waits)
-    err = cudaStreamSynchronize(stream_);
-    if (err != cudaSuccess) {
-      RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
-                   "cudaStreamSynchronize failed: %s",
-                   cuda_error_to_string(err).c_str());
-      return std::nullopt;
-    }
-
-    ros2_cuda_ipc_core::ImageView view;
-    view.core.dev_ptr = slot.device_ptr;
-    view.core.ready_evt = slot.event;
-    view.core.device_id = config_.device_index;
-    view.core.byte_size = frame_size_bytes_;
-    view.core.slot_id = slot.index;
-    view.core.generation = slot.generation;
-    view.core.shm_name = config_.shm_name;
-    view.core.set_ipc_handles(slot.mem_handle, slot.event_handle);
-    view.dtype = config_.dtype;
-    view.shape = {config_.height, config_.width, config_.channels};
-    const uint64_t elem_size = dtype_bytes(config_.dtype);
-    view.strides = {
-        static_cast<uint64_t>(config_.width) * config_.channels * elem_size,
-        static_cast<uint64_t>(config_.channels) * elem_size, elem_size};
-    view.encoding = "rgb8";
-
-    next_slot_ = (slot.index + 1) % static_cast<uint32_t>(slots_.size());
-    return view;
+  auto free_slot =
+      ros2_cuda_ipc_core::LeaseHandle::choose_empty_slot(config_.shm_name);
+  if (!free_slot.has_value()) {
+    RCLCPP_WARN(rclcpp::get_logger("GpuImagePublisherHelper"),
+                "No available GPU slots (all leases in use)");
+    return std::nullopt;
+  }
+  if (free_slot.value() >= slots_.size()) {
+    RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
+                 "LeaseHandle returned invalid slot index %u",
+                 free_slot.value());
+    return std::nullopt;
   }
 
-  RCLCPP_WARN(rclcpp::get_logger("GpuImagePublisherHelper"),
-              "No available GPU slots (all leases in use)");
-  return std::nullopt;
+  auto &slot = slots_[free_slot.value()];
+
+  auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
+      config_.shm_name, slot.index, subscriber_count);
+  if (!gen.has_value()) {
+    RCLCPP_WARN(rclcpp::get_logger("GpuImagePublisherHelper"),
+                "Failed to bump generation for slot %u", slot.index);
+    return std::nullopt;
+  }
+  slot.generation = gen.value();
+
+  cudaError_t err =
+      cudaMemsetAsync(slot.device_ptr, fill_value, frame_size_bytes_, stream_);
+  if (err != cudaSuccess) {
+    RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
+                 "cudaMemsetAsync failed: %s",
+                 cuda_error_to_string(err).c_str());
+    return std::nullopt;
+  }
+
+  err = cudaEventRecord(slot.event, stream_);
+  if (err != cudaSuccess) {
+    RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
+                 "cudaEventRecord failed: %s",
+                 cuda_error_to_string(err).c_str());
+    return std::nullopt;
+  }
+
+  // optional wait to ensure data ready for demo (event ensures consumer waits)
+  err = cudaStreamSynchronize(stream_);
+  if (err != cudaSuccess) {
+    RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
+                 "cudaStreamSynchronize failed: %s",
+                 cuda_error_to_string(err).c_str());
+    return std::nullopt;
+  }
+
+  ros2_cuda_ipc_core::ImageView view;
+  view.core.dev_ptr = slot.device_ptr;
+  view.core.ready_evt = slot.event;
+  view.core.device_id = config_.device_index;
+  view.core.byte_size = frame_size_bytes_;
+  view.core.slot_id = slot.index;
+  view.core.generation = slot.generation;
+  view.core.shm_name = config_.shm_name;
+  view.core.set_ipc_handles(slot.mem_handle, slot.event_handle);
+  view.dtype = config_.dtype;
+  view.shape = {config_.height, config_.width, config_.channels};
+  const uint64_t elem_size = dtype_bytes(config_.dtype);
+  view.strides = {
+      static_cast<uint64_t>(config_.width) * config_.channels * elem_size,
+      static_cast<uint64_t>(config_.channels) * elem_size, elem_size};
+  view.encoding = "rgb8";
+
+  next_slot_ = (slot.index + 1) % static_cast<uint32_t>(slots_.size());
+  return view;
 }
 
 }  // namespace sample_nodes
