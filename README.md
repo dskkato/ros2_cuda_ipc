@@ -10,7 +10,7 @@ ROS 2 CUDA IPC Zero-Copy Transport
 主な用途は以下です：
 - カメラドライバー → CUDA 前処理 → 複数ノード（エンコード／プレビュー／DNN推論）へのゼロコピー分配
 - 画像（NV12, BGR, RGBA 等）、点群（AoS/SoA）など大規模GPUデータの効率的な伝搬
-- C++ / Python 双方から利用可能
+- C++ アプリケーションからの GPU メモリ共有
 
 詳細な設計は [doc/design.md](doc/design.md) を参照してください。
 
@@ -32,9 +32,8 @@ ROS 2 CUDA IPC Zero-Copy Transport
 - Python 3.10+
 - `colcon` ビルドツール
 - 開発用依存:
-  - `pybind11`
   - `ament_cmake`, `ament_cmake_python`
-  - `rclcpp`, `rclpy`
+  - `rclcpp`
   - `sensor_msgs` (依存例)
 
 ### ビルド手順
@@ -54,48 +53,64 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### サンプルノード実行（単平面・SHMリリース・イベント同期）
+### サンプルノード実行
+
+GPU イメージ／ポイントクラウドの 2 系統のサンプルノードを用意しています。どちらも CUDA IPC を使って、Publisher が GPU メモリスロットを確保し、Subscriber がゼロコピー参照します。
 
 ```bash
-# Publisher
-ros2 run sample_nodes gpu_buffer_publisher
+# イメージデモ（Publisher + Subscriber 2 ノード）
+ros2 launch sample_nodes gpu_image_demo.launch.py
 
-# Subscriber
-ros2 run sample_nodes gpu_buffer_subscriber
+# ポイントクラウドデモ（Publisher + Subscriber 2 ノード）
+ros2 launch sample_nodes gpu_pointcloud_demo.launch.py
 ```
 
-期待される動作（CUDA 環境）
-- Publisher: スロットを借用し、GPUメモリの IPC ハンドルとイベントハンドルを `GpuBuffer` に格納して publish。スロットは SHM 制御ブロックの参照カウントが 0 になると解放（`lease_timeout_ms` 過ぎると強制解放、既定 3000ms）。
-- Subscriber: 受信したハンドルをキャッシュ（`GpuBufferMapper`）し、自身の CUDA ストリームで `cudaStreamWaitEvent`。処理後に SHM の参照カウントを原子的にデクリメント。
-- ログ: Subscriber 側で `Event waited ~X ms` が出力。Publisher 側で `Publishing seq=... (slot X)` と `Slot X freed ... via SHM` が出力。
+デモ Launch ファイルでは代表的なパラメータを指定しています。Publisher 単体で起動する場合は `ros2 run` と `--ros-args` で上書きできます。
 
-パラメータ
-- Publisher: `lease_timeout_ms`（既定 3000）。例: `ros2 run sample_nodes gpu_buffer_publisher --ros-args -p lease_timeout_ms:=1000`
-- Publisher: `shm_owner`（省略時は `sanitized(FQN)_<epoch>_<pid>` を自動生成）。複数Publisher共存時の SHM 名衝突回避に使用。
+主なパラメータ（GpuImagePublisher／GpuPointCloudPublisher 共通）
+- `publish_rate_hz`: Publish 周期（既定 イメージ 30 Hz / ポイントクラウド 10 Hz）
+- `slot_count`: 確保する GPU メモリスロット数（既定 4）
+- `pending_ttl_ms`: 未消費スロットを強制解放する猶予時間 [ms]。高フレームレートのカメラでは 80〜120ms 程度に設定すると滞留を抑制できます。
+- `shm_name`: 共有メモリ領域の名前（用途別にデフォルトを用意）
+- `device_index`: 利用する CUDA デバイス（既定 0）
 
-備考
-- Publisher はメッセージに `abi_version` と `device_uuid` を埋め込みます。Subscriber はそれらが変化した場合にマッピングキャッシュを自動リセットします。
+イメージ系の追加パラメータ
+- `width`, `height`, `channels`
+- `dtype`（`u8`,`u16`,`f32` など）
+- `encoding`（ROS 2 画像エンコーディング文字列）
 
-## サンプル簡素化のためのヘルパー
+ポイントクラウド系の追加パラメータ
+- `width`, `height`
+- `is_dense`
+- `fill_value`（デモ用に擬似生成する値のベース）
 
-- **LeaseManager**: SHM 参照カウントとタイムアウトに基づくスロット自動解放を管理。
-  - 実装: `ros2_cuda_ipc_core/lease_manager.hpp`
-  - 使い方: `LeaseManager lm(pool, lease_timeout_ms); lm.set_owner(owner);` 毎ループ `lm.tick()`
+サンプル Subscriber は受信したハンドルを `ros2_cuda_ipc_core` のビュークラス（`ImageView` / `PointCloud2View`）経由でマップし、GPU メモリを直接参照します。
 
-- **ScopedMappedFrame**: Subscriber 側での RAII ヘルパー。イベント open + wait、メモリ open の再利用、破棄時に SHM decrement。
-  - 実装: `ros2_cuda_ipc_core/scoped_mapped_frame.hpp`
-  - 使い方: `ScopedMappedFrame frame(mapper, slot, &mem, &evt, stream, shm_name, seq, true);`
+実装上は `sample_nodes/src/gpu_image_publisher_helper.cpp` と `sample_nodes/src/gpu_pointcloud_publisher_helper.cpp` に共通化された処理があり、`pending_ttl` は `std::chrono::milliseconds` で扱われます。
 
-- **GpuBufferPublisherHelper**: Publisher 側の定型処理を集約（借用→GPU書込→イベント→メッセージ→リース）。
-  - 実装: `sample_nodes/include/sample_nodes/gpu_buffer_publisher_helper.hpp`
-  - ビルドターゲット: `sample_nodes_helpers`（サンプル内の再利用用ライブラリ）
-  - 典型手順:
-    - 初期化: `helper(pool, &lease, producer_stream)`
-    - 借用: `auto f = helper.borrow_frame(width, height, channels)`
-    - 書込: `cuda_fill_u8(f.device_ptr, ...)` など
-    - 仕上げ: `helper.finalize_and_fill(f, expected_consumers, owner, msg)`
+個別起動例:
 
-サンプル Publisher は既に helper を利用する形に差し替え済みです。Subscriber は ScopedMappedFrame を用いて wait と SHM 解放を簡素化しています。
+```bash
+ros2 run sample_nodes gpu_image_publisher \
+  --ros-args -p pending_ttl_ms:=100 -p width:=1280 -p height:=720
+
+ros2 run sample_nodes gpu_pointcloud_publisher \
+  --ros-args -p pending_ttl_ms:=250 -p publish_rate_hz:=15.0
+```
+
+Subscriber は `GpuImageSubscriber` / `GpuPointCloudSubscriber` をそれぞれ起動します。
+
+```bash
+ros2 run sample_nodes gpu_image_subscriber
+ros2 run sample_nodes gpu_pointcloud_subscriber
+```
+
+## コアコンポーネントとヘルパー
+
+- `ros2_cuda_ipc_core::ImageView` / `PointCloud2View`: CUDA IPC ハンドルを ROS 2 メッセージとして受け渡すための型アダプタ。`ros2_cuda_ipc_core/include/ros2_cuda_ipc_core` に実装があります。
+- `ros2_cuda_ipc_core::BufferView`: 任意バッファ向けの基盤ビュー。Publisher/Subscriber 間で共有メモリのメタデータを運びます。
+- `ros2_cuda_ipc_core::LeaseHandle`: Publisher 側でスロットの貸出状態を管理し、`pending_ttl` の経過で強制解放します。
+- `sample_nodes::GpuImagePublisherHelper` / `sample_nodes::GpuPointCloudPublisherHelper`: サンプル用のユーティリティで、スロット確保・イベント送信・ビュー生成をまとめています。
 
 ---
 
@@ -108,43 +123,12 @@ ros2 run sample_nodes gpu_buffer_subscriber
 
 ---
 
-## ライセンス
+## テスト
 
-Apache License 2.0
+`ros2_cuda_ipc_core` には gtest ベースの単体テストが含まれています。
 
----
-
-## P0 ステータス（実装済み範囲）
-- 単平面ゼロコピー（mem IPC ハンドル + イベント IPC ハンドルの配送）
-- イベント同期（Publisher: producer stream で記録、Subscriber: `cudaStreamWaitEvent`）
-- SHM 制御ブロック（参照カウント）によるスロット解放 + `lease_timeout_ms` による強制回収
-- `GpuBufferMapper` による mem/event の open キャッシュ
-- `abi_version` / `device_uuid` 変化時の Subscriber 側キャッシュ失効
-
-制約（P0）
-- 同一ホスト・同一 GPU のみ（UUID/PCI情報で検査）
-- C++ のみ（Python/DLPack は今後）
-- 多平面（NV12等）は今後拡張
-
-## CUDA について（coreは CUDA 前提）
-
-- `ros2_cuda_ipc_core` は CUDA を前提にビルドされます（`CUDAToolkit` が必須）。
-- サンプルの擬似GPUワーク（待機時間可視化）は任意です。無効化したい場合:
-
-```bash
-colcon build \
-  --packages-select sample_nodes \
-  --cmake-args -DSAMPLE_NODES_ENABLE_CUDA=OFF
-```
-
-- テスト: `ros2_cuda_ipc_core` には以下の gtest が含まれます（環境により skip あり）
-  - `test_gpu_buffer_pool`（CUDA 依存なし）
-  - `test_gpu_buffer_mapper`（一部環境で同一プロセスの IPC event open が不可 → スキップ分岐あり）
-  - `test_lease_manager`（SHM リリースとタイムアウト解放を確認）
-  - `test_scoped_mapped_frame`（破棄時の SHM decrement を確認）
-
-- サンプル側のテスト:
-  - `sample_nodes/test/test_gpu_buffer_publisher_helper`（CUDA メモリが無い場合のメタデータ配信へのフォールバック等）
+- `test_type_adapters.cpp`: CUDA IPC メッセージ型アダプタの変換確認
+- `test_lease_handle.cpp`: スロット貸出しと `pending_ttl` 回収の検証
 
 ビルドとテスト実行例:
 
@@ -155,10 +139,11 @@ colcon test --packages-select ros2_cuda_ipc_core sample_nodes
 colcon test-result --verbose
 ```
 
+## CUDA について（core は CUDA 前提）
+
+- `ros2_cuda_ipc_core` は CUDA が利用可能な環境を前提にビルドされます（`find_package(CUDAToolkit REQUIRED)`）。
+- CUDA IPC が制限された環境では gtest が自動的にスキップされる場合があります。
+
 ## ライセンス
 
-* MIT License
-* Copyright (c) 2025 dskkato
-* All rights reserved.
-
-See [LICENSE](LICENSE) for details.
+MIT License — 詳細は [LICENSE](LICENSE) を参照してください。
