@@ -1,15 +1,23 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>sample_nodes</name>
-  <version>0.0.1</version>
-  <description>Sample publisher and subscriber nodes for ROS2 CUDA IPC transport.</description>
-  <maintainer email="kato.daisuke429@gmail.com">dskkato</maintainer>
+  <version>0.1.0</version>
+  <description>Demo publisher/subscriber nodes showcasing ROS 2 CUDA IPC zero-copy transport.</description>
+  <maintainer email="dskkato@example.com">dskkato</maintainer>
   <license>MIT</license>
+
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <build_depend>rclcpp</build_depend>
-  <build_depend>ros2_cuda_ipc_msgs</build_depend>
-  <build_depend>ros2_cuda_ipc_core</build_depend>
-  <exec_depend>rclcpp</exec_depend>
-  <exec_depend>ros2_cuda_ipc_msgs</exec_depend>
-  <exec_depend>ros2_cuda_ipc_core</exec_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>ros2_cuda_ipc_core</depend>
+  <depend>ros2_cuda_ipc_msgs</depend>
+
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
 </package>

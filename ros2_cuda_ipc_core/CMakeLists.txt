@@ -1,73 +1,66 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
 project(ros2_cuda_ipc_core)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
 find_package(ament_cmake REQUIRED)
-
-# Always build with CUDA support (simplified core)
-enable_language(CUDA)
-set(CMAKE_CUDA_STANDARD 14)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+find_package(rclcpp REQUIRED)
+find_package(rcpputils REQUIRED)
+find_package(ros2_cuda_ipc_msgs REQUIRED)
+find_package(rosidl_default_runtime REQUIRED)
 find_package(CUDAToolkit REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 
-set(SOURCES
-  src/gpu_buffer_pool.cpp
-  src/gpu_buffer_mapper.cpp
-  src/shm_release.cpp
-  src/lease_manager.cpp
-  src/scoped_mapped_frame.cpp
-  src/cuda_support.cu
+add_library(${PROJECT_NAME}
+  src/buffer_view.cpp
+  src/image_view.cpp
+  src/pointcloud2_view.cpp
+  src/lease_handle.cpp
 )
 
-add_library(${PROJECT_NAME} ${SOURCES})
-set_target_properties(${PROJECT_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(${PROJECT_NAME}
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
-target_compile_definitions(${PROJECT_NAME} PUBLIC ROS2_CUDA_IPC_WITH_CUDA=1)
+
+ament_target_dependencies(${PROJECT_NAME}
+  rclcpp
+  rcpputils
+  ros2_cuda_ipc_msgs
+  sensor_msgs
+  std_msgs
+)
+
 target_link_libraries(${PROJECT_NAME} CUDA::cudart)
 
 install(TARGETS ${PROJECT_NAME}
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin)
-install(DIRECTORY include/ DESTINATION include)
+  RUNTIME DESTINATION bin
+)
+
+install(DIRECTORY include/
+  DESTINATION include
+)
 
 if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  ament_lint_auto_find_test_dependencies()
   find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
-  if(TARGET test_gpu_buffer_pool)
-    target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
-  endif()
-  ament_add_gtest(test_cuda_support test/test_cuda_support.cpp)
-  if(TARGET test_cuda_support)
-    target_link_libraries(test_cuda_support ${PROJECT_NAME})
-    set_tests_properties(test_cuda_support PROPERTIES LABELS "cuda")
-  endif()
-
-  ament_add_gtest(test_gpu_buffer_mapper test/test_gpu_buffer_mapper.cpp)
-  if(TARGET test_gpu_buffer_mapper)
-    target_link_libraries(test_gpu_buffer_mapper ${PROJECT_NAME})
-    set_tests_properties(test_gpu_buffer_mapper PROPERTIES LABELS "cuda")
-  endif()
-  ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
-  if(TARGET test_lease_manager)
-    target_link_libraries(test_lease_manager ${PROJECT_NAME})
-  endif()
-  ament_add_gtest(test_scoped_mapped_frame test/test_scoped_mapped_frame.cpp)
-  if(TARGET test_scoped_mapped_frame)
-    target_link_libraries(test_scoped_mapped_frame ${PROJECT_NAME})
-  endif()
-  # Note: process‑separated IPC tests removed for portability
+  ament_add_gtest(test_lease_handle test/test_lease_handle.cpp)
+  target_link_libraries(test_lease_handle ${PROJECT_NAME})
+  ament_add_gtest(test_type_adapters test/test_type_adapters.cpp)
+  target_link_libraries(test_type_adapters ${PROJECT_NAME})
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(CUDAToolkit)
+ament_export_include_directories(include)
+ament_export_dependencies(rclcpp rcpputils ros2_cuda_ipc_msgs rosidl_default_runtime sensor_msgs std_msgs)
 ament_package()
