@@ -1,3 +1,4 @@
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -20,6 +21,9 @@ class GpuPointCloudPublisherNode : public rclcpp::Node {
         declare_parameter<std::string>("shm_name", "/ros2_cuda_ipc_demo_pc");
     config.device_index = declare_parameter<int>("device_index", 0);
     config.is_dense = declare_parameter<bool>("is_dense", true);
+    const int pending_ttl_ms = declare_parameter<int>(
+        "pending_ttl_ms", static_cast<int>(config.pending_ttl.count()));
+    config.pending_ttl = std::chrono::milliseconds{pending_ttl_ms};
 
     frame_id_ = declare_parameter<std::string>("frame_id", "gpu_lidar");
     fill_value_base_ =

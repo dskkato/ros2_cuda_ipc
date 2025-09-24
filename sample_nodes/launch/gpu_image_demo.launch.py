@@ -15,6 +15,7 @@ def generate_launch_description() -> LaunchDescription:
             {"height": 480},
             {"channels": 3},
             {"slot_count": 4},
+            {"pending_ttl_ms": 100},
         ],
         output="screen",
     )

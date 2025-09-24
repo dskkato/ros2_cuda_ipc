@@ -1,3 +1,4 @@
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -56,6 +57,9 @@ class GpuImagePublisherNode : public rclcpp::Node {
     const std::string dtype_str = declare_parameter<std::string>("dtype", "u8");
     config.dtype = parse_dtype(dtype_str);
     config.encoding = declare_parameter<std::string>("encoding", "rgb8");
+    const int pending_ttl_ms = declare_parameter<int>(
+        "pending_ttl_ms", static_cast<int>(config.pending_ttl.count()));
+    config.pending_ttl = std::chrono::milliseconds{pending_ttl_ms};
 
     frame_id_ = declare_parameter<std::string>("frame_id", "gpu_camera");
 
