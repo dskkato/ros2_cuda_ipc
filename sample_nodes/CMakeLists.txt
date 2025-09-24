@@ -1,40 +1,100 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
 project(sample_nodes)
 
-find_package(ament_cmake_auto REQUIRED)
-ament_auto_find_build_dependencies()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Helper library for publisher utilities (public for reuse, not only tests)
-add_library(sample_nodes_helpers STATIC src/gpu_buffer_publisher_helper.cpp)
-target_include_directories(sample_nodes_helpers PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(sample_nodes_helpers ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
-
-# Setup CUDA library for GPU utilities
-set(SAMPLE_CUDA_LIB sample_cuda_utils)
-enable_language(CUDA)
-set(CMAKE_CUDA_STANDARD 14)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-add_library(${SAMPLE_CUDA_LIB} STATIC src/sample_cuda_utils.cu)
-target_include_directories(${SAMPLE_CUDA_LIB} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-ament_target_dependencies(${SAMPLE_CUDA_LIB} ros2_cuda_ipc_core)
-
-# Publisher node
-ament_auto_add_executable(gpu_buffer_publisher src/gpu_buffer_publisher.cpp)
-target_link_libraries(gpu_buffer_publisher ${SAMPLE_CUDA_LIB} sample_nodes_helpers)
-target_include_directories(gpu_buffer_publisher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-# Subscriber node
-ament_auto_add_executable(gpu_buffer_subscriber src/gpu_buffer_subscriber.cpp)
-# Add subscriber kernel task library if needed
-
-ament_auto_package()
-
-if(BUILD_TESTING)
-  find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_gpu_buffer_publisher_helper test/test_gpu_buffer_publisher_helper.cpp)
-  if(TARGET test_gpu_buffer_publisher_helper)
-    target_include_directories(test_gpu_buffer_publisher_helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_link_libraries(test_gpu_buffer_publisher_helper sample_nodes_helpers)
-    ament_target_dependencies(test_gpu_buffer_publisher_helper ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
-  endif()
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(ros2_cuda_ipc_core REQUIRED)
+find_package(ros2_cuda_ipc_msgs REQUIRED)
+find_package(CUDAToolkit REQUIRED)
+
+add_library(sample_nodes_helpers
+  src/gpu_image_publisher_helper.cpp
+  src/gpu_pointcloud_publisher_helper.cpp
+)
+
+target_include_directories(sample_nodes_helpers
+  PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+ament_target_dependencies(sample_nodes_helpers
+  rclcpp
+  sensor_msgs
+  ros2_cuda_ipc_core
+  ros2_cuda_ipc_msgs
+)
+
+target_link_libraries(sample_nodes_helpers
+  CUDA::cudart
+)
+
+add_executable(gpu_image_publisher src/gpu_image_publisher.cpp)
+target_link_libraries(gpu_image_publisher sample_nodes_helpers)
+
+add_executable(gpu_image_subscriber src/gpu_image_subscriber.cpp)
+target_link_libraries(gpu_image_subscriber sample_nodes_helpers)
+
+add_executable(gpu_pointcloud_publisher src/gpu_pointcloud_publisher.cpp)
+target_link_libraries(gpu_pointcloud_publisher sample_nodes_helpers)
+
+add_executable(gpu_pointcloud_subscriber src/gpu_pointcloud_subscriber.cpp)
+target_link_libraries(gpu_pointcloud_subscriber sample_nodes_helpers)
+
+ament_target_dependencies(gpu_image_publisher
+  rclcpp
+  sensor_msgs
+  ros2_cuda_ipc_core
+  ros2_cuda_ipc_msgs
+)
+
+ament_target_dependencies(gpu_image_subscriber
+  rclcpp
+  sensor_msgs
+  ros2_cuda_ipc_core
+  ros2_cuda_ipc_msgs
+)
+
+ament_target_dependencies(gpu_pointcloud_publisher
+  rclcpp
+  sensor_msgs
+  ros2_cuda_ipc_core
+  ros2_cuda_ipc_msgs
+)
+
+ament_target_dependencies(gpu_pointcloud_subscriber
+  rclcpp
+  sensor_msgs
+  ros2_cuda_ipc_core
+  ros2_cuda_ipc_msgs
+)
+
+install(TARGETS
+  sample_nodes_helpers
+  gpu_image_publisher
+  gpu_image_subscriber
+  gpu_pointcloud_publisher
+  gpu_pointcloud_subscriber
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY include/
+  DESTINATION include
+)
+
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+
+ament_export_dependencies(rclcpp sensor_msgs ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
+
+ament_package()
