@@ -67,10 +67,10 @@ ros2 launch sample_nodes gpu_pointcloud_demo.launch.py
 
 デモ Launch ファイルでは代表的なパラメータを指定しています。Publisher 単体で起動する場合は `ros2 run` と `--ros-args` で上書きできます。
 
-主なパラメータ（GpuImagePublisher／GpuPointCloudPublisher 共通）
+主なパラメータ（GpuImagePublisher/GpuPointCloudPublisher 共通）
 - `publish_rate_hz`: Publish 周期（既定 イメージ 30 Hz / ポイントクラウド 10 Hz）
 - `slot_count`: 確保する GPU メモリスロット数（既定 4）
-- `pending_ttl_ms`: 未消費スロットを強制解放する猶予時間 [ms]。高フレームレートのカメラでは 80〜120ms 程度に設定すると滞留を抑制できます。
+- `pending_ttl_ms`: 未消費スロットを強制解放する猶予時間 [ms]。高フレームレートのカメラでは 80~120ms 程度に設定すると滞留を抑制できます。
 - `shm_name`: 共有メモリ領域の名前（用途別にデフォルトを用意）
 - `device_index`: 利用する CUDA デバイス（既定 0）
 
