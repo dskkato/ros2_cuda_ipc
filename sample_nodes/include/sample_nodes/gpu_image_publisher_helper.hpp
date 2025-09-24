@@ -20,6 +20,7 @@ class GpuImagePublisherHelper {
     uint32_t height = 480;
     uint32_t channels = 3;
     ros2_cuda_ipc_core::DType dtype = ros2_cuda_ipc_core::DType::U8;
+    std::string encoding;
     std::size_t slot_count = 4;
     int device_index = 0;
     std::chrono::milliseconds pending_ttl{300};

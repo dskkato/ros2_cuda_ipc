@@ -199,7 +199,11 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
   view.strides = {
       static_cast<uint64_t>(config_.width) * config_.channels * elem_size,
       static_cast<uint64_t>(config_.channels) * elem_size, elem_size};
-  view.encoding = "rgb8";
+  if (!config_.encoding.empty()) {
+    view.encoding = config_.encoding;
+  } else {
+    view.encoding.clear();
+  }
 
   return view;
 }

@@ -73,9 +73,10 @@ class GpuImageSubscriberNode : public rclcpp::Node {
       return;
     }
 
-    RCLCPP_INFO(get_logger(), "Frame %zu received frame_id=%s first_byte=%u",
+    RCLCPP_INFO(get_logger(),
+                "Frame %zu received frame_id=%s encoding=%s first_byte=%u",
                 ++frame_counter_, view.header.frame_id.c_str(),
-                static_cast<unsigned>(host[0]));
+                view.encoding.c_str(), static_cast<unsigned>(host[0]));
   }
 
   rclcpp::Subscription<ros2_cuda_ipc_core::ImageView>::SharedPtr subscription_;

@@ -55,6 +55,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     config.device_index = declare_parameter<int>("device_index", 0);
     const std::string dtype_str = declare_parameter<std::string>("dtype", "u8");
     config.dtype = parse_dtype(dtype_str);
+    config.encoding = declare_parameter<std::string>("encoding", "rgb8");
 
     frame_id_ = declare_parameter<std::string>("frame_id", "gpu_camera");
 
@@ -74,8 +75,10 @@ class GpuImagePublisherNode : public rclcpp::Node {
         std::chrono::duration_cast<std::chrono::milliseconds>(period),
         std::bind(&GpuImagePublisherNode::on_timer, this));
 
-    RCLCPP_INFO(get_logger(), "Publishing GPU image %ux%u dtype=%s slots=%zu",
+    RCLCPP_INFO(get_logger(),
+                "Publishing GPU image %ux%u dtype=%s encoding=%s slots=%zu",
                 config.width, config.height, dtype_str.c_str(),
+                config.encoding.empty() ? "<empty>" : config.encoding.c_str(),
                 config.slot_count);
   }
 
