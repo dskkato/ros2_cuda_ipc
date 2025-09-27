@@ -48,8 +48,8 @@ struct ImageView {
 
   uint32_t elem_size_bytes() const noexcept;
 
-  cudaError_t wait(cudaStream_t stream) const noexcept {
-    return core.wait(stream);
+  cudaError_t enqueue_ready_event(cudaStream_t stream) const noexcept {
+    return core.enqueue_ready_event(stream);
   }
 
   struct DeviceView {

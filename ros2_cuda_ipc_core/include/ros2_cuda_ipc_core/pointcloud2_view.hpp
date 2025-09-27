@@ -59,8 +59,8 @@ struct PointCloud2View {
   size_t num_points() const noexcept {
     return static_cast<size_t>(width) * height;
   }
-  cudaError_t wait(cudaStream_t stream) const noexcept {
-    return core.wait(stream);
+  cudaError_t enqueue_ready_event(cudaStream_t stream) const noexcept {
+    return core.enqueue_ready_event(stream);
   }
   bool valid() const noexcept { return core.valid() && point_step > 0; }
 

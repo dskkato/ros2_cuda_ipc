@@ -34,7 +34,7 @@ struct BufferView {
 
   bool valid() const noexcept { return dev_ptr != nullptr; }
 
-  cudaError_t wait(cudaStream_t stream) const noexcept;
+  cudaError_t enqueue_ready_event(cudaStream_t stream) const noexcept;
 
   void reset() noexcept;
 

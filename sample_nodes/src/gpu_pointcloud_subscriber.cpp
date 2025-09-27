@@ -50,7 +50,7 @@ class GpuPointCloudSubscriberNode : public rclcpp::Node {
       return;
     }
 
-    auto err = view.wait(stream_);
+    auto err = view.enqueue_ready_event(stream_);
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaStreamWaitEvent failed: %s",
                    cudaGetErrorString(err));

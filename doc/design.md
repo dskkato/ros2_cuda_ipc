@@ -121,8 +121,8 @@ struct BufferView {
   template<class T = void> T* data() const noexcept { return static_cast<T*>(dev_ptr); }
   bool valid() const noexcept { return dev_ptr != nullptr; }
 
-  // 自分のストリームで書き終わりを待つ（非ブロッキング同期の起点）
-  cudaError_t wait(cudaStream_t s) const noexcept {
+  // 自分のストリームに書き終わりイベントを依存として積む
+  cudaError_t enqueue_ready_event(cudaStream_t s) const noexcept {
     return ready_evt ? cudaStreamWaitEvent(s, ready_evt, 0) : cudaSuccess;
   }
 
@@ -150,7 +150,7 @@ private:
 
 **方針**
 
-* 同期は提供するが強制しない：wait(stream) を呼ぶかは利用側の責務。
+* 同期は提供するが強制しない：enqueue_ready_event(stream) を呼ぶかは利用側の責務。
 * Control block を shared_ptr で共有し、`cudaIpcClose*` を一度だけ実行しつつコピー可能にする。
 * 解釈ゼロ：幅やレイアウトは一切持たない（下位互換と拡張性の源）。
 
@@ -220,8 +220,10 @@ struct ImageView {
     return 1;
   }
 
-  // 同期（必要なら呼ぶ。どのストリームで待つかは呼び手が決める）
-  cudaError_t wait(cudaStream_t s) const noexcept { return core.wait(s); }
+  // 同期依存の登録（必要なら呼ぶ。どのストリームで待つかは呼び手が決める）
+  cudaError_t enqueue_ready_event(cudaStream_t s) const noexcept {
+    return core.enqueue_ready_event(s);
+  }
 
   // === カーネルに渡すPODビュー（ABIを安定させるなら別ヘッダで固定化推奨） ===
   struct DeviceView {
@@ -316,7 +318,9 @@ struct PointCloud2View {
   }
 
   size_t num_points() const noexcept { return static_cast<size_t>(width) * height; }
-  cudaError_t wait(cudaStream_t s) const noexcept { return core.wait(s); }
+  cudaError_t enqueue_ready_event(cudaStream_t s) const noexcept {
+    return core.enqueue_ready_event(s);
+  }
 };
 ```
 
