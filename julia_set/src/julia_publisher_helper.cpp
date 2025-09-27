@@ -1,10 +1,11 @@
+#include "julia_set/julia_publisher_helper.hpp"
+
 #include <cuda_runtime_api.h>
 
 #include <cmath>
 #include <stdexcept>
-#include <utility>
 
-#include "julia_set/julia_publisher_helper.hpp"
+#include "julia_set/julia_kernel.hpp"
 #include "rclcpp/logging.hpp"
 
 namespace julia_set {
@@ -31,60 +32,6 @@ uint32_t dtype_bytes(ros2_cuda_ipc_core::DType dtype) {
   }
   return 1;
 }
-
-__global__ void julia_kernel(uint8_t *data, uint32_t width, uint32_t height,
-                             uint32_t channels, float zoom, float offset_x,
-                             float offset_y, float c_real, float c_imag,
-                             uint32_t max_iterations) {
-  const uint32_t x = blockIdx.x * blockDim.x + threadIdx.x;
-  const uint32_t y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= width || y >= height) {
-    return;
-  }
-
-  const float jx =
-      zoom * (static_cast<float>(x) / static_cast<float>(width) - 0.5f) +
-      offset_x;
-  const float jy =
-      zoom * (static_cast<float>(y) / static_cast<float>(height) - 0.5f) +
-      offset_y;
-
-  float zx = jx;
-  float zy = jy;
-  uint32_t iteration = 0;
-  while (zx * zx + zy * zy < 4.0f && iteration < max_iterations) {
-    const float temp = zx * zx - zy * zy + c_real;
-    zy = 2.0f * zx * zy + c_imag;
-    zx = temp;
-    ++iteration;
-  }
-
-  float t = static_cast<float>(iteration) / static_cast<float>(max_iterations);
-  t = fminf(1.0f, fmaxf(0.0f, t));
-  const uint8_t r =
-      static_cast<uint8_t>(9.0f * (1.0f - t) * t * t * t * 255.0f);
-  const uint8_t g =
-      static_cast<uint8_t>(15.0f * (1.0f - t) * (1.0f - t) * t * t * 255.0f);
-  const uint8_t b = static_cast<uint8_t>(8.5f * (1.0f - t) * (1.0f - t) *
-                                         (1.0f - t) * t * 255.0f);
-
-  const uint32_t idx = (y * width + x) * channels;
-  if (channels >= 3) {
-    data[idx + 0] = r;
-    data[idx + 1] = g;
-    data[idx + 2] = b;
-    if (channels > 3) {
-      data[idx + 3] = 255;
-    }
-  } else if (channels == 2) {
-    data[idx + 0] = r;
-    data[idx + 1] = g;
-  } else if (channels == 1) {
-    data[idx] = r;
-  }
-}
-
-}  // namespace
 
 JuliaPublisherHelper::JuliaPublisherHelper(const Config &config)
     : config_(config) {
@@ -232,20 +179,15 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
     slot.pending_deadline = {};
   }
 
-  const dim3 block_dim(16, 16);
-  const dim3 grid_dim((config_.width + block_dim.x - 1) / block_dim.x,
-                      (config_.height + block_dim.y - 1) / block_dim.y);
-
   const float animated_real =
       config_.constant_real + 0.2f * std::sin(time_phase * 0.5f);
   const float animated_imag =
       config_.constant_imag + 0.2f * std::cos(time_phase * 0.5f);
 
-  julia_kernel<<<grid_dim, block_dim, 0, stream_>>>(
+  const cudaError_t err = launch_julia_kernel(
       static_cast<uint8_t *>(slot.device_ptr), config_.width, config_.height,
       config_.channels, config_.zoom, config_.offset_x, config_.offset_y,
-      animated_real, animated_imag, config_.max_iterations);
-  cudaError_t err = cudaGetLastError();
+      animated_real, animated_imag, config_.max_iterations, stream_);
   if (err != cudaSuccess) {
     RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
                  "julia_kernel launch failed: %s",
@@ -253,19 +195,19 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
     return std::nullopt;
   }
 
-  err = cudaEventRecord(slot.event, stream_);
-  if (err != cudaSuccess) {
+  cudaError_t record_err = cudaEventRecord(slot.event, stream_);
+  if (record_err != cudaSuccess) {
     RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
                  "cudaEventRecord failed: %s",
-                 cuda_error_to_string(err).c_str());
+                 cuda_error_to_string(record_err).c_str());
     return std::nullopt;
   }
 
-  err = cudaStreamSynchronize(stream_);
-  if (err != cudaSuccess) {
+  record_err = cudaStreamSynchronize(stream_);
+  if (record_err != cudaSuccess) {
     RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
                  "cudaStreamSynchronize failed: %s",
-                 cuda_error_to_string(err).c_str());
+                 cuda_error_to_string(record_err).c_str());
     return std::nullopt;
   }
 
