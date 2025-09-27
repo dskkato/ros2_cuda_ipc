@@ -213,18 +213,41 @@ void JuliaPublisherHelper::destroy_slots() noexcept {
 }
 
 void JuliaPublisherHelper::reclaim_stale_pending() {
+  if (config_.pending_ttl.count() <= 0) {
+    return;
+  }
+
   const auto now = std::chrono::steady_clock::now();
+  auto logger = rclcpp::get_logger("JuliaPublisherHelper");
+
   for (auto &slot : slots_) {
-    if (slot.pending_deadline.time_since_epoch().count() == 0 ||
-        !deadline_reached(slot.pending_deadline, now)) {
+    if (!deadline_reached(slot.pending_deadline, now)) {
       continue;
     }
 
-    RCLCPP_WARN(rclcpp::get_logger("JuliaPublisherHelper"),
-                "Reclaiming stale pending slot %u", slot.index);
-    ros2_cuda_ipc_core::LeaseHandle::release_pending(config_.shm_name,
-                                                     slot.index);
-    slot.pending_deadline = {};
+    auto pending = ros2_cuda_ipc_core::LeaseHandle::current_pending(
+        config_.shm_name, slot.index);
+    if (!pending.has_value()) {
+      continue;
+    }
+    if (pending.value() == 0) {
+      slot.pending_deadline = {};
+      continue;
+    }
+
+    auto refcnt = ros2_cuda_ipc_core::LeaseHandle::current_refcount(
+        config_.shm_name, slot.index);
+    if (!refcnt.has_value() || refcnt.value() != 0) {
+      continue;
+    }
+
+    if (ros2_cuda_ipc_core::LeaseHandle::force_clear_pending(config_.shm_name,
+                                                             slot.index)) {
+      RCLCPP_WARN(
+          logger, "Force-cleared pending lease slot=%u after %lld ms timeout",
+          slot.index, static_cast<long long>(config_.pending_ttl.count()));
+      slot.pending_deadline = {};
+    }
   }
 }
 
@@ -258,6 +281,22 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
 
   auto &slot = slots_[free_slot.value()];
 
+  auto generation = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
+      config_.shm_name, slot.index, static_cast<uint32_t>(subscriber_count));
+  if (!generation.has_value()) {
+    RCLCPP_WARN(rclcpp::get_logger("JuliaPublisherHelper"),
+                "Failed to bump generation for slot %u", slot.index);
+    return std::nullopt;
+  }
+  slot.generation = generation.value();
+
+  const auto now = std::chrono::steady_clock::now();
+  if (subscriber_count > 0 && config_.pending_ttl.count() > 0) {
+    slot.pending_deadline = now + config_.pending_ttl;
+  } else {
+    slot.pending_deadline = {};
+  }
+
   const float zoom = config_.zoom + 0.5f * std::sin(time_phase);
   const float offset_x = config_.offset_x + 0.2f * std::cos(time_phase * 0.5f);
   const float offset_y = config_.offset_y + 0.2f * std::sin(time_phase * 0.5f);
@@ -286,35 +325,26 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
   }
 
   ros2_cuda_ipc_core::ImageView view;
-  view.header.width = config_.width;
-  view.header.height = config_.height;
-  view.header.channels = config_.channels;
-  view.header.dtype = config_.dtype;
-  view.header.encoding = config_.encoding;
-  view.header.row_stride = static_cast<uint64_t>(config_.width) *
-                           config_.channels * dtype_bytes(config_.dtype);
-  view.header.col_stride =
-      static_cast<uint64_t>(config_.channels) * dtype_bytes(config_.dtype);
-  view.header.device_index = config_.device_index;
-  view.header.pending_ttl_ms =
-      static_cast<uint32_t>(config_.pending_ttl.count());
-  view.mem_handle = slot.mem_handle;
-  view.event_handle = slot.event_handle;
-  view.slot_index = slot.index;
-  view.generation = ++slot.generation;
-  view.frame_size = frame_size_bytes_;
-  view.subscriber_count = static_cast<uint32_t>(subscriber_count);
-
-  const auto release_result = ros2_cuda_ipc_core::LeaseHandle::mark_pending(
-      config_.shm_name, slot.index, slot.generation);
-  if (!release_result) {
-    RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
-                 "Failed to mark slot %u as pending", slot.index);
-    return std::nullopt;
+  view.core.dev_ptr = slot.device_ptr;
+  view.core.ready_evt = slot.event;
+  view.core.device_id = config_.device_index;
+  view.core.byte_size = frame_size_bytes_;
+  view.core.slot_id = slot.index;
+  view.core.generation = slot.generation;
+  view.core.shm_name = config_.shm_name;
+  view.core.set_ipc_handles(slot.mem_handle, slot.event_handle);
+  view.dtype = config_.dtype;
+  view.shape = {config_.height, config_.width, config_.channels};
+  const uint64_t elem_size = dtype_bytes(config_.dtype);
+  view.strides = {
+      static_cast<uint64_t>(config_.width) * config_.channels * elem_size,
+      static_cast<uint64_t>(config_.channels) * elem_size, elem_size};
+  if (!config_.encoding.empty()) {
+    view.encoding = config_.encoding;
+  } else {
+    view.encoding.clear();
   }
 
-  slot.pending_deadline =
-      std::chrono::steady_clock::now() + config_.pending_ttl;
   return view;
 }
 
