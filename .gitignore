@@ -16,3 +16,6 @@ venv/
 __pycache__/
 
 .cache
+
+*.nsys-rep
+*.sqlite
