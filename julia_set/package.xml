@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>julia_set</name>
+  <version>0.1.0</version>
+  <description>Julia set fractal demo leveraging ROS 2 CUDA IPC for zero-copy GPU sharing.</description>
+  <maintainer email="dskkato@example.com">dskkato</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>ros2_cuda_ipc_core</depend>
+  <depend>ros2_cuda_ipc_msgs</depend>
+
+  <exec_depend>rclcpp_components</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
