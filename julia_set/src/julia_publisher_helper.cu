@@ -18,6 +18,7 @@
 #include <stdexcept>
 
 #include "julia_set/julia_publisher_helper.hpp"
+#include "julia_set/nvtx_scoped_range.hpp"
 #include "rclcpp/logging.hpp"
 
 namespace julia_set {
@@ -253,6 +254,7 @@ void JuliaPublisherHelper::reclaim_stale_pending() {
 
 std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
     std::size_t subscriber_count, float time_phase) {
+  NvtxScopedRange produce_range("JuliaPublisherHelper::produce");
   if (slots_.empty()) {
     return std::nullopt;
   }
@@ -305,10 +307,14 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
   const float c_imag =
       config_.constant_imag + 0.1f * std::sin(time_phase * 0.7f);
 
-  cudaError_t err = launch_julia_kernel(
-      static_cast<uint8_t *>(slot.device_ptr), config_.width, config_.height,
-      config_.channels, zoom, offset_x, offset_y, c_real, c_imag,
-      config_.max_iterations, stream_);
+  cudaError_t err = cudaSuccess;
+  {
+    NvtxScopedRange launch_range("JuliaPublisherHelper::launch_julia_kernel");
+    err = launch_julia_kernel(static_cast<uint8_t *>(slot.device_ptr),
+                              config_.width, config_.height, config_.channels,
+                              zoom, offset_x, offset_y, c_real, c_imag,
+                              config_.max_iterations, stream_);
+  }
   if (err != cudaSuccess) {
     RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
                  "launch_julia_kernel failed for slot %u: %s", slot.index,
@@ -316,7 +322,10 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
     return std::nullopt;
   }
 
-  err = cudaEventRecord(slot.event, stream_);
+  {
+    NvtxScopedRange event_record_range("JuliaPublisherHelper::cudaEventRecord");
+    err = cudaEventRecord(slot.event, stream_);
+  }
   if (err != cudaSuccess) {
     RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
                  "cudaEventRecord failed for slot %u: %s", slot.index,

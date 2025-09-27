@@ -5,6 +5,7 @@
 #include <string>
 
 #include "julia_set/julia_publisher_helper.hpp"
+#include "julia_set/nvtx_scoped_range.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
@@ -104,6 +105,7 @@ class JuliaSetPublisherNode : public rclcpp::Node {
 
  private:
   void on_timer() {
+    NvtxScopedRange timer_range("JuliaSetPublisherNode::on_timer");
     const std::size_t subscribers = publisher_->get_subscription_count();
     float phase = 0.0f;
     if (animate_) {

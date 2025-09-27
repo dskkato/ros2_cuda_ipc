@@ -34,6 +34,7 @@ target_include_directories(julia_set_helpers
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
+    ${CUDAToolkit_INCLUDE_DIRS}
 )
 
 target_link_libraries(julia_set_helpers
@@ -48,10 +49,14 @@ ament_target_dependencies(julia_set_helpers
 )
 
 add_executable(julia_set_publisher src/julia_set_publisher.cpp)
-target_link_libraries(julia_set_publisher julia_set_helpers)
+target_link_libraries(julia_set_publisher
+  julia_set_helpers
+)
 
 add_executable(julia_set_subscriber src/julia_set_subscriber.cpp)
-target_link_libraries(julia_set_subscriber julia_set_helpers)
+target_link_libraries(julia_set_subscriber
+  julia_set_helpers
+)
 
 ament_target_dependencies(julia_set_publisher
   rclcpp

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "julia_set/nvtx_scoped_range.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
@@ -60,12 +61,17 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
 
  private:
   void on_image(const ros2_cuda_ipc_core::ImageView &view) {
+    NvtxScopedRange callback_range("JuliaSetSubscriberNode::on_image");
     if (!view.core.valid()) {
       RCLCPP_WARN(get_logger(), "Received invalid Julia set view");
       return;
     }
 
-    auto err = view.enqueue_ready_event(stream_);
+    auto err = cudaSuccess;
+    {
+      NvtxScopedRange wait_range("JuliaSetSubscriber::stream_wait_event");
+      err = view.enqueue_ready_event(stream_);
+    }
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaStreamWaitEvent failed: %s",
                    cudaGetErrorString(err));
@@ -77,15 +83,21 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
             ? view.core.byte_size
             : std::min<std::size_t>(view.core.byte_size, sample_bytes_);
     std::vector<uint8_t> host(bytes_to_copy, 0);
-    err = cudaMemcpyAsync(host.data(), view.core.data<uint8_t>(), bytes_to_copy,
-                          cudaMemcpyDeviceToHost, stream_);
+    {
+      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
+      err = cudaMemcpyAsync(host.data(), view.core.data<uint8_t>(),
+                            bytes_to_copy, cudaMemcpyDeviceToHost, stream_);
+    }
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaMemcpyAsync failed: %s",
                    cudaGetErrorString(err));
       return;
     }
 
-    err = cudaStreamSynchronize(stream_);
+    {
+      NvtxScopedRange sync_range("JuliaSetSubscriber::cudaStreamSynchronize");
+      err = cudaStreamSynchronize(stream_);
+    }
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaStreamSynchronize failed: %s",
                    cudaGetErrorString(err));
