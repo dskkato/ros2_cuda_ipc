@@ -156,17 +156,32 @@ void JuliaPublisherHelper::allocate_slots() {
 void JuliaPublisherHelper::destroy_slots() noexcept {
   for (auto &slot : slots_) {
     if (slot.event) {
-      cudaEventDestroy(slot.event);
+      const cudaError_t event_err = cudaEventDestroy(slot.event);
+      if (event_err != cudaSuccess) {
+        RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
+                     "cudaEventDestroy failed for slot %u: %s", slot.index,
+                     cuda_error_to_string(event_err).c_str());
+      }
       slot.event = nullptr;
     }
     if (slot.device_ptr) {
-      cudaFree(slot.device_ptr);
+      const cudaError_t free_err = cudaFree(slot.device_ptr);
+      if (free_err != cudaSuccess) {
+        RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
+                     "cudaFree failed for slot %u: %s", slot.index,
+                     cuda_error_to_string(free_err).c_str());
+      }
       slot.device_ptr = nullptr;
     }
     slot.pending_deadline = {};
   }
   if (stream_) {
-    cudaStreamDestroy(stream_);
+    const cudaError_t stream_err = cudaStreamDestroy(stream_);
+    if (stream_err != cudaSuccess) {
+      RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
+                   "cudaStreamDestroy failed: %s",
+                   cuda_error_to_string(stream_err).c_str());
+    }
     stream_ = nullptr;
   }
 }

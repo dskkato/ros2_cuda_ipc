@@ -49,7 +49,11 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
 
   ~JuliaSetSubscriberNode() override {
     if (stream_) {
-      cudaStreamDestroy(stream_);
+      const cudaError_t err = cudaStreamDestroy(stream_);
+      if (err != cudaSuccess) {
+        RCLCPP_ERROR(get_logger(), "cudaStreamDestroy failed: %s",
+                     cudaGetErrorString(err));
+      }
       stream_ = nullptr;
     }
   }
