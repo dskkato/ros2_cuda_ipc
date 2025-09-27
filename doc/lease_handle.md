@@ -109,7 +109,7 @@ BufferCore{ shm_name, slot_id, generation, mem_handle, event_handle, byte_size, 
 2. 利用（use）
 TypeAdapter が BufferView / ImageView / PointCloud2View を構築して返す。
 `LeaseHandle` は View の内部で `std::shared_ptr` として保持され、利用者は必要に応じて
-`view.core.wait(stream)` を呼び、カーネルを stream に投入。
+`view.core.enqueue_ready_event(stream)` を呼び、カーネルを stream に投入。
 
 3. 解放（release）
 View の破棄に伴い、内部で保持する LeaseHandle のデストラクタが呼ばれ、refcnt.fetch_sub(1, acq_rel)。
@@ -350,7 +350,7 @@ classDiagram
     +shared_ptr<LeaseHandle> lease
     +BufferView(const BufferView&)
     +operator=(const BufferView&)
-    +wait(stream) : cudaError_t
+    +enqueue_ready_event(stream) : cudaError_t
     +reset() : void
     -shared_ptr<ControlBlock> control_
   }
@@ -418,7 +418,7 @@ sequenceDiagram
     LHs-->>TA: LeaseHandle(valid)
     TA->>TA: cudaIpcOpenMemHandle / OpenEvent
     TA-->>Sub: ImageView/PointCloud2View(lease付き)
-    Note over Sub: view.core.wait(stream) → kernels
+    Note over Sub: view.core.enqueue_ready_event(stream) → kernels
     Sub-->>TA: view destructs（スコープ終端）
     TA->>LHs: LeaseHandle dtor  // refcnt--
   else acquire NG / IPC Open失敗
