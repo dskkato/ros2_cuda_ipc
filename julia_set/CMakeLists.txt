@@ -6,11 +6,7 @@ enable_language(CUDA)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# NVCC on the target CI runners still defaults to C++14 support; forcing a
-# higher standard triggers libstdc++ header instantiation failures (e.g.
-# std::function pack expansion errors).  Keep the helper host code at C++17,
-# but request only CUDA 14 so the kernel compiles cleanly across toolkits.
-set(CMAKE_CUDA_STANDARD 14)
+set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
@@ -26,8 +22,7 @@ find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
 add_library(julia_set_helpers
-  src/julia_kernel.cu
-  src/julia_publisher_helper.cpp
+  src/julia_publisher_helper.cu
 )
 
 set_target_properties(julia_set_helpers PROPERTIES
