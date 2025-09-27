@@ -16,6 +16,6 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y nvidia-cuda-toolkit
       - uses: ros-tooling/action-ros-ci@v0.3
         with:
-          package-name: "ros2_cuda_ipc_msgs ros2_cuda_ipc_core sample_nodes"
+          package-name: "ros2_cuda_ipc_msgs ros2_cuda_ipc_core sample_nodes julia_set"
           target-ros2-distro: humble
           skip-tests: true
