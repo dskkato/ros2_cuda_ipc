@@ -1,32 +1,28 @@
+import platform
+from typing import List
+
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+RESOLUTIONS = {
+    "16K": (15360, 8640),
+    "8K": (7680, 4320),
+    "4K": (3840, 2160),
+    "1080p": (1920, 1080),
+    "720p": (1280, 720),
+    "480p": (852, 480),
+}
+DEFAULT_NSYS_FLAGS = "--trace=osrt,nvtx,cuda"
+TRUE_TOKENS = {"1", "true", "on", "yes"}
+
 
 def generate_launch_description() -> LaunchDescription:
-    publish_rate = LaunchConfiguration("publish_rate_hz")
-    width = LaunchConfiguration("width")
-    height = LaunchConfiguration("height")
-    channels = LaunchConfiguration("channels")
-    slot_count = LaunchConfiguration("slot_count")
-    max_iterations = LaunchConfiguration("max_iterations")
-    zoom = LaunchConfiguration("zoom")
-    offset_x = LaunchConfiguration("offset_x")
-    offset_y = LaunchConfiguration("offset_y")
-    constant_real = LaunchConfiguration("constant_real")
-    constant_imag = LaunchConfiguration("constant_imag")
-    animate = LaunchConfiguration("animate")
-    animation_speed = LaunchConfiguration("animation_speed")
-    frame_id = LaunchConfiguration("frame_id")
-    shm_name = LaunchConfiguration("shm_name")
-    device_index = LaunchConfiguration("device_index")
-    topic_name = LaunchConfiguration("topic_name")
-    sample_bytes = LaunchConfiguration("sample_bytes")
-    log_full_copy = LaunchConfiguration("log_full_copy")
-
     arguments = [
         DeclareLaunchArgument("publish_rate_hz", default_value="30.0"),
+        DeclareLaunchArgument("resolution", default_value="1080p"),
         DeclareLaunchArgument("width", default_value="1280"),
         DeclareLaunchArgument("height", default_value="720"),
         DeclareLaunchArgument("channels", default_value="3"),
@@ -45,44 +41,147 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("topic_name", default_value="julia_set/image"),
         DeclareLaunchArgument("sample_bytes", default_value="64"),
         DeclareLaunchArgument("log_full_copy", default_value="false"),
+        DeclareLaunchArgument("enable_nsys", default_value="false"),
+        DeclareLaunchArgument(
+            "nsys_profile_label", default_value="",
+            description="Label appended to nsys profile outputs",
+        ),
+        DeclareLaunchArgument(
+            "nsys_profile_flags", default_value=DEFAULT_NSYS_FLAGS,
+            description="Flags forwarded to nsys profile",
+        ),
     ]
 
-    publisher = Node(
+    ld = LaunchDescription(arguments)
+    ld.add_action(OpaqueFunction(function=launch_setup))
+    return ld
+
+
+def launch_setup(context) -> List[Node]:
+    def value(name: str) -> str:
+        return LaunchConfiguration(name).perform(context)
+
+    def as_int(name: str) -> int:
+        return int(float(value(name)))
+
+    def as_float(name: str) -> float:
+        return float(value(name))
+
+    def as_bool(name: str) -> bool:
+        return value(name).strip().lower() in TRUE_TOKENS
+
+    resolution_key = value("resolution")
+    width_value = as_int("width")
+    height_value = as_int("height")
+    if resolution_key in RESOLUTIONS:
+        width_value, height_value = RESOLUTIONS[resolution_key]
+
+    publish_rate = as_float("publish_rate_hz")
+    slot_count = as_int("slot_count")
+    channels = as_int("channels")
+    max_iterations = as_int("max_iterations")
+    device_index = as_int("device_index")
+    sample_bytes = as_int("sample_bytes")
+
+    zoom = as_float("zoom")
+    offset_x = as_float("offset_x")
+    offset_y = as_float("offset_y")
+    constant_real = as_float("constant_real")
+    constant_imag = as_float("constant_imag")
+    animation_speed = as_float("animation_speed")
+
+    animate = as_bool("animate")
+    log_full_copy = as_bool("log_full_copy")
+
+    frame_id = value("frame_id")
+    shm_name = value("shm_name")
+    topic_name = value("topic_name")
+
+    enable_nsys = IfCondition(LaunchConfiguration("enable_nsys")).evaluate(context)
+    nsys_flags = value("nsys_profile_flags") or DEFAULT_NSYS_FLAGS
+    nsys_label = value("nsys_profile_label")
+
+    profile_base = None
+    if enable_nsys:
+        profile_base = build_profile_name(
+            nsys_label, resolution_key, width_value, height_value, publish_rate
+        )
+
+    publisher_params = {
+        "publish_rate_hz": publish_rate,
+        "width": width_value,
+        "height": height_value,
+        "channels": channels,
+        "slot_count": slot_count,
+        "max_iterations": max_iterations,
+        "zoom": zoom,
+        "offset_x": offset_x,
+        "offset_y": offset_y,
+        "constant_real": constant_real,
+        "constant_imag": constant_imag,
+        "animate": animate,
+        "animation_speed": animation_speed,
+        "frame_id": frame_id,
+        "shm_name": shm_name,
+        "device_index": device_index,
+        "topic_name": topic_name,
+    }
+
+    publisher_kwargs = dict(
         package="julia_set",
         executable="julia_set_publisher",
         name="julia_set_publisher",
-        parameters=[
-            {"publish_rate_hz": publish_rate},
-            {"width": width},
-            {"height": height},
-            {"channels": channels},
-            {"slot_count": slot_count},
-            {"max_iterations": max_iterations},
-            {"zoom": zoom},
-            {"offset_x": offset_x},
-            {"offset_y": offset_y},
-            {"constant_real": constant_real},
-            {"constant_imag": constant_imag},
-            {"animate": animate},
-            {"animation_speed": animation_speed},
-            {"frame_id": frame_id},
-            {"shm_name": shm_name},
-            {"device_index": device_index},
-            {"topic_name": topic_name},
-        ],
+        parameters=[publisher_params],
         output="screen",
     )
+    if enable_nsys and profile_base:
+        publisher_kwargs["prefix"] = (
+            f"nsys profile {nsys_flags} -o {profile_base}-publisher"
+        )
 
-    subscriber = Node(
+    publisher = Node(**publisher_kwargs)
+
+    subscriber_params = {
+        "topic_name": topic_name,
+        "sample_bytes": sample_bytes,
+        "log_full_copy": log_full_copy,
+    }
+
+    subscriber_kwargs = dict(
         package="julia_set",
         executable="julia_set_subscriber",
         name="julia_set_subscriber",
-        parameters=[
-            {"topic_name": topic_name},
-            {"sample_bytes": sample_bytes},
-            {"log_full_copy": log_full_copy},
-        ],
+        parameters=[subscriber_params],
         output="screen",
     )
+    if enable_nsys and profile_base:
+        subscriber_kwargs["prefix"] = (
+            f"nsys profile {nsys_flags} -o {profile_base}-subscriber"
+        )
 
-    return LaunchDescription([*arguments, publisher, subscriber])
+    subscriber = Node(**subscriber_kwargs)
+
+    return [publisher, subscriber]
+
+
+def build_profile_name(
+    label: str,
+    resolution_key: str,
+    width: int,
+    height: int,
+    publish_rate: float,
+) -> str:
+    resolution_token = (
+        resolution_key if resolution_key in RESOLUTIONS else f"{width}x{height}"
+    )
+    rate_int = int(publish_rate)
+    rate_token = (
+        f"{rate_int}hz"
+        if abs(publish_rate - rate_int) < 1e-6
+        else f"{publish_rate:.1f}hz"
+    )
+    base = f"julia-set-{platform.machine()}-{resolution_token}-{rate_token}"
+    label = label.strip()
+    if label:
+        base = f"{base}-{label}"
+    return base
