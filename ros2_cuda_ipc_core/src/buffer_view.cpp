@@ -76,7 +76,8 @@ BufferView &BufferView::operator=(BufferView &&other) noexcept {
   return *this;
 }
 
-cudaError_t BufferView::wait(cudaStream_t stream) const noexcept {
+cudaError_t BufferView::enqueue_ready_event(
+    cudaStream_t stream) const noexcept {
   if (!ready_evt) {
     return cudaSuccess;
   }
