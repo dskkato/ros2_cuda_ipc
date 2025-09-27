@@ -3,10 +3,13 @@
 #include <cuda_runtime_api.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/type_adapter.hpp>
+#include <unordered_map>
 
 #include "ros2_cuda_ipc_core/buffer_view.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
@@ -19,6 +22,49 @@
 #include "std_msgs/msg/header.hpp"
 
 namespace ros2_cuda_ipc_core {
+
+namespace detail {
+
+struct IpcHandleKey {
+  std::array<uint8_t, sizeof(cudaIpcMemHandle_t)> mem{};
+  std::array<uint8_t, sizeof(cudaIpcEventHandle_t)> evt{};
+
+  bool operator==(const IpcHandleKey &other) const noexcept {
+    return mem == other.mem && evt == other.evt;
+  }
+};
+
+struct IpcHandleKeyHash {
+  std::size_t operator()(const IpcHandleKey &key) const noexcept {
+    std::size_t hash = 0;
+    for (uint8_t byte : key.mem) {
+      hash = hash * 131U + byte;
+    }
+    for (uint8_t byte : key.evt) {
+      hash = hash * 131U + byte;
+    }
+    return hash;
+  }
+};
+
+struct CachedIpcHandles {
+  void *dev_ptr = nullptr;
+  cudaEvent_t event = nullptr;
+};
+
+inline std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash> &
+ipc_handle_cache() {
+  static std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash>
+      cache;
+  return cache;
+}
+
+inline std::mutex &ipc_handle_cache_mutex() {
+  static std::mutex mutex;
+  return mutex;
+}
+
+}  // namespace detail
 
 inline cudaIpcMemHandle_t to_cuda_mem_handle(
     const ros2_cuda_ipc_msgs::msg::BufferCore &msg) {
@@ -87,26 +133,61 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
         std::make_shared<ros2_cuda_ipc_core::LeaseHandle>(std::move(lease));
 
     cudaIpcMemHandle_t mem_handle = ros2_cuda_ipc_core::to_cuda_mem_handle(msg);
-    void *dev_ptr = nullptr;
-    auto err = cudaIpcOpenMemHandle(&dev_ptr, mem_handle,
-                                    cudaIpcMemLazyEnablePeerAccess);
-    if (err != cudaSuccess) {
-      RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
-                  "cudaIpcOpenMemHandle failed: %s", cudaGetErrorString(err));
-      view = ros2_cuda_ipc_core::BufferView{};
-      return;
-    }
-
-    cudaEvent_t evt{};
     cudaIpcEventHandle_t event_handle =
         ros2_cuda_ipc_core::to_cuda_event_handle(msg);
-    err = cudaIpcOpenEventHandle(&evt, event_handle);
-    if (err != cudaSuccess) {
-      cudaIpcCloseMemHandle(dev_ptr);
-      RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
-                  "cudaIpcOpenEventHandle failed: %s", cudaGetErrorString(err));
-      view = ros2_cuda_ipc_core::BufferView{};
-      return;
+
+    ros2_cuda_ipc_core::detail::IpcHandleKey key{};
+    std::memcpy(key.mem.data(), &mem_handle, sizeof(mem_handle));
+    std::memcpy(key.evt.data(), &event_handle, sizeof(event_handle));
+
+    void *dev_ptr = nullptr;
+    cudaEvent_t evt = nullptr;
+
+    {
+      std::lock_guard<std::mutex> lock(
+          ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
+      auto &cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
+      auto it = cache.find(key);
+      if (it != cache.end()) {
+        dev_ptr = it->second.dev_ptr;
+        evt = it->second.event;
+      }
+    }
+
+    if (!dev_ptr || !evt) {
+      auto err = cudaIpcOpenMemHandle(&dev_ptr, mem_handle,
+                                      cudaIpcMemLazyEnablePeerAccess);
+      if (err != cudaSuccess) {
+        RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
+                    "cudaIpcOpenMemHandle failed: %s", cudaGetErrorString(err));
+        view = ros2_cuda_ipc_core::BufferView{};
+        return;
+      }
+
+      err = cudaIpcOpenEventHandle(&evt, event_handle);
+      if (err != cudaSuccess) {
+        cudaIpcCloseMemHandle(dev_ptr);
+        RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
+                    "cudaIpcOpenEventHandle failed: %s",
+                    cudaGetErrorString(err));
+        view = ros2_cuda_ipc_core::BufferView{};
+        return;
+      }
+
+      {
+        std::lock_guard<std::mutex> lock(
+            ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
+        auto &cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
+        auto [it, inserted] = cache.emplace(
+            key, ros2_cuda_ipc_core::detail::CachedIpcHandles{dev_ptr, evt});
+        if (!inserted) {
+          // Another thread populated the cache while we were opening.
+          cudaIpcCloseMemHandle(dev_ptr);
+          cudaEventDestroy(evt);
+          dev_ptr = it->second.dev_ptr;
+          evt = it->second.event;
+        }
+      }
     }
 
     custom_type opened;
@@ -119,7 +200,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     opened.shm_name = msg.shm_name;
     opened.lease = std::move(lease_ptr);
     opened.set_ipc_handles(mem_handle, event_handle);
-    opened.mark_opened_via_ipc(true, true);
+    opened.mark_opened_via_ipc(false, false);
 
     view = std::move(opened);
   }
