@@ -2,7 +2,13 @@
 
 ROS 2 CUDA IPC Zero-Copy Transport
 
-## デモ
+## Julia Set デモ手順
+
+```bash
+ros2 launch julia_set julia_set_demo.launch.py
+```
+
+`rqt` を起動し、`Plugins` → `Visualization` → `Image View` を開いたあと、`Topic` を再読み込みして `/julia_set/image_cpu` を選択すると CPU イメージを確認できます。
 
 ![julia_set_demo](doc/media/julia_readme.gif)
 
