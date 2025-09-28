@@ -4,15 +4,6 @@
 
 namespace ros2_cuda_ipc_core {
 
-BufferView::ControlBlock::~ControlBlock() {
-  if (dev_ptr && opened_mem_via_ipc) {
-    cudaIpcCloseMemHandle(dev_ptr);
-  }
-  if (ready_evt && opened_event_via_ipc) {
-    cudaEventDestroy(ready_evt);
-  }
-}
-
 BufferView::~BufferView() { reset(); }
 
 BufferView::BufferView(const BufferView &other) { *this = other; }
@@ -35,7 +26,6 @@ BufferView &BufferView::operator=(const BufferView &other) {
   mem_handle_ = other.mem_handle_;
   event_handle_ = other.event_handle_;
   handles_ready_ = other.handles_ready_;
-  control_ = other.control_;
 
   return *this;
 }
@@ -62,8 +52,6 @@ BufferView &BufferView::operator=(BufferView &&other) noexcept {
   mem_handle_ = other.mem_handle_;
   event_handle_ = other.event_handle_;
   handles_ready_ = other.handles_ready_;
-  control_ = std::move(other.control_);
-
   other.dev_ptr = nullptr;
   other.ready_evt = nullptr;
   other.byte_size = 0;
@@ -71,7 +59,6 @@ BufferView &BufferView::operator=(BufferView &&other) noexcept {
   other.generation = 0;
   other.shm_name.clear();
   other.handles_ready_ = false;
-  other.control_.reset();
 
   return *this;
 }
@@ -85,7 +72,6 @@ cudaError_t BufferView::enqueue_ready_event(
 }
 
 void BufferView::reset() noexcept {
-  control_.reset();
   dev_ptr = nullptr;
   ready_evt = nullptr;
   byte_size = 0;
@@ -101,21 +87,6 @@ void BufferView::set_ipc_handles(const cudaIpcMemHandle_t &mem,
   std::memcpy(&mem_handle_, &mem, sizeof(mem_handle_));
   std::memcpy(&event_handle_, &evt, sizeof(event_handle_));
   handles_ready_ = true;
-}
-
-void BufferView::ensure_control_block() noexcept {
-  if (!control_) {
-    control_ = std::make_shared<ControlBlock>();
-  }
-  control_->dev_ptr = dev_ptr;
-  control_->ready_evt = ready_evt;
-}
-
-void BufferView::mark_opened_via_ipc(bool memory_opened,
-                                     bool event_opened) noexcept {
-  ensure_control_block();
-  control_->opened_mem_via_ipc = memory_opened;
-  control_->opened_event_via_ipc = event_opened;
 }
 
 }  // namespace ros2_cuda_ipc_core
