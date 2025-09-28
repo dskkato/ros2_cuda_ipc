@@ -4,7 +4,7 @@ ROS 2 CUDA IPC Zero-Copy Transport
 
 ## デモ
 
-<video src="doc/media/julia_readme.mp4" width="480" autoplay loop muted playsinline></video>
+![julia_set_demo](doc/media/julia_readme.gif)
 
 <details> <summary>動画作成方法の説明</summary>
 
