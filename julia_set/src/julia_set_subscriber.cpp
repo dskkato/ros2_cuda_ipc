@@ -97,92 +97,28 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       return;
     }
 
-    const bool has_subscribers =
-        image_pub_ && (image_pub_->get_subscription_count() > 0 ||
-                       image_pub_->get_intra_process_subscription_count() > 0);
-    const bool need_full_frame = has_subscribers || log_full_copy_;
-    const std::size_t requested_sample_bytes =
-        log_full_copy_
-            ? static_cast<std::size_t>(view.core.byte_size)
-            : std::min<std::size_t>(view.core.byte_size, sample_bytes_);
-
-    std::size_t bytes_to_copy = 0;
-    std::size_t host_step_bytes = 0;
-
-    if (need_full_frame) {
-      const std::size_t height = static_cast<std::size_t>(view.rows());
-      const std::size_t step_candidate =
-          static_cast<std::size_t>(view.cols()) *
-          static_cast<std::size_t>(view.strideW());
-      if (height == 0 || step_candidate == 0) {
-        RCLCPP_WARN(
-            get_logger(),
-            "Skipping frame: invalid dimensions height=%u width=%u channels=%u",
-            view.rows(), view.cols(), view.channels());
-        ++frame_counter_;
-        return;
-      }
-
-      const std::size_t src_pitch = static_cast<std::size_t>(view.strideH());
-      if (src_pitch < step_candidate) {
-        RCLCPP_WARN(get_logger(),
-                    "Skipping frame: stride mismatch strideH=%llu strideW=%llu",
-                    static_cast<unsigned long long>(view.strideH()),
-                    static_cast<unsigned long long>(view.strideW()));
-        ++frame_counter_;
-        return;
-      }
-
-      if (step_candidate > 0 &&
-          height > std::numeric_limits<std::size_t>::max() / step_candidate) {
-        RCLCPP_ERROR(get_logger(),
-                     "Skipping frame: size overflow height=%zu step=%zu",
-                     height, step_candidate);
-        ++frame_counter_;
-        return;
-      }
-
-      host_step_bytes = step_candidate;
-      bytes_to_copy = step_candidate * height;
-
-      {
-        NvtxScopedRange ensure_range("JuliaSetSubscriber::ensure_pinned_host");
-        const cudaError_t ensure_err = ensure_pinned_capacity(bytes_to_copy);
-        if (ensure_err != cudaSuccess) {
-          RCLCPP_ERROR(get_logger(), "cudaMallocHost failed: %s",
-                       cudaGetErrorString(ensure_err));
-          return;
-        }
-      }
-
-      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
-      err = cudaMemcpy2DAsync(
-          pinned_host_buffer_, host_step_bytes, view.core.data<uint8_t>(),
-          src_pitch, host_step_bytes, height, cudaMemcpyDeviceToHost, stream_);
-    } else {
-      bytes_to_copy = requested_sample_bytes;
-      if (bytes_to_copy == 0) {
-        ++frame_counter_;
-        return;
-      }
-
-      {
-        NvtxScopedRange ensure_range("JuliaSetSubscriber::ensure_pinned_host");
-        const cudaError_t ensure_err = ensure_pinned_capacity(bytes_to_copy);
-        if (ensure_err != cudaSuccess) {
-          RCLCPP_ERROR(get_logger(), "cudaMallocHost failed: %s",
-                       cudaGetErrorString(ensure_err));
-          return;
-        }
-      }
-
-      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
-      err = cudaMemcpyAsync(pinned_host_buffer_, view.core.data<uint8_t>(),
-                            bytes_to_copy, cudaMemcpyDeviceToHost, stream_);
+    std::uint64_t bytes_to_copy =
+        view.core.byte_size;  // Total bytes in the image
+    if (bytes_to_copy == 0) {
+      ++frame_counter_;
+      return;
     }
+
+    {
+      NvtxScopedRange ensure_range("JuliaSetSubscriber::ensure_pinned_host");
+      const cudaError_t ensure_err = ensure_pinned_capacity(bytes_to_copy);
+      if (ensure_err != cudaSuccess) {
+        RCLCPP_ERROR(get_logger(), "cudaMallocHost failed: %s",
+                     cudaGetErrorString(ensure_err));
+        return;
+      }
+    }
+
+    NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
+    err = cudaMemcpyAsync(pinned_host_buffer_, view.core.data<uint8_t>(),
+                          bytes_to_copy, cudaMemcpyDeviceToHost, stream_);
     if (err != cudaSuccess) {
-      RCLCPP_ERROR(get_logger(), "%s failed: %s",
-                   need_full_frame ? "cudaMemcpy2DAsync" : "cudaMemcpyAsync",
+      RCLCPP_ERROR(get_logger(), "cudaMemcpyAsync failed: %s",
                    cudaGetErrorString(err));
       return;
     }
@@ -198,23 +134,20 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
     }
 
     const std::size_t current_frame = ++frame_counter_;
-    const std::size_t sample_bytes_to_log =
-        std::min<std::size_t>(requested_sample_bytes, bytes_to_copy);
 
-    if (has_subscribers) {
-      publish_image(view, bytes_to_copy, host_step_bytes);
-    }
+    publish_image(view, bytes_to_copy,
+                  static_cast<std::size_t>(view.strideH()));
 
     if (log_full_copy_) {
       RCLCPP_INFO(get_logger(),
                   "Frame %zu frame_id=%s encoding=%s copied=%zu bytes",
                   current_frame, view.header.frame_id.c_str(),
                   view.encoding.c_str(), bytes_to_copy);
-    } else if (sample_bytes_to_log > 0) {
-      RCLCPP_INFO(
-          get_logger(), "Frame %zu frame_id=%s encoding=%s sample=%s",
-          current_frame, view.header.frame_id.c_str(), view.encoding.c_str(),
-          describe_sample(pinned_host_buffer_, sample_bytes_to_log).c_str());
+    } else if (sample_bytes_ > 0) {
+      RCLCPP_INFO(get_logger(), "Frame %zu frame_id=%s encoding=%s sample=%s",
+                  current_frame, view.header.frame_id.c_str(),
+                  view.encoding.c_str(),
+                  describe_sample(pinned_host_buffer_, sample_bytes_).c_str());
     }
   }
 
