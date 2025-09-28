@@ -126,23 +126,13 @@ struct BufferView {
     return ready_evt ? cudaStreamWaitEvent(s, ready_evt, 0) : cudaSuccess;
   }
 
-  void reset() noexcept;             // dev_ptr/evt を破棄し lease を解放
+  void reset() noexcept;             // dev_ptr/evt をリセットし lease を解放
   void set_ipc_handles(const cudaIpcMemHandle_t& mem,
                        const cudaIpcEventHandle_t& evt) noexcept;
   bool handles_ready() const noexcept;
 
 private:
-  struct ControlBlock {
-    void* dev_ptr = nullptr;
-    cudaEvent_t ready_evt = nullptr;
-    bool opened_mem_via_ipc = false;
-    bool opened_event_via_ipc = false;
-    ~ControlBlock();                 // cudaIpcCloseMemHandle / cudaEventDestroy
-  };
-
-  void ensure_control_block() noexcept;  // コピー時に共有する shared_ptr を確保
-  std::shared_ptr<ControlBlock> control_;
-  cudaIpcMemHandle_t mem_handle_{};      // Publisher から渡されたハンドル
+  cudaIpcMemHandle_t mem_handle_{};  // Publisher から渡されたハンドル
   cudaIpcEventHandle_t event_handle_{};
   bool handles_ready_ = false;
 };
@@ -151,14 +141,13 @@ private:
 **方針**
 
 * 同期は提供するが強制しない：enqueue_ready_event(stream) を呼ぶかは利用側の責務。
-* Control block を shared_ptr で共有し、`cudaIpcClose*` を一度だけ実行しつつコピー可能にする。
+* ハンドル情報はプロセス内のキャッシュ経由で共有し、BufferView は必要最小限の
+  メタデータだけを持つ。
 * 解釈ゼロ：幅やレイアウトは一切持たない（下位互換と拡張性の源）。
 
-Control block は BufferView が保持する開いた CUDA リソース（`dev_ptr`/`ready_evt`）と
-「自分で Open したのか？」というフラグを持つ。BufferView をコピーしても Control block
-が共有されるため、最後の 1 つが破棄されるタイミングでのみ `cudaIpcCloseMemHandle`
-や `cudaEventDestroy` を呼べる。TypeAdapter のユーザー定義型が CopyConstructible である
-という rclcpp の要件を満たすための仕組みである。
+BufferView 自体はハンドルの開閉を行わず、TypeAdapter が初回に開いたハンドルを
+プロセス内で共有する。これにより CopyConstructible という rclcpp の要件を
+満たしつつ、フレームごとの open/close コストを排除する。
 
 #### ImageView（BufferView + 薄い解釈）
 
@@ -261,7 +250,7 @@ struct ImageView {
 * POD な DeviceView を用意：そのまま kernel 引数に渡せる。
 * strideC を持つ：画像処理でピクセル内のチャンネル間隔が重要な場合があるため。
 * elem_size_bytes() は簡易版：複雑な型はアプリ側で管理。
-* ImageView 自体も BufferView の Control block を共有するためコピー可能。
+* ImageView 自体も BufferView のハンドル情報を共有するためコピー可能。
 
 #### 点群：PointCloud2View（BufferView + layout）
 
@@ -328,7 +317,7 @@ struct PointCloud2View {
 
 * フィールド名はCPU側だけで扱い、GPU には offset/datatype を渡す。
 * DeviceField 配列は デバイスメモリに一度コピーしてキャッシュするとよい。
-* BufferView が Control block を共有するため、この View もコピー可能。
+* BufferView がハンドル情報を共有するため、この View もコピー可能。
 
 ### 3. 変換層 (TypeAdapter)
 
@@ -342,6 +331,14 @@ Adapter の責務は **Open/Close とメタ転写のみ**。
 
 * コピーは行わない。
 * 同期 (cudaStreamWaitEvent) はユーザ側の責務。
+* 同一 (mem\_handle,event\_handle) の組み合わせをプロセス内でキャッシュし、
+  ハンドルごとの `cudaIpcOpen*Handle` を初回だけ実行する。これにより、
+  subscriber がフレームごとに IPC open/close を繰り返さずに済み、大きな
+  API 開始コストを避けている。
+  * キャッシュのライフタイムはプロセス存続中。送信側がメモリを再初期化した
+    場合は新しいハンドルが publish されるので、受信側も自然に再オープンする。
+  * `BufferView` は破棄時に IPC ハンドルを閉じない。キャッシュと同じ
+    ライフタイムで利用する前提のため、ハンドルの解放は送信側に委ねる。
 
 publisher/subscriberの役割:
 * Publisher: cudaIpcGet*Handle でハンドル生成 → msg に格納。
@@ -455,7 +452,7 @@ TODO:
 ## 運用設計のポイント
 
 * **Adapter は同期をしない**：Open/Close のみ。ユーザがストリーム同期を行う。
-* **RAII 一貫**：View の寿命 = ハンドル寿命。Control block と LeaseHandle を共有しつつコピー可。
+* **RAII 一貫**：View の寿命 = ハンドル寿命。LeaseHandle を共有しつつコピー可。
 * **ROS msg の薄メタ**：ros2 topic echo / bag で内容が即読める程度に情報を追加。
 * **TypeNegotiation 余地**： future work。
 * エラー発生時は「TypeAdapterエラーハンドリングポリシー」に従う

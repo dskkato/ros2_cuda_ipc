@@ -54,6 +54,9 @@ struct CachedIpcHandles {
 
 inline std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash> &
 ipc_handle_cache() {
+  // Known limitation: cached IPC handles live for the subscriber process
+  // lifetime. Subscribers cannot safely track publisher lifecycles, so
+  // handles persist until shutdown.
   static std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash>
       cache;
   return cache;
@@ -200,8 +203,6 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     opened.shm_name = msg.shm_name;
     opened.lease = std::move(lease_ptr);
     opened.set_ipc_handles(mem_handle, event_handle);
-    opened.mark_opened_via_ipc(false, false);
-
     view = std::move(opened);
   }
 

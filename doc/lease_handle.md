@@ -18,10 +18,10 @@ GPUメモリやCUDA IPCとは疎結合で、(`shm_name`, `slot_id`, `generation`
 必要時に `mmap` し、複数ハンドル間で再利用する。インスタンス化は `acquire()` のみから行われ、ハンドルは
 参照カウントを保持するための最小限の状態（マッピング共有ポインタとスロットメタ情報）だけを格納する。
 
-Subscriber 側で生成する `BufferView` は、この `LeaseHandle` を `std::shared_ptr` で保持しつつ、
-CUDA IPC の Open/Close を司る Control block も共有する。これにより TypeAdapter の
-ユーザー定義型が CopyConstructible であるという rclcpp の要件を満たしながら、最後の
-インスタンス破棄でのみ `cudaIpcClose*` / `cudaEventDestroy` が実行される。
+Subscriber 側で生成する `BufferView` は、この `LeaseHandle` を `std::shared_ptr` で保持する。
+CUDA IPC ハンドル自体は TypeAdapter がプロセス内キャッシュを持ち、初回だけ
+`cudaIpcOpen*Handle` を呼んで dev_ptr / event を取得する。以降は同じハンドルを
+利用するため、`BufferView` の破棄時に `cudaIpcClose*` を呼ぶ必要はない。
 
 ## 目的/要件
 
@@ -213,11 +213,11 @@ private:
 
 * TypeAdapter（ROS→View） は、まず`LeaseHandle::acquire()`を試みる。
   * 成功：Lease が有効になった時点で CUDA IPC open を行い、View を構築。
-    * BufferView は Control block (`shared_ptr`) を共有し、コピー後も `cudaIpcClose*` や
-      `cudaEventDestroy` が 1 度だけ実行される。
+    * IPC ハンドルはプロセス内のキャッシュを参照し、`BufferView` の破棄時に
+      `cudaIpcClose*` を呼ばない。
   * 失敗：無効 View を返してコールバック側で破棄（例外は使わない）。
-* View の RAII（Control block + LeaseHandle）により、最後の View 破棄で
-  `cudaIpcClose*` / `cudaEventDestroy` / `refcnt--` が連鎖的に実行される。
+* View の RAII で `LeaseHandle` を共有し、`reset()` 時に `refcnt--` を行う。
+  CUDA IPC ハンドルのクローズは送信側が担う。
 
 
 # 付録：運用ガイド
