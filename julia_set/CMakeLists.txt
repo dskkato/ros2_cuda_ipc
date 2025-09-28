@@ -24,6 +24,8 @@ find_package(CUDAToolkit REQUIRED)
 # julia set kernels
 add_library(julia_set_helpers
   src/cuda/julia_set.cu
+  src/cuda/gpu_lease_pool.cpp
+  src/cuda/cuda_util.cpp
 )
 
 set_target_properties(julia_set_helpers PROPERTIES
@@ -40,6 +42,11 @@ target_include_directories(julia_set_helpers
 
 target_link_libraries(julia_set_helpers
   CUDA::cudart
+)
+
+ament_target_dependencies(julia_set_helpers
+  rclcpp
+  ros2_cuda_ipc_core
 )
 
 # executables

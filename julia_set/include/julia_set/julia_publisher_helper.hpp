@@ -6,8 +6,8 @@
 #include <cstdint>
 #include <optional>
 #include <string>
-#include <vector>
 
+#include "julia_set/cuda/gpu_lease_pool.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
 
 namespace julia_set {
@@ -46,30 +46,10 @@ class JuliaPublisherHelper {
   uint64_t frame_size_bytes() const noexcept { return frame_size_bytes_; }
 
  private:
-  struct Slot {
-    uint32_t index = 0;
-    void *device_ptr = nullptr;
-    cudaEvent_t event = nullptr;
-    cudaIpcMemHandle_t mem_handle{};
-    cudaIpcEventHandle_t event_handle{};
-    uint32_t generation = 0;
-    std::chrono::steady_clock::time_point pending_deadline{};
-  };
-
   Config config_;
-  std::vector<Slot> slots_;
+  GpuLeasePool pool_;
   cudaStream_t stream_ = nullptr;
   uint64_t frame_size_bytes_ = 0;
-
-  void initialise_shm();
-  void allocate_slots();
-  void destroy_slots() noexcept;
-  void reclaim_stale_pending();
-  static bool deadline_reached(
-      const std::chrono::steady_clock::time_point &deadline,
-      const std::chrono::steady_clock::time_point &now) {
-    return deadline.time_since_epoch().count() != 0 && now >= deadline;
-  }
 };
 
 }  // namespace julia_set
