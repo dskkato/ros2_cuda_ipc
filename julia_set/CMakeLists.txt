@@ -107,6 +107,24 @@ install(DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_gpu_lease_pool
+    test/test_gpu_lease_pool.cpp
+  )
+
+  if(TARGET test_gpu_lease_pool)
+    target_link_libraries(test_gpu_lease_pool
+      julia_set_helpers
+    )
+    ament_target_dependencies(test_gpu_lease_pool
+      rclcpp
+      ros2_cuda_ipc_core
+    )
+  endif()
+endif()
+
 ament_export_dependencies(rclcpp sensor_msgs ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
 
 ament_package()
