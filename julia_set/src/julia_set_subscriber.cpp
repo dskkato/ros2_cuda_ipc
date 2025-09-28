@@ -24,8 +24,7 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
             declare_parameter<std::string>("topic_name", "julia_set/image")),
         sample_bytes_(static_cast<std::size_t>(
             declare_parameter<int>("sample_bytes", 64))),
-        log_full_copy_(declare_parameter<bool>("log_full_copy", false)),
-        use_pinned_host_(declare_parameter<bool>("use_pinned_host", true)) {
+        log_full_copy_(declare_parameter<bool>("log_full_copy", false)) {
     if (sample_bytes_ == 0) {
       sample_bytes_ = 1;
     }
@@ -85,49 +84,20 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
             ? view.core.byte_size
             : std::min<std::size_t>(view.core.byte_size, sample_bytes_);
 
-    uint8_t *host_ptr = nullptr;
-    std::vector<uint8_t> fallback;
-    bool use_pinned = use_pinned_host_;
-
-    if (use_pinned_host_) {
-      NvtxScopedRange ensure_range("JuliaSetSubscriber::ensure_pinned_host");
-      const cudaError_t ensure_err = ensure_pinned_capacity(bytes_to_copy);
-      if (ensure_err != cudaSuccess) {
-        use_pinned = false;
-        RCLCPP_WARN(get_logger(),
-                    "Falling back to pageable host buffer due to %s",
-                    cudaGetErrorString(ensure_err));
-      } else {
-        host_ptr = pinned_host_buffer_;
-      }
+    NvtxScopedRange ensure_range("JuliaSetSubscriber::ensure_pinned_host");
+    const cudaError_t ensure_err = ensure_pinned_capacity(bytes_to_copy);
+    if (ensure_err != cudaSuccess) {
+      RCLCPP_ERROR(get_logger(), "cudaMallocHost failed: %s",
+                   cudaGetErrorString(ensure_err));
+      return;
     }
 
-    if (use_pinned) {
-      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
-      err = cudaMemcpyAsync(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
-                            cudaMemcpyDeviceToHost, stream_);
-    } else {
-      fallback.assign(bytes_to_copy, 0);
-      host_ptr = fallback.data();
-
-      if (view.core.ready_evt) {
-        NvtxScopedRange evt_sync_range(
-            "JuliaSetSubscriber::cudaEventSynchronize");
-        err = cudaEventSynchronize(view.core.ready_evt);
-        if (err != cudaSuccess) {
-          RCLCPP_ERROR(get_logger(), "cudaEventSynchronize failed: %s",
-                       cudaGetErrorString(err));
-          return;
-        }
-      }
-
-      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpy");
-      err = cudaMemcpy(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
-                       cudaMemcpyDeviceToHost);
-    }
+    NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
+    err = cudaMemcpyAsync(pinned_host_buffer_, view.core.data<uint8_t>(),
+                          bytes_to_copy, cudaMemcpyDeviceToHost, stream_);
     if (err != cudaSuccess) {
-      RCLCPP_ERROR(get_logger(), "cudaMemcpy%s failed: %s",
-                   use_pinned ? "Async" : "", cudaGetErrorString(err));
+      RCLCPP_ERROR(get_logger(), "cudaMemcpyAsync failed: %s",
+                   cudaGetErrorString(err));
       return;
     }
 
@@ -150,7 +120,7 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       RCLCPP_INFO(get_logger(), "Frame %zu frame_id=%s encoding=%s sample=%s",
                   ++frame_counter_, view.header.frame_id.c_str(),
                   view.encoding.c_str(),
-                  describe_sample(host_ptr, bytes_to_copy).c_str());
+                  describe_sample(pinned_host_buffer_, bytes_to_copy).c_str());
     }
   }
 
@@ -208,7 +178,6 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
   std::size_t sample_bytes_ = 64;
   bool log_full_copy_ = false;
   std::size_t frame_counter_ = 0;
-  bool use_pinned_host_ = true;
   uint8_t *pinned_host_buffer_ = nullptr;
   std::size_t pinned_host_capacity_ = 0;
 };
