@@ -102,22 +102,32 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       }
     }
 
-    if (use_pinned) {
-      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
-      err = cudaMemcpyAsync(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
-                            cudaMemcpyDeviceToHost, stream_);
-    } else {
-      // Prepare fallback buffer
+    if (!use_pinned) {
       fallback.assign(bytes_to_copy, 0);
       host_ptr = fallback.data();
+
+      if (view.core.ready_evt) {
+        NvtxScopedRange evt_sync_range(
+            "JuliaSetSubscriber::cudaEventSynchronize");
+        err = cudaEventSynchronize(view.core.ready_evt);
+        if (err != cudaSuccess) {
+          RCLCPP_ERROR(get_logger(), "cudaEventSynchronize failed: %s",
+                       cudaGetErrorString(err));
+          return;
+        }
+      }
 
       NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpy");
       err = cudaMemcpy(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
                        cudaMemcpyDeviceToHost);
+    } else {
+      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
+      err = cudaMemcpyAsync(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
+                            cudaMemcpyDeviceToHost, stream_);
     }
     if (err != cudaSuccess) {
-      RCLCPP_ERROR(get_logger(), "cudaMemcpyAsync failed: %s",
-                   cudaGetErrorString(err));
+      RCLCPP_ERROR(get_logger(), "cudaMemcpy%s failed: %s",
+                   use_pinned ? "Async" : "", cudaGetErrorString(err));
       return;
     }
 
