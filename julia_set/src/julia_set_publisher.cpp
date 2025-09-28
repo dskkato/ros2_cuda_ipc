@@ -4,8 +4,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "julia_set/cuda/nvtx_scoped_range.hpp"
 #include "julia_set/julia_publisher_helper.hpp"
-#include "julia_set/nvtx_scoped_range.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
@@ -55,7 +55,7 @@ class JuliaSetPublisherNode : public rclcpp::Node {
     config.height =
         static_cast<uint32_t>(declare_parameter<int>("height", 720));
     config.channels =
-        static_cast<uint32_t>(declare_parameter<int>("channels", 3));
+        static_cast<uint32_t>(declare_parameter<int>("channels", 1));
     config.slot_count =
         static_cast<std::size_t>(declare_parameter<int>("slot_count", 4));
     config.shm_name =
@@ -63,7 +63,14 @@ class JuliaSetPublisherNode : public rclcpp::Node {
     config.device_index = declare_parameter<int>("device_index", 0);
     const std::string dtype_str = declare_parameter<std::string>("dtype", "u8");
     config.dtype = parse_dtype(dtype_str);
-    config.encoding = declare_parameter<std::string>("encoding", "rgb8");
+    config.encoding = declare_parameter<std::string>("encoding", "mono8");
+    if (config.channels != 1) {
+      RCLCPP_WARN(
+          get_logger(),
+          "Only single-channel output is supported; overriding channels=%u",
+          config.channels);
+      config.channels = 1;
+    }
     const int pending_ttl_ms = declare_parameter<int>(
         "pending_ttl_ms", static_cast<int>(config.pending_ttl.count()));
     config.pending_ttl = std::chrono::milliseconds{pending_ttl_ms};
