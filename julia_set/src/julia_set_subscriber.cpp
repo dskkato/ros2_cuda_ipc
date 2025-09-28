@@ -102,7 +102,11 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       }
     }
 
-    if (!use_pinned) {
+    if (use_pinned) {
+      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
+      err = cudaMemcpyAsync(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
+                            cudaMemcpyDeviceToHost, stream_);
+    } else {
       fallback.assign(bytes_to_copy, 0);
       host_ptr = fallback.data();
 
@@ -120,10 +124,6 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpy");
       err = cudaMemcpy(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
                        cudaMemcpyDeviceToHost);
-    } else {
-      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
-      err = cudaMemcpyAsync(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
-                            cudaMemcpyDeviceToHost, stream_);
     }
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaMemcpy%s failed: %s",
