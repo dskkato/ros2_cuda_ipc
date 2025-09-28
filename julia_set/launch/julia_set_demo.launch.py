@@ -25,7 +25,10 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("resolution", default_value="1080p"),
         DeclareLaunchArgument("width", default_value="1280"),
         DeclareLaunchArgument("height", default_value="720"),
-        DeclareLaunchArgument("channels", default_value="3"),
+        DeclareLaunchArgument("channels", default_value="1"),
+        DeclareLaunchArgument(
+            "colorize_shm_name", default_value="/ros2_cuda_ipc_julia_colorized"
+        ),
         DeclareLaunchArgument("slot_count", default_value="4"),
         DeclareLaunchArgument("max_iterations", default_value="300"),
         DeclareLaunchArgument("zoom", default_value="1.5"),
@@ -39,6 +42,8 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("shm_name", default_value="/ros2_cuda_ipc_julia"),
         DeclareLaunchArgument("device_index", default_value="0"),
         DeclareLaunchArgument("topic_name", default_value="julia_set/image"),
+        DeclareLaunchArgument("colorized_topic_name", default_value="julia_set/colorized"),
+        DeclareLaunchArgument("cpu_topic_name", default_value="julia_set/image_cpu"),
         DeclareLaunchArgument("sample_bytes", default_value="64"),
         DeclareLaunchArgument("log_full_copy", default_value="false"),
         DeclareLaunchArgument("enable_nsys", default_value="false"),
@@ -96,6 +101,8 @@ def launch_setup(context) -> List[Node]:
     frame_id = value("frame_id")
     shm_name = value("shm_name")
     topic_name = value("topic_name")
+    colorized_topic = value("colorized_topic_name")
+    cpu_topic = value("cpu_topic_name")
 
     enable_nsys = IfCondition(LaunchConfiguration("enable_nsys")).evaluate(context)
     nsys_flags = value("nsys_profile_flags") or DEFAULT_NSYS_FLAGS
@@ -141,27 +148,52 @@ def launch_setup(context) -> List[Node]:
 
     publisher = Node(**publisher_kwargs)
 
-    subscriber_params = {
-        "topic_name": topic_name,
-        "sample_bytes": sample_bytes,
-        "log_full_copy": log_full_copy,
+    colorize_shm_name = value("colorize_shm_name")
+
+    colorize_params = {
+        "input_topic_name": topic_name,
+        "output_topic_name": colorized_topic,
+        "output_slot_count": slot_count,
+        "output_channels": 3,
+        "output_encoding": "rgb8",
+        "output_shm_name": colorize_shm_name,
     }
 
-    subscriber_kwargs = dict(
+    colorize_kwargs = dict(
         package="julia_set",
-        executable="julia_set_subscriber",
-        name="julia_set_subscriber",
-        parameters=[subscriber_params],
+        executable="colorize_node",
+        name="colorize_node",
+        parameters=[colorize_params],
         output="screen",
     )
     if enable_nsys and profile_base:
-        subscriber_kwargs["prefix"] = (
-            f"nsys profile {nsys_flags} -o {profile_base}-subscriber"
+        colorize_kwargs["prefix"] = (
+            f"nsys profile {nsys_flags} -o {profile_base}-colorize"
         )
 
-    subscriber = Node(**subscriber_kwargs)
+    colorize = Node(**colorize_kwargs)
 
-    return [publisher, subscriber]
+    transport_params = {
+        "input_topic_name": colorized_topic,
+        "cpu_topic_name": cpu_topic,
+        "sample_bytes": sample_bytes,
+    }
+
+    transport_kwargs = dict(
+        package="julia_set",
+        executable="gpu_image_transport",
+        name="gpu_image_transport",
+        parameters=[transport_params],
+        output="screen",
+    )
+    if enable_nsys and profile_base:
+        transport_kwargs["prefix"] = (
+            f"nsys profile {nsys_flags} -o {profile_base}-gpu-transport"
+        )
+
+    gpu_transport = Node(**transport_kwargs)
+
+    return [publisher, colorize, gpu_transport]
 
 
 def build_profile_name(
