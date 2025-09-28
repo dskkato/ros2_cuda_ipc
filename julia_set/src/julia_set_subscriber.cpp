@@ -146,20 +146,20 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
   }
 
   std::string describe_sample(const uint8_t *buffer,
-                              std::size_t byte_count) const {
+                              std::size_t bytes_to_copy) const {
     constexpr std::size_t max_elements = 16;
     std::ostringstream oss;
-    if (!buffer || byte_count == 0) {
+    if (bytes_to_copy == 0) {
       return {};
     }
-    const std::size_t count = std::min(byte_count, max_elements);
+    const std::size_t count = std::min(bytes_to_copy, max_elements);
     for (std::size_t i = 0; i < count; ++i) {
       if (i != 0) {
         oss << ",";
       }
       oss << static_cast<unsigned>(buffer[i]);
     }
-    if (byte_count > count) {
+    if (bytes_to_copy > count) {
       oss << ",...";
     }
     return oss.str();
