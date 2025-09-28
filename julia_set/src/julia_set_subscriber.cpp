@@ -150,7 +150,7 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
     constexpr std::size_t max_elements = 16;
     std::ostringstream oss;
     if (bytes_to_copy == 0) {
-      return {};
+      return "";
     }
     const std::size_t count = std::min(bytes_to_copy, max_elements);
     for (std::size_t i = 0; i < count; ++i) {
