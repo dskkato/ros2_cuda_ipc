@@ -12,6 +12,14 @@ ros2 launch julia_set julia_set_demo.launch.py
 
 ![julia_set_demo](doc/media/julia_readme.gif)
 
+### Julia Set デモ手順
+
+```bash
+ros2 launch julia_set julia_set_demo.launch.py
+```
+
+`rqt` を起動し、`Plugins` → `Visualization` → `Image View` を開いたあと、`Topic` を再読み込みして `/julia_set/image_cpu` を選択すると CPU イメージを確認できます。
+
 <details> <summary>動画作成方法の説明</summary>
 
 ▲ `rosbag2_2025_09_28-23_34_20` から `/julia_set/image_cpu` を抜粋し、約 3 秒に間引いてエンコードしています。

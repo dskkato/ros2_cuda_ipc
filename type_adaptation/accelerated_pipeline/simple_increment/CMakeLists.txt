@@ -19,6 +19,9 @@ project(simple_increment)
 
 enable_language(CUDA)
 
+# Prefer the shared CUDA runtime to keep device linking compatible across architectures.
+set(CMAKE_CUDA_RUNTIME_LIBRARY Shared)
+
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -49,11 +52,13 @@ include_directories(include)
 add_library(cuda_functions SHARED
   src/cuda/cuda_functions.cu
 )
+set_property(TARGET cuda_functions PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 
 # IncNode
 add_library(inc_node SHARED
   src/inc_node.cpp
 )
+set_property(TARGET inc_node PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 
 target_include_directories(inc_node PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"

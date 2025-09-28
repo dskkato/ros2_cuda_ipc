@@ -18,6 +18,9 @@ project(julia_set_original)
 
 enable_language(CUDA)
 
+# Rely on the shared CUDA runtime so device linking does not require incompatible static libs.
+set(CMAKE_CUDA_RUNTIME_LIBRARY Shared)
+
 # Default to C++17
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 17)
@@ -49,11 +52,13 @@ include_directories(include)
 add_library(julia_set_cuda SHARED
   src/cuda/julia_set.cu
 )
+set_property(TARGET julia_set_cuda PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 
 # Julia Set Node
 add_library(julia_set_node SHARED
   src/julia_set_node.cpp
 )
+set_property(TARGET julia_set_node PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 
 target_include_directories(julia_set_node PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -81,6 +86,7 @@ rclcpp_components_register_node(julia_set_node
 add_library(colorize_node SHARED
   src/colorize_node.cpp
 )
+set_property(TARGET colorize_node PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 
 target_include_directories(colorize_node PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
@@ -108,6 +114,7 @@ rclcpp_components_register_node(colorize_node
 ament_auto_add_library(map_node SHARED
   src/map_node.cpp
 )
+set_property(TARGET map_node PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 
 target_include_directories(map_node PUBLIC
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"

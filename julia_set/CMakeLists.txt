@@ -3,6 +3,9 @@ project(julia_set)
 
 enable_language(CUDA)
 
+# Link against the shared CUDA runtime to avoid pulling in static system libs during device linking.
+set(CMAKE_CUDA_RUNTIME_LIBRARY Shared)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -33,6 +36,8 @@ set_target_properties(julia_set_helpers PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )
 
+set_property(TARGET julia_set_helpers PROPERTY CUDA_RUNTIME_LIBRARY Shared)
+
 target_include_directories(julia_set_helpers
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -55,18 +60,21 @@ add_executable(julia_set_publisher
   src/julia_set_publisher.cpp
   src/julia_publisher_helper.cpp
 )
+set_property(TARGET julia_set_publisher PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 target_link_libraries(julia_set_publisher
   julia_set_helpers
 )
 
 ## Colorize Node
 add_executable(colorize_node src/colorize_node.cpp)
+set_property(TARGET colorize_node PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 target_link_libraries(colorize_node
   julia_set_helpers
 )
 
 ## GPU Image Transport
 add_executable(gpu_image_transport src/gpu_image_transport.cpp)
+set_property(TARGET gpu_image_transport PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 target_link_libraries(gpu_image_transport
   julia_set_helpers
 )
@@ -118,6 +126,7 @@ if(BUILD_TESTING)
     target_link_libraries(test_gpu_lease_pool
       julia_set_helpers
     )
+    set_property(TARGET test_gpu_lease_pool PROPERTY CUDA_RUNTIME_LIBRARY Shared)
     ament_target_dependencies(test_gpu_lease_pool
       rclcpp
       ros2_cuda_ipc_core
