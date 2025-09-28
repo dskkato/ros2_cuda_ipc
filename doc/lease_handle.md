@@ -86,7 +86,13 @@ struct ShmArea {
 LeaseHandle::init(shm_name, capacity) を起動時に一度呼び、SHM を作成・初期化（全 refcnt=0, generation=0）。
 
 2. 発行準備
-空き slot を選ぶ（refcnt==0 かつ pending==0 を確認）。`bump_generation(shm_name, slot_id, pending_count)` を呼び、選択した slot の generation++ と `pending` 初期値設定（`get_subscription_count()` 等で得た購読者数）を同時に行う。
+空き slot を選ぶ（refcnt==0 かつ pending==0 を確認）。
+`choose_empty_slot()` はマッピングごとに持つ `next_slot` カーソルを更新しながら round-robin で探索し、
+初回 publish でも全 slot に均等にリクエストが回るようになっている。
+そのため、CUDA IPC ハンドルのキャッシュは各 slot で早期に温まり、Subscriber が slot ごとに初回アクセスで
+`cudaIpcOpen*Handle` を呼ぶオーバーヘッドを負ったままにならない。
+空き slot が見つかったら `bump_generation(shm_name, slot_id, pending_count)` を呼び、選択した slot の generation++ と
+`pending` 初期値設定（`get_subscription_count()` 等で得た購読者数）を同時に行う。
 
 3. GPU 書き込み
 対応する GPU バッファへ書き込み、完了イベントを cudaEventRecord()。
