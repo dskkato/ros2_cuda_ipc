@@ -107,7 +107,11 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       host_ptr = fallback.data();
     }
 
-    {
+    if (using_fallback) {
+      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpy");
+      err = cudaMemcpy(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
+                       cudaMemcpyDeviceToHost);
+    } else {
       NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
       err = cudaMemcpyAsync(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
                             cudaMemcpyDeviceToHost, stream_);
