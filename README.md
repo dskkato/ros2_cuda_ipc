@@ -2,6 +2,24 @@
 
 ROS 2 CUDA IPC Zero-Copy Transport
 
+## デモ
+
+<video src="doc/media/julia_readme.mp4" width="480" autoplay loop muted playsinline></video>
+
+<details> <summary>動画作成方法の説明</summary>
+
+▲ `rosbag2_2025_09_28-23_34_20` から `/julia_set/image_cpu` を抜粋し、約 3 秒に間引いてエンコードしています。
+
+再生成するときは、`doc/scripts/generate_bag_preview.py` を実行します。
+
+```bash
+python3 doc/scripts/generate_bag_preview.py \
+  rosbag2_YYYY_MM_DD-hh_mm_ss --output doc/media/julia_readme.mp4 \
+  --crf 28 --fps 10 --frame-stride 2
+```
+
+</details>
+
 ## 概要
 
 `ros2_cuda_ipc` は、**ROS 2 ノード間で GPU メモリをゼロコピー共有**するためのライブラリ／メッセージ定義を提供します。
