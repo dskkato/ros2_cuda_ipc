@@ -54,6 +54,9 @@ struct CachedIpcHandles {
 
 inline std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash> &
 ipc_handle_cache() {
+  // Known limitation: cached IPC handles live for the subscriber process
+  // lifetime. Subscribers cannot safely track publisher lifecycles, so
+  // handles persist until shutdown.
   static std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash>
       cache;
   return cache;
