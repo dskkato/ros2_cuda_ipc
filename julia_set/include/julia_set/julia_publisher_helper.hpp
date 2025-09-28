@@ -18,9 +18,9 @@ class JuliaPublisherHelper {
     std::string shm_name = "/ros2_cuda_ipc_julia";
     uint32_t width = 1280;
     uint32_t height = 720;
-    uint32_t channels = 3;
+    uint32_t channels = 1;
     ros2_cuda_ipc_core::DType dtype = ros2_cuda_ipc_core::DType::U8;
-    std::string encoding = "rgb8";
+    std::string encoding = "mono8";
     std::size_t slot_count = 4;
     int device_index = 0;
     std::chrono::milliseconds pending_ttl{300};

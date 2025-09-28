@@ -8,9 +8,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
-#include "julia_set/nvtx_scoped_range.hpp"
+#include "julia_set/cuda/nvtx_scoped_range.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
@@ -18,22 +17,22 @@
 
 namespace julia_set {
 
-class JuliaSetSubscriberNode : public rclcpp::Node {
+class GpuImageTransportNode : public rclcpp::Node {
  public:
-  JuliaSetSubscriberNode()
-      : rclcpp::Node("julia_set_subscriber",
+  GpuImageTransportNode()
+      : rclcpp::Node("gpu_image_transport",
                      rclcpp::NodeOptions().use_intra_process_comms(false)),
-        topic_name_(
-            declare_parameter<std::string>("topic_name", "julia_set/image")),
-        publish_topic_(declare_parameter<std::string>("cpu_topic_name",
-                                                      "julia_set/image_cpu")),
+        input_topic_(declare_parameter<std::string>("input_topic_name",
+                                                    "julia_set/colorized")),
+        output_topic_(declare_parameter<std::string>("cpu_topic_name",
+                                                     "julia_set/image_cpu")),
         sample_bytes_(static_cast<std::size_t>(
-            declare_parameter<int>("sample_bytes", 64))),
-        log_full_copy_(declare_parameter<bool>("log_full_copy", false)) {
+            declare_parameter<int>("sample_bytes", 64))) {
     if (sample_bytes_ == 0) {
       sample_bytes_ = 1;
     }
-    cudaError_t err =
+
+    const cudaError_t err =
         cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking);
     if (err != cudaSuccess) {
       throw std::runtime_error(
@@ -41,24 +40,24 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
           cudaGetErrorString(err));
     }
 
-    rclcpp::SubscriptionOptions options;
-    options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
+    rclcpp::SubscriptionOptions subscription_options;
+    subscription_options.use_intra_process_comm =
+        rclcpp::IntraProcessSetting::Disable;
     subscription_ = create_subscription<ros2_cuda_ipc_core::ImageView>(
-        topic_name_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
-        std::bind(&JuliaSetSubscriberNode::on_image, this,
+        input_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
+        std::bind(&GpuImageTransportNode::on_image, this,
                   std::placeholders::_1),
-        options);
+        subscription_options);
 
-    image_pub_ = create_publisher<sensor_msgs::msg::Image>(
-        publish_topic_, rclcpp::SensorDataQoS());
+    publisher_ = create_publisher<sensor_msgs::msg::Image>(
+        output_topic_, rclcpp::SensorDataQoS());
 
-    RCLCPP_INFO(get_logger(), "Listening for Julia set frames on %s",
-                topic_name_.c_str());
-    RCLCPP_INFO(get_logger(), "Publishing CPU images on %s",
-                publish_topic_.c_str());
+    RCLCPP_INFO(get_logger(),
+                "gpu_image_transport listening on %s, publishing %s",
+                input_topic_.c_str(), output_topic_.c_str());
   }
 
-  ~JuliaSetSubscriberNode() override {
+  ~GpuImageTransportNode() override {
     release_pinned_host();
     if (stream_) {
       const cudaError_t err = cudaStreamDestroy(stream_);
@@ -72,23 +71,23 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
 
  private:
   void on_image(const ros2_cuda_ipc_core::ImageView &view) {
-    NvtxScopedRange callback_range("JuliaSetSubscriberNode::on_image");
+    NvtxScopedRange callback_range("GpuImageTransportNode::on_image");
     if (!view.core.valid()) {
-      RCLCPP_WARN(get_logger(), "Received invalid Julia set view");
+      RCLCPP_WARN(get_logger(), "Received invalid GPU image view");
       return;
     }
+
     if (!view.sanity_check()) {
       RCLCPP_WARN(
           get_logger(),
           "Skipping frame: failed sanity check rows=%u cols=%u channels=%u",
           view.rows(), view.cols(), view.channels());
-      ++frame_counter_;
       return;
     }
 
-    auto err = cudaSuccess;
+    cudaError_t err = cudaSuccess;
     {
-      NvtxScopedRange wait_range("JuliaSetSubscriber::stream_wait_event");
+      NvtxScopedRange wait_range("GpuImageTransportNode::stream_wait_event");
       err = view.enqueue_ready_event(stream_);
     }
     if (err != cudaSuccess) {
@@ -97,15 +96,14 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       return;
     }
 
-    std::uint64_t bytes_to_copy =
-        view.core.byte_size;  // Total bytes in the image
+    const std::size_t bytes_to_copy =
+        static_cast<std::size_t>(view.core.byte_size);
     if (bytes_to_copy == 0) {
-      ++frame_counter_;
       return;
     }
 
     {
-      NvtxScopedRange ensure_range("JuliaSetSubscriber::ensure_pinned_host");
+      NvtxScopedRange ensure_range("GpuImageTransportNode::ensure_pinned_host");
       const cudaError_t ensure_err = ensure_pinned_capacity(bytes_to_copy);
       if (ensure_err != cudaSuccess) {
         RCLCPP_ERROR(get_logger(), "cudaMallocHost failed: %s",
@@ -114,9 +112,11 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       }
     }
 
-    NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
-    err = cudaMemcpyAsync(pinned_host_buffer_, view.core.data<uint8_t>(),
-                          bytes_to_copy, cudaMemcpyDeviceToHost, stream_);
+    {
+      NvtxScopedRange memcpy_range("GpuImageTransportNode::cudaMemcpyAsync");
+      err = cudaMemcpyAsync(pinned_host_buffer_, view.core.data<uint8_t>(),
+                            bytes_to_copy, cudaMemcpyDeviceToHost, stream_);
+    }
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaMemcpyAsync failed: %s",
                    cudaGetErrorString(err));
@@ -124,7 +124,8 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
     }
 
     {
-      NvtxScopedRange sync_range("JuliaSetSubscriber::cudaStreamSynchronize");
+      NvtxScopedRange sync_range(
+          "GpuImageTransportNode::cudaStreamSynchronize");
       err = cudaStreamSynchronize(stream_);
     }
     if (err != cudaSuccess) {
@@ -133,79 +134,17 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       return;
     }
 
-    const std::size_t current_frame = ++frame_counter_;
-
-    publish_image(view, bytes_to_copy,
-                  static_cast<std::size_t>(view.strideH()));
-
-    if (log_full_copy_) {
-      RCLCPP_INFO(get_logger(),
-                  "Frame %zu frame_id=%s encoding=%s copied=%zu bytes",
-                  current_frame, view.header.frame_id.c_str(),
-                  view.encoding.c_str(), bytes_to_copy);
-    } else if (sample_bytes_ > 0) {
-      RCLCPP_INFO(get_logger(), "Frame %zu frame_id=%s encoding=%s sample=%s",
-                  current_frame, view.header.frame_id.c_str(),
-                  view.encoding.c_str(),
-                  describe_sample(pinned_host_buffer_, sample_bytes_).c_str());
-    }
+    publish_cpu_image(view, bytes_to_copy);
   }
 
-  std::string describe_sample(const uint8_t *buffer,
-                              std::size_t bytes_to_copy) const {
-    constexpr std::size_t max_elements = 16;
-    std::ostringstream oss;
-    if (bytes_to_copy == 0) {
-      return "";
-    }
-    const std::size_t count = std::min(bytes_to_copy, max_elements);
-    for (std::size_t i = 0; i < count; ++i) {
-      if (i != 0) {
-        oss << ",";
-      }
-      oss << static_cast<unsigned>(buffer[i]);
-    }
-    if (bytes_to_copy > count) {
-      oss << ",...";
-    }
-    return oss.str();
-  }
-
-  cudaError_t ensure_pinned_capacity(std::size_t bytes) {
-    if (bytes == 0) {
-      return cudaSuccess;
-    }
-    if (bytes <= pinned_host_capacity_) {
-      return cudaSuccess;
-    }
-    release_pinned_host();
-    const cudaError_t err =
-        cudaMallocHost(reinterpret_cast<void **>(&pinned_host_buffer_), bytes);
-    if (err == cudaSuccess) {
-      pinned_host_capacity_ = bytes;
-    }
-    return err;
-  }
-
-  void release_pinned_host() {
-    if (pinned_host_buffer_) {
-      const cudaError_t err = cudaFreeHost(pinned_host_buffer_);
-      if (err != cudaSuccess) {
-        RCLCPP_ERROR(get_logger(), "cudaFreeHost failed: %s",
-                     cudaGetErrorString(err));
-      }
-      pinned_host_buffer_ = nullptr;
-      pinned_host_capacity_ = 0;
-    }
-  }
-
-  void publish_image(const ros2_cuda_ipc_core::ImageView &view,
-                     std::size_t available_bytes, std::size_t step_bytes) {
-    if (!image_pub_) {
+  void publish_cpu_image(const ros2_cuda_ipc_core::ImageView &view,
+                         std::size_t available_bytes) {
+    if (!publisher_) {
       return;
     }
 
     const std::size_t height = static_cast<std::size_t>(view.rows());
+    const std::size_t step_bytes = static_cast<std::size_t>(view.strideH());
     if (height == 0 || step_bytes == 0) {
       RCLCPP_WARN(
           get_logger(),
@@ -237,6 +176,13 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
           available_bytes, required_bytes);
       return;
     }
+    if (pinned_host_capacity_ < required_bytes) {
+      RCLCPP_WARN(
+          get_logger(),
+          "Skipping publish: pinned buffer too small (have %zu need %zu)",
+          pinned_host_capacity_, required_bytes);
+      return;
+    }
 
     sensor_msgs::msg::Image msg;
     msg.header = view.header;
@@ -248,7 +194,27 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
     msg.data.resize(required_bytes);
     std::memcpy(msg.data.data(), pinned_host_buffer_, required_bytes);
 
-    image_pub_->publish(std::move(msg));
+    publisher_->publish(std::move(msg));
+  }
+
+  std::string describe_sample(const uint8_t *buffer,
+                              std::size_t bytes_to_copy) const {
+    constexpr std::size_t kMaxElements = 16;
+    std::ostringstream oss;
+    if (bytes_to_copy == 0) {
+      return "";
+    }
+    const std::size_t count = std::min(bytes_to_copy, kMaxElements);
+    for (std::size_t i = 0; i < count; ++i) {
+      if (i != 0) {
+        oss << ",";
+      }
+      oss << static_cast<unsigned>(buffer[i]);
+    }
+    if (bytes_to_copy > count) {
+      oss << ",...";
+    }
+    return oss.str();
   }
 
   std::string infer_encoding(const ros2_cuda_ipc_core::ImageView &view) const {
@@ -288,14 +254,40 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
     return "8UC" + suffix;
   }
 
+  cudaError_t ensure_pinned_capacity(std::size_t bytes) {
+    if (bytes == 0) {
+      return cudaSuccess;
+    }
+    if (bytes <= pinned_host_capacity_) {
+      return cudaSuccess;
+    }
+    release_pinned_host();
+    const cudaError_t err =
+        cudaMallocHost(reinterpret_cast<void **>(&pinned_host_buffer_), bytes);
+    if (err == cudaSuccess) {
+      pinned_host_capacity_ = bytes;
+    }
+    return err;
+  }
+
+  void release_pinned_host() {
+    if (pinned_host_buffer_) {
+      const cudaError_t err = cudaFreeHost(pinned_host_buffer_);
+      if (err != cudaSuccess) {
+        RCLCPP_ERROR(get_logger(), "cudaFreeHost failed: %s",
+                     cudaGetErrorString(err));
+      }
+      pinned_host_buffer_ = nullptr;
+      pinned_host_capacity_ = 0;
+    }
+  }
+
   rclcpp::Subscription<ros2_cuda_ipc_core::ImageView>::SharedPtr subscription_;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_;
   cudaStream_t stream_ = nullptr;
-  std::string topic_name_;
-  std::string publish_topic_;
+  std::string input_topic_;
+  std::string output_topic_;
   std::size_t sample_bytes_ = 64;
-  bool log_full_copy_ = false;
-  std::size_t frame_counter_ = 0;
   uint8_t *pinned_host_buffer_ = nullptr;
   std::size_t pinned_host_capacity_ = 0;
 };
@@ -305,10 +297,10 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   try {
-    auto node = std::make_shared<julia_set::JuliaSetSubscriberNode>();
+    auto node = std::make_shared<julia_set::GpuImageTransportNode>();
     rclcpp::spin(node);
   } catch (const std::exception &ex) {
-    RCLCPP_FATAL(rclcpp::get_logger("julia_set_subscriber"), "Exception: %s",
+    RCLCPP_FATAL(rclcpp::get_logger("gpu_image_transport"), "Exception: %s",
                  ex.what());
   }
   rclcpp::shutdown();

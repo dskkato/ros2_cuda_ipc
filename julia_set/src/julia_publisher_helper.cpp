@@ -12,82 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "julia_set/julia_publisher_helper.hpp"
+
 #include <cuda_runtime_api.h>
 
 #include <cmath>
 #include <stdexcept>
 
-#include "julia_set/julia_publisher_helper.hpp"
-#include "julia_set/nvtx_scoped_range.hpp"
+#include "julia_set/cuda/julia_kernel.hpp"
+#include "julia_set/cuda/nvtx_scoped_range.hpp"
 #include "rclcpp/logging.hpp"
 
 namespace julia_set {
 namespace {
-
-__global__ void julia_kernel(uint8_t *data, uint32_t width, uint32_t height,
-                             uint32_t channels, float zoom, float offset_x,
-                             float offset_y, float c_real, float c_imag,
-                             uint32_t max_iterations) {
-  const uint32_t x = blockIdx.x * blockDim.x + threadIdx.x;
-  const uint32_t y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= width || y >= height) {
-    return;
-  }
-
-  const float jx =
-      zoom * (static_cast<float>(x) / static_cast<float>(width) - 0.5f) +
-      offset_x;
-  const float jy =
-      zoom * (static_cast<float>(y) / static_cast<float>(height) - 0.5f) +
-      offset_y;
-
-  float zx = jx;
-  float zy = jy;
-  uint32_t iteration = 0;
-  while (zx * zx + zy * zy < 4.0f && iteration < max_iterations) {
-    const float temp = zx * zx - zy * zy + c_real;
-    zy = 2.0f * zx * zy + c_imag;
-    zx = temp;
-    ++iteration;
-  }
-
-  float t = static_cast<float>(iteration) / static_cast<float>(max_iterations);
-  t = fminf(1.0f, fmaxf(0.0f, t));
-  const uint8_t r =
-      static_cast<uint8_t>(9.0f * (1.0f - t) * t * t * t * 255.0f);
-  const uint8_t g =
-      static_cast<uint8_t>(15.0f * (1.0f - t) * (1.0f - t) * t * t * 255.0f);
-  const uint8_t b = static_cast<uint8_t>(8.5f * (1.0f - t) * (1.0f - t) *
-                                         (1.0f - t) * t * 255.0f);
-
-  const uint32_t idx = (y * width + x) * channels;
-  if (channels >= 3) {
-    data[idx + 0] = r;
-    data[idx + 1] = g;
-    data[idx + 2] = b;
-    if (channels > 3) {
-      data[idx + 3] = 255;
-    }
-  } else if (channels == 2) {
-    data[idx + 0] = r;
-    data[idx + 1] = g;
-  } else if (channels == 1) {
-    data[idx] = r;
-  }
-}
-
-cudaError_t launch_julia_kernel(uint8_t *data, uint32_t width, uint32_t height,
-                                uint32_t channels, float zoom, float offset_x,
-                                float offset_y, float c_real, float c_imag,
-                                uint32_t max_iterations, cudaStream_t stream) {
-  const dim3 block_dim(16, 16);
-  const dim3 grid_dim((width + block_dim.x - 1) / block_dim.x,
-                      (height + block_dim.y - 1) / block_dim.y);
-  julia_kernel<<<grid_dim, block_dim, 0, stream>>>(
-      data, width, height, channels, zoom, offset_x, offset_y, c_real, c_imag,
-      max_iterations);
-  return cudaGetLastError();
-}
 
 std::string cuda_error_to_string(cudaError_t err) {
   return std::string(cudaGetErrorName(err)) + ": " + cudaGetErrorString(err);
@@ -265,6 +202,13 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
     return std::nullopt;
   }
 
+  if (config_.channels != 1) {
+    RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
+                 "JuliaPublisherHelper expects single-channel output (got %u)",
+                 config_.channels);
+    return std::nullopt;
+  }
+
   reclaim_stale_pending();
 
   auto free_slot =
@@ -311,9 +255,9 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
   {
     NvtxScopedRange launch_range("JuliaPublisherHelper::launch_julia_kernel");
     err = launch_julia_kernel(static_cast<uint8_t *>(slot.device_ptr),
-                              config_.width, config_.height, config_.channels,
-                              zoom, offset_x, offset_y, c_real, c_imag,
-                              config_.max_iterations, stream_);
+                              config_.width, config_.height, zoom, offset_x,
+                              offset_y, c_real, c_imag, config_.max_iterations,
+                              stream_);
   }
   if (err != cudaSuccess) {
     RCLCPP_ERROR(rclcpp::get_logger("JuliaPublisherHelper"),
