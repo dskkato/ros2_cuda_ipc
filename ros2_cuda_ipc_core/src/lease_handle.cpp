@@ -60,6 +60,7 @@ struct LeaseHandle::Mapping {
   void *addr = nullptr;
   SlotMeta *slots = nullptr;
   ShmHeader *header = nullptr;
+  std::atomic<uint32_t> next_slot{0};
 
   ~Mapping() {
     if (addr && mapped_size) {
@@ -246,12 +247,21 @@ std::optional<uint32_t> LeaseHandle::choose_empty_slot(
     return std::nullopt;
   }
 
-  for (uint32_t i = 0; i < mapping->capacity; ++i) {
-    auto &ref = as_atomic(mapping->slots[i].refcnt);
-    auto &pending = as_atomic(mapping->slots[i].pending);
+  const uint32_t capacity = mapping->capacity;
+  const uint32_t start_index =
+      mapping->next_slot.fetch_add(1, std::memory_order_relaxed) % capacity;
+
+  // Probe slots in a round-robin order so each slot gets exercised early and
+  // cached IPC handles become available for all of them.
+  for (uint32_t offset = 0; offset < capacity; ++offset) {
+    const uint32_t idx = (start_index + offset) % capacity;
+    auto &ref = as_atomic(mapping->slots[idx].refcnt);
+    auto &pending = as_atomic(mapping->slots[idx].pending);
     if (ref.load(std::memory_order_acquire) == 0 &&
         pending.load(std::memory_order_acquire) == 0) {
-      return i;
+      const uint32_t next = (idx + 1) % capacity;
+      mapping->next_slot.store(next, std::memory_order_relaxed);
+      return idx;
     }
   }
   return std::nullopt;
