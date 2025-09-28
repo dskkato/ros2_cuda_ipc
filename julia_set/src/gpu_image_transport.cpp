@@ -176,13 +176,6 @@ class GpuImageTransportNode : public rclcpp::Node {
           available_bytes, required_bytes);
       return;
     }
-    if (pinned_host_capacity_ < required_bytes) {
-      RCLCPP_WARN(
-          get_logger(),
-          "Skipping publish: pinned buffer too small (have %zu need %zu)",
-          pinned_host_capacity_, required_bytes);
-      return;
-    }
 
     sensor_msgs::msg::Image msg;
     msg.header = view.header;
