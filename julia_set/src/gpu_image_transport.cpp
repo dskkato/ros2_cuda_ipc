@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "julia_set/cuda/cuda_util.hpp"
 #include "julia_set/cuda/nvtx_scoped_range.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
@@ -35,9 +36,8 @@ class GpuImageTransportNode : public rclcpp::Node {
     const cudaError_t err =
         cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking);
     if (err != cudaSuccess) {
-      throw std::runtime_error(
-          std::string("cudaStreamCreateWithFlags failed: ") +
-          cudaGetErrorString(err));
+      throw std::runtime_error("cudaStreamCreateWithFlags failed: " +
+                               cuda_error_to_string(err));
     }
 
     rclcpp::SubscriptionOptions subscription_options;
@@ -63,7 +63,7 @@ class GpuImageTransportNode : public rclcpp::Node {
       const cudaError_t err = cudaStreamDestroy(stream_);
       if (err != cudaSuccess) {
         RCLCPP_ERROR(get_logger(), "cudaStreamDestroy failed: %s",
-                     cudaGetErrorString(err));
+                     cuda_error_to_string(err).c_str());
       }
       stream_ = nullptr;
     }
@@ -92,7 +92,7 @@ class GpuImageTransportNode : public rclcpp::Node {
     }
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaStreamWaitEvent failed: %s",
-                   cudaGetErrorString(err));
+                   cuda_error_to_string(err).c_str());
       return;
     }
 
@@ -107,7 +107,7 @@ class GpuImageTransportNode : public rclcpp::Node {
       const cudaError_t ensure_err = ensure_pinned_capacity(bytes_to_copy);
       if (ensure_err != cudaSuccess) {
         RCLCPP_ERROR(get_logger(), "cudaMallocHost failed: %s",
-                     cudaGetErrorString(ensure_err));
+                     cuda_error_to_string(ensure_err).c_str());
         return;
       }
     }
@@ -119,7 +119,7 @@ class GpuImageTransportNode : public rclcpp::Node {
     }
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaMemcpyAsync failed: %s",
-                   cudaGetErrorString(err));
+                   cuda_error_to_string(err).c_str());
       return;
     }
 
@@ -130,7 +130,7 @@ class GpuImageTransportNode : public rclcpp::Node {
     }
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaStreamSynchronize failed: %s",
-                   cudaGetErrorString(err));
+                   cuda_error_to_string(err).c_str());
       return;
     }
 
@@ -275,7 +275,7 @@ class GpuImageTransportNode : public rclcpp::Node {
       const cudaError_t err = cudaFreeHost(pinned_host_buffer_);
       if (err != cudaSuccess) {
         RCLCPP_ERROR(get_logger(), "cudaFreeHost failed: %s",
-                     cudaGetErrorString(err));
+                     cuda_error_to_string(err).c_str());
       }
       pinned_host_buffer_ = nullptr;
       pinned_host_capacity_ = 0;
