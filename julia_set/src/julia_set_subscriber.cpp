@@ -87,13 +87,13 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
 
     uint8_t *host_ptr = nullptr;
     std::vector<uint8_t> fallback;
-    bool using_fallback = !use_pinned_host_;
+    bool use_pinned = use_pinned_host_;
 
     if (use_pinned_host_) {
       NvtxScopedRange ensure_range("JuliaSetSubscriber::ensure_pinned_host");
       const cudaError_t ensure_err = ensure_pinned_capacity(bytes_to_copy);
       if (ensure_err != cudaSuccess) {
-        using_fallback = true;
+        use_pinned = false;
         RCLCPP_WARN(get_logger(),
                     "Falling back to pageable host buffer due to %s",
                     cudaGetErrorString(ensure_err));
@@ -102,19 +102,18 @@ class JuliaSetSubscriberNode : public rclcpp::Node {
       }
     }
 
-    if (using_fallback) {
-      fallback.assign(bytes_to_copy, 0);
-      host_ptr = fallback.data();
-    }
-
-    if (using_fallback) {
-      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpy");
-      err = cudaMemcpy(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
-                       cudaMemcpyDeviceToHost);
-    } else {
+    if (use_pinned) {
       NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpyAsync");
       err = cudaMemcpyAsync(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
                             cudaMemcpyDeviceToHost, stream_);
+    } else {
+      // Prepare fallback buffer
+      fallback.assign(bytes_to_copy, 0);
+      host_ptr = fallback.data();
+
+      NvtxScopedRange memcpy_range("JuliaSetSubscriber::cudaMemcpy");
+      err = cudaMemcpy(host_ptr, view.core.data<uint8_t>(), bytes_to_copy,
+                       cudaMemcpyDeviceToHost);
     }
     if (err != cudaSuccess) {
       RCLCPP_ERROR(get_logger(), "cudaMemcpyAsync failed: %s",
