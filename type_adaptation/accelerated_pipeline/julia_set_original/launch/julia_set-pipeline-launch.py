@@ -105,7 +105,7 @@ def launch_setup(context):
     pipeline_nodes = [cam2image_node]
 
     pipeline_nodes.append(ComposableNode(
-        package='julia_set',
+        package='julia_set_original',
         plugin='type_adaptation::julia_set::MapNode',
         name='map_node',
         parameters=[{'type_adaptation_enabled': enable_type_adapt}] + JULIASET_PARAMS,
@@ -113,7 +113,7 @@ def launch_setup(context):
 
     for i in range(1, MAX_ITERATION):
         pipeline_nodes.append(ComposableNode(
-            package='julia_set',
+            package='julia_set_original',
             plugin='type_adaptation::julia_set::JuliaSetNode',
             name='juliaset_node%d' % (i),
             parameters=[{'type_adaptation_enabled': enable_type_adapt},
@@ -122,7 +122,7 @@ def launch_setup(context):
                         ('/image_out', '/image_out%d' % (i))]))
 
     pipeline_nodes.append(ComposableNode(
-        package='julia_set',
+        package='julia_set_original',
         plugin='type_adaptation::julia_set::ColorizeNode',
         name='colorize_node',
         parameters=[{'max_iterations': MAX_ITERATION},
