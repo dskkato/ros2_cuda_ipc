@@ -12,6 +12,7 @@
   <depend>sensor_msgs</depend>
   <depend>ros2_cuda_ipc_core</depend>
   <depend>ros2_cuda_ipc_msgs</depend>
+  <depend>libopencv-dev</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

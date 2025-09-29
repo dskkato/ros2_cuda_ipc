@@ -51,6 +51,28 @@ configurable number of bytes for logging. Parameters:
 - `log_full_copy` (bool, default `false`): If `true`, copies the full image for
   validation (large transfers on big frames).
 
+### `gpu_image_transport`
+
+Copies the GPU image to host memory and republishes it as a
+`sensor_msgs::msg::Image`. Parameters:
+
+- `input_topic_name` (string, default `image_gpu`): Topic carrying
+  `ros2_cuda_ipc_core::ImageView` messages.
+- `cpu_topic_name` (string, default `image`): Output topic name.
+
+### `gpu_image_transport_compressed`
+
+Publishes the CUDA image as a `sensor_msgs::msg::CompressedImage` using
+OpenCV for encoding. Parameters:
+
+- `input_topic_name` (string, default `image_gpu`): Topic carrying
+  `ros2_cuda_ipc_core::ImageView` messages.
+- `cpu_topic_name` (string, default `image`): Output topic name.
+- `compressed_format` (string, default `jpeg`): Encoding passed to
+  `cv::imencode` (e.g. `jpeg`, `png`, `bmp`).
+- `jpeg_quality` (int, default `95`): JPEG quality (0–100) when
+  `compressed_format` is `jpeg` or `jpg`.
+
 ## Launch demo
 
 Start publisher and subscriber in separate processes using the provided launch
@@ -65,6 +87,14 @@ iteration depth:
 
 ```bash
 ros2 launch julia_set julia_set_demo.launch.py zoom:=0.8 max_iterations:=600
+```
+
+To forward compressed output from the transport node, enable the launch flag to
+spawn the dedicated compression executable and optionally specify the format:
+
+```bash
+ros2 launch julia_set julia_set_demo.launch.py \
+  use_compressed_output:=true compressed_format:=jpeg jpeg_quality:=90
 ```
 
 The subscriber logs sampled pixel values once the CUDA event signals that the

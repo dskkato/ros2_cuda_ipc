@@ -14,6 +14,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(ros2_cuda_ipc_core REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(CUDAToolkit REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS imgcodecs)
 
 add_executable(gpu_image_transport
   src/gpu_image_transport.cpp
@@ -35,8 +36,31 @@ ament_target_dependencies(gpu_image_transport
   ros2_cuda_ipc_msgs
 )
 
+add_executable(gpu_image_transport_compressed
+  src/gpu_image_transport_compressed.cpp
+)
+
+target_include_directories(gpu_image_transport_compressed
+  PRIVATE
+    ${CUDAToolkit_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
+)
+
+target_link_libraries(gpu_image_transport_compressed
+  CUDA::cudart
+  ${OpenCV_LIBRARIES}
+)
+
+ament_target_dependencies(gpu_image_transport_compressed
+  rclcpp
+  sensor_msgs
+  ros2_cuda_ipc_core
+  ros2_cuda_ipc_msgs
+)
+
 install(TARGETS
   gpu_image_transport
+  gpu_image_transport_compressed
   DESTINATION lib/${PROJECT_NAME}
 )
 
