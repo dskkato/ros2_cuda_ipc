@@ -2,7 +2,7 @@
 
 #include <nvtx3/nvToolsExt.h>
 
-namespace julia_set {
+namespace ros2_cuda_ipc_core {
 
 class NvtxScopedRange {
  public:
@@ -19,4 +19,4 @@ class NvtxScopedRange {
   nvtxRangeId_t id_{};
 };
 
-}  // namespace julia_set
+}  // namespace ros2_cuda_ipc_core

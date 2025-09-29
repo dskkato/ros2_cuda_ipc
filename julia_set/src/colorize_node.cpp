@@ -9,12 +9,14 @@
 #include "julia_set/cuda/cuda_util.hpp"
 #include "julia_set/cuda/gpu_lease_pool.hpp"
 #include "julia_set/cuda/julia_kernel.hpp"
-#include "julia_set/cuda/nvtx_scoped_range.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
+#include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
 namespace julia_set {
+
+using ros2_cuda_ipc_core::NvtxScopedRange;
 
 class ColorizeNode : public rclcpp::Node {
  public:

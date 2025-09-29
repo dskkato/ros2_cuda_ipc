@@ -13,17 +13,15 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
+#include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
 namespace gpu_image_transport {
 
-namespace {
+using ros2_cuda_ipc_core::NvtxScopedRange;
 
-class NvtxScopedRange {
- public:
-  explicit NvtxScopedRange(const char *) {}
-};
+namespace {
 
 std::string cuda_error_to_string(cudaError_t err) {
   const char *error_string = cudaGetErrorString(err);
