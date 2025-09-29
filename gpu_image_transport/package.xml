@@ -14,5 +14,6 @@
   <depend>ros2_cuda_ipc_msgs</depend>
 
   <export>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>

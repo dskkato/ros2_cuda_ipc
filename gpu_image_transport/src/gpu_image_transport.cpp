@@ -31,8 +31,7 @@ std::string cuda_error_to_string(cudaError_t err) {
 class GpuImageTransportNode : public rclcpp::Node {
  public:
   GpuImageTransportNode()
-      : rclcpp::Node("gpu_image_transport",
-                     rclcpp::NodeOptions().use_intra_process_comms(false)),
+      : rclcpp::Node("gpu_image_transport"),
         input_topic_(
             declare_parameter<std::string>("input_topic_name", "image_gpu")),
         output_topic_(
@@ -100,8 +99,7 @@ class GpuImageTransportNode : public rclcpp::Node {
       return;
     }
 
-    const std::size_t bytes_to_copy =
-        static_cast<std::size_t>(view.core.byte_size);
+    const std::uint64_t bytes_to_copy = view.core.byte_size;
     if (bytes_to_copy == 0) {
       return;
     }
@@ -142,13 +140,9 @@ class GpuImageTransportNode : public rclcpp::Node {
   }
 
   void publish_cpu_image(const ros2_cuda_ipc_core::ImageView &view,
-                         std::size_t available_bytes) {
-    if (!publisher_) {
-      return;
-    }
-
-    const std::size_t height = static_cast<std::size_t>(view.rows());
-    const std::size_t step_bytes = static_cast<std::size_t>(view.strideH());
+                         std::uint64_t available_bytes) {
+    const std::uint32_t height = view.rows();
+    const std::uint64_t step_bytes = view.strideH();
     if (height == 0 || step_bytes == 0) {
       RCLCPP_WARN(
           get_logger(),
@@ -167,12 +161,12 @@ class GpuImageTransportNode : public rclcpp::Node {
     if (height > 0 &&
         step_bytes > std::numeric_limits<std::size_t>::max() / height) {
       RCLCPP_WARN(get_logger(),
-                  "Skipping publish: size overflow height=%zu step=%zu", height,
+                  "Skipping publish: size overflow height=%u step=%zu", height,
                   step_bytes);
       return;
     }
 
-    const std::size_t required_bytes = step_bytes * height;
+    const std::uint64_t required_bytes = step_bytes * height;
     if (available_bytes < required_bytes) {
       RCLCPP_WARN(
           get_logger(),
