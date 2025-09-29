@@ -1,0 +1,51 @@
+{
+  "name": "ros2-cuda-ipc",
+  "image": "ghcr.io/dskkato/ros2-cuda-ipc:0.0.1",
+  "runArgs": [
+    "--gpus=all",
+    "--env",
+    "NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics"
+  ],
+  "containerEnv": {
+    "ROS_DISTRO": "humble",
+    "NVIDIA_VISIBLE_DEVICES": "all"
+  },
+  "remoteEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "LIBGL_ALWAYS_INDIRECT": "${localEnv:LIBGL_ALWAYS_INDIRECT}"
+  },
+  "mounts": [
+    "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
+  ],
+  "postCreateCommand": "rosdep update",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-iot.vscode-ros",
+        "ms-azuretools.vscode-docker",
+        "twxs.cmake",
+        "xaver.clang-format"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.associations": {
+          "*.ipp": "cpp"
+        },
+        "cmake.configureOnOpen": false,
+        "[cpp]": {
+          "editor.defaultFormatter": "xaver.clang-format"
+        },
+        "[cuda-cpp]": {
+          "editor.defaultFormatter": "xaver.clang-format"
+        }
+      }
+    }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  }
+}
