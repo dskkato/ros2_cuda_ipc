@@ -1,7 +1,7 @@
 {
   "name": "ros2-cuda-ipc",
   "build": {
-    "dockerfile": "Dockerfile",
+    "dockerfile": ".devcontainer/Dockerfile",
     "context": "..",
     "args": {
       "ROS_DISTRO": "humble"
