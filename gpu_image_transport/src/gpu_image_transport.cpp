@@ -1,38 +1,41 @@
 #include <cuda_runtime_api.h>
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 
-#include "julia_set/cuda/cuda_util.hpp"
-#include "julia_set/cuda/nvtx_scoped_range.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
+#include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
-namespace julia_set {
+namespace gpu_image_transport {
+
+using ros2_cuda_ipc_core::NvtxScopedRange;
+
+namespace {
+
+std::string cuda_error_to_string(cudaError_t err) {
+  const char *error_string = cudaGetErrorString(err);
+  return error_string ? std::string(error_string) : std::string{};
+}
+
+}  // namespace
 
 class GpuImageTransportNode : public rclcpp::Node {
  public:
   GpuImageTransportNode()
-      : rclcpp::Node("gpu_image_transport",
-                     rclcpp::NodeOptions().use_intra_process_comms(false)),
-        input_topic_(declare_parameter<std::string>("input_topic_name",
-                                                    "julia_set/colorized")),
-        output_topic_(declare_parameter<std::string>("cpu_topic_name",
-                                                     "julia_set/image_cpu")),
-        sample_bytes_(static_cast<std::size_t>(
-            declare_parameter<int>("sample_bytes", 64))) {
-    if (sample_bytes_ == 0) {
-      sample_bytes_ = 1;
-    }
-
+      : rclcpp::Node("gpu_image_transport"),
+        input_topic_(
+            declare_parameter<std::string>("input_topic_name", "image_gpu")),
+        output_topic_(
+            declare_parameter<std::string>("cpu_topic_name", "image")) {
     const cudaError_t err =
         cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking);
     if (err != cudaSuccess) {
@@ -96,8 +99,7 @@ class GpuImageTransportNode : public rclcpp::Node {
       return;
     }
 
-    const std::size_t bytes_to_copy =
-        static_cast<std::size_t>(view.core.byte_size);
+    const std::uint64_t bytes_to_copy = view.core.byte_size;
     if (bytes_to_copy == 0) {
       return;
     }
@@ -138,13 +140,9 @@ class GpuImageTransportNode : public rclcpp::Node {
   }
 
   void publish_cpu_image(const ros2_cuda_ipc_core::ImageView &view,
-                         std::size_t available_bytes) {
-    if (!publisher_) {
-      return;
-    }
-
-    const std::size_t height = static_cast<std::size_t>(view.rows());
-    const std::size_t step_bytes = static_cast<std::size_t>(view.strideH());
+                         std::uint64_t available_bytes) {
+    const std::uint32_t height = view.rows();
+    const std::uint64_t step_bytes = view.strideH();
     if (height == 0 || step_bytes == 0) {
       RCLCPP_WARN(
           get_logger(),
@@ -163,12 +161,12 @@ class GpuImageTransportNode : public rclcpp::Node {
     if (height > 0 &&
         step_bytes > std::numeric_limits<std::size_t>::max() / height) {
       RCLCPP_WARN(get_logger(),
-                  "Skipping publish: size overflow height=%zu step=%zu", height,
+                  "Skipping publish: size overflow height=%u step=%zu", height,
                   step_bytes);
       return;
     }
 
-    const std::size_t required_bytes = step_bytes * height;
+    const std::uint64_t required_bytes = step_bytes * height;
     if (available_bytes < required_bytes) {
       RCLCPP_WARN(
           get_logger(),
@@ -188,26 +186,6 @@ class GpuImageTransportNode : public rclcpp::Node {
     std::memcpy(msg.data.data(), pinned_host_buffer_, required_bytes);
 
     publisher_->publish(std::move(msg));
-  }
-
-  std::string describe_sample(const uint8_t *buffer,
-                              std::size_t bytes_to_copy) const {
-    constexpr std::size_t kMaxElements = 16;
-    std::ostringstream oss;
-    if (bytes_to_copy == 0) {
-      return "";
-    }
-    const std::size_t count = std::min(bytes_to_copy, kMaxElements);
-    for (std::size_t i = 0; i < count; ++i) {
-      if (i != 0) {
-        oss << ",";
-      }
-      oss << static_cast<unsigned>(buffer[i]);
-    }
-    if (bytes_to_copy > count) {
-      oss << ",...";
-    }
-    return oss.str();
   }
 
   std::string infer_encoding(const ros2_cuda_ipc_core::ImageView &view) const {
@@ -280,17 +258,16 @@ class GpuImageTransportNode : public rclcpp::Node {
   cudaStream_t stream_ = nullptr;
   std::string input_topic_;
   std::string output_topic_;
-  std::size_t sample_bytes_ = 64;
   uint8_t *pinned_host_buffer_ = nullptr;
   std::size_t pinned_host_capacity_ = 0;
 };
 
-}  // namespace julia_set
+}  // namespace gpu_image_transport
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   try {
-    auto node = std::make_shared<julia_set::GpuImageTransportNode>();
+    auto node = std::make_shared<gpu_image_transport::GpuImageTransportNode>();
     rclcpp::spin(node);
   } catch (const std::exception &ex) {
     RCLCPP_FATAL(rclcpp::get_logger("gpu_image_transport"), "Exception: %s",
