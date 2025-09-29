@@ -16,7 +16,6 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(ros2_cuda_ipc_core REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(CUDAToolkit REQUIRED)
@@ -67,7 +66,6 @@ target_link_libraries(colorize_node
 
 ament_target_dependencies(julia_set_publisher
   rclcpp
-  sensor_msgs
   ros2_cuda_ipc_core
   ros2_cuda_ipc_msgs
 )
@@ -111,6 +109,6 @@ if(BUILD_TESTING)
   endif()
 endif()
 
-ament_export_dependencies(rclcpp sensor_msgs ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
+ament_export_dependencies(rclcpp ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
 
 ament_package()

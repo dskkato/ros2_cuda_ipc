@@ -1,13 +1,11 @@
 #include <cuda_runtime_api.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -35,16 +33,10 @@ class GpuImageTransportNode : public rclcpp::Node {
   GpuImageTransportNode()
       : rclcpp::Node("gpu_image_transport",
                      rclcpp::NodeOptions().use_intra_process_comms(false)),
-        input_topic_(declare_parameter<std::string>("input_topic_name",
-                                                    "julia_set/colorized")),
-        output_topic_(declare_parameter<std::string>("cpu_topic_name",
-                                                     "julia_set/image_cpu")),
-        sample_bytes_(static_cast<std::size_t>(
-            declare_parameter<int>("sample_bytes", 64))) {
-    if (sample_bytes_ == 0) {
-      sample_bytes_ = 1;
-    }
-
+        input_topic_(
+            declare_parameter<std::string>("input_topic_name", "image_gpu")),
+        output_topic_(
+            declare_parameter<std::string>("cpu_topic_name", "image")) {
     const cudaError_t err =
         cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking);
     if (err != cudaSuccess) {
@@ -202,26 +194,6 @@ class GpuImageTransportNode : public rclcpp::Node {
     publisher_->publish(std::move(msg));
   }
 
-  [[maybe_unused]] std::string describe_sample(
-      const uint8_t *buffer, std::size_t bytes_to_copy) const {
-    constexpr std::size_t kMaxElements = 16;
-    std::ostringstream oss;
-    if (bytes_to_copy == 0) {
-      return "";
-    }
-    const std::size_t count = std::min(bytes_to_copy, kMaxElements);
-    for (std::size_t i = 0; i < count; ++i) {
-      if (i != 0) {
-        oss << ",";
-      }
-      oss << static_cast<unsigned>(buffer[i]);
-    }
-    if (bytes_to_copy > count) {
-      oss << ",...";
-    }
-    return oss.str();
-  }
-
   std::string infer_encoding(const ros2_cuda_ipc_core::ImageView &view) const {
     const auto channels = view.channels();
     const auto suffix = std::to_string(channels);
@@ -292,7 +264,6 @@ class GpuImageTransportNode : public rclcpp::Node {
   cudaStream_t stream_ = nullptr;
   std::string input_topic_;
   std::string output_topic_;
-  [[maybe_unused]] std::size_t sample_bytes_ = 64;
   uint8_t *pinned_host_buffer_ = nullptr;
   std::size_t pinned_host_capacity_ = 0;
 };
