@@ -19,6 +19,11 @@ add_executable(gpu_image_transport
   src/gpu_image_transport.cpp
 )
 
+target_include_directories(gpu_image_transport
+  PRIVATE
+    ${CUDAToolkit_INCLUDE_DIRS}
+)
+
 target_link_libraries(gpu_image_transport
   CUDA::cudart
 )
