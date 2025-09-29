@@ -180,7 +180,7 @@ def launch_setup(context) -> List[Node]:
     }
 
     transport_kwargs = dict(
-        package="julia_set",
+        package="gpu_image_transport",
         executable="gpu_image_transport",
         name="gpu_image_transport",
         parameters=[transport_params],

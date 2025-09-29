@@ -1,6 +1,8 @@
 #include <cuda_runtime_api.h>
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <limits>
@@ -9,14 +11,26 @@
 #include <stdexcept>
 #include <string>
 
-#include "julia_set/cuda/cuda_util.hpp"
-#include "julia_set/cuda/nvtx_scoped_range.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
-namespace julia_set {
+namespace gpu_image_transport {
+
+namespace {
+
+class NvtxScopedRange {
+ public:
+  explicit NvtxScopedRange(const char *) {}
+};
+
+std::string cuda_error_to_string(cudaError_t err) {
+  const char *error_string = cudaGetErrorString(err);
+  return error_string ? std::string(error_string) : std::string{};
+}
+
+}  // namespace
 
 class GpuImageTransportNode : public rclcpp::Node {
  public:
@@ -190,8 +204,8 @@ class GpuImageTransportNode : public rclcpp::Node {
     publisher_->publish(std::move(msg));
   }
 
-  std::string describe_sample(const uint8_t *buffer,
-                              std::size_t bytes_to_copy) const {
+  [[maybe_unused]] std::string describe_sample(
+      const uint8_t *buffer, std::size_t bytes_to_copy) const {
     constexpr std::size_t kMaxElements = 16;
     std::ostringstream oss;
     if (bytes_to_copy == 0) {
@@ -280,17 +294,17 @@ class GpuImageTransportNode : public rclcpp::Node {
   cudaStream_t stream_ = nullptr;
   std::string input_topic_;
   std::string output_topic_;
-  std::size_t sample_bytes_ = 64;
+  [[maybe_unused]] std::size_t sample_bytes_ = 64;
   uint8_t *pinned_host_buffer_ = nullptr;
   std::size_t pinned_host_capacity_ = 0;
 };
 
-}  // namespace julia_set
+}  // namespace gpu_image_transport
 
 int main(int argc, char **argv) {
   rclcpp::init(argc, argv);
   try {
-    auto node = std::make_shared<julia_set::GpuImageTransportNode>();
+    auto node = std::make_shared<gpu_image_transport::GpuImageTransportNode>();
     rclcpp::spin(node);
   } catch (const std::exception &ex) {
     RCLCPP_FATAL(rclcpp::get_logger("gpu_image_transport"), "Exception: %s",
