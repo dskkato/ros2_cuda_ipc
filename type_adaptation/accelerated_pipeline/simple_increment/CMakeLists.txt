@@ -70,6 +70,7 @@ target_link_libraries(inc_node
   cuda_functions
   CUDA::cudart
 )
+target_link_options(inc_node PRIVATE $<$<LINK_LANGUAGE:CUDA>:-cudart=shared>)
 
 ament_target_dependencies(inc_node
   rclcpp

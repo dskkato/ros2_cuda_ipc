@@ -70,6 +70,7 @@ target_link_libraries(julia_set_node
   julia_set_cuda
   CUDA::cudart
 )
+target_link_options(julia_set_node PRIVATE $<$<LINK_LANGUAGE:CUDA>:-cudart=shared>)
 
 ament_target_dependencies(julia_set_node
   rclcpp
@@ -98,6 +99,7 @@ target_link_libraries(colorize_node
   julia_set_cuda
   CUDA::cudart
 )
+target_link_options(colorize_node PRIVATE $<$<LINK_LANGUAGE:CUDA>:-cudart=shared>)
 
 ament_target_dependencies(colorize_node
   rclcpp
@@ -126,6 +128,7 @@ target_link_libraries(map_node
   julia_set_cuda
   CUDA::cudart
 )
+target_link_options(map_node PRIVATE $<$<LINK_LANGUAGE:CUDA>:-cudart=shared>)
 
 ament_target_dependencies(map_node
   rclcpp

@@ -64,6 +64,7 @@ set_property(TARGET julia_set_publisher PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 target_link_libraries(julia_set_publisher
   julia_set_helpers
 )
+target_link_options(julia_set_publisher PRIVATE $<$<LINK_LANGUAGE:CUDA>:-cudart=shared>)
 
 ## Colorize Node
 add_executable(colorize_node src/colorize_node.cpp)
@@ -71,6 +72,7 @@ set_property(TARGET colorize_node PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 target_link_libraries(colorize_node
   julia_set_helpers
 )
+target_link_options(colorize_node PRIVATE $<$<LINK_LANGUAGE:CUDA>:-cudart=shared>)
 
 ## GPU Image Transport
 add_executable(gpu_image_transport src/gpu_image_transport.cpp)
@@ -78,6 +80,7 @@ set_property(TARGET gpu_image_transport PROPERTY CUDA_RUNTIME_LIBRARY Shared)
 target_link_libraries(gpu_image_transport
   julia_set_helpers
 )
+target_link_options(gpu_image_transport PRIVATE $<$<LINK_LANGUAGE:CUDA>:-cudart=shared>)
 
 ament_target_dependencies(julia_set_publisher
   rclcpp
@@ -126,6 +129,7 @@ if(BUILD_TESTING)
     target_link_libraries(test_gpu_lease_pool
       julia_set_helpers
     )
+    target_link_options(test_gpu_lease_pool PRIVATE $<$<LINK_LANGUAGE:CUDA>:-cudart=shared>)
     set_property(TARGET test_gpu_lease_pool PROPERTY CUDA_RUNTIME_LIBRARY Shared)
     ament_target_dependencies(test_gpu_lease_pool
       rclcpp
