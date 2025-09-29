@@ -1,12 +1,6 @@
 {
   "name": "ros2-cuda-ipc",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": "..",
-    "args": {
-      "ROS_DISTRO": "humble"
-    }
-  },
+  "image": "ghcr.io/dskkato/ros2-cuda-ipc:0.0.1",
   "runArgs": [
     "--gpus=all",
     "--env",

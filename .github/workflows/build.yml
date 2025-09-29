@@ -4,16 +4,28 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   colcon-build:
     runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/dskkato/ros2-cuda-ipc:0.0.1
+    env:
+      ROS_DISTRO: humble
     steps:
       - uses: actions/checkout@v4
-      - uses: ros-tooling/setup-ros@v0.7
-        with:
-          required-ros-distributions: humble
-      - name: Install CUDA toolkit
-        run: sudo apt-get update && sudo apt-get install -y nvidia-cuda-toolkit
+      - name: Export ROS environment
+        run: |
+          source /opt/ros/${ROS_DISTRO}/setup.bash
+          for var in AMENT_PREFIX_PATH COLCON_PREFIX_PATH LD_LIBRARY_PATH PATH PKG_CONFIG_PATH PYTHONPATH ROS_DISTRO ROS_ETC_DIR ROS_LOCALHOST_ONLY ROS_PACKAGE_PATH ROS_VERSION ROS_PYTHON_VERSION RMW_IMPLEMENTATION; do
+            if [[ -n "${!var:-}" ]]; then
+              echo "${var}=${!var}" >> "${GITHUB_ENV}"
+            fi
+          done
+        shell: bash
       - uses: ros-tooling/action-ros-ci@v0.3
         with:
           package-name: "ros2_cuda_ipc_msgs ros2_cuda_ipc_core sample_nodes julia_set"
