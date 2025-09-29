@@ -13,9 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/dskkato/ros2-cuda-ipc:0.0.1
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: pre-commit/action@v3.0.1
