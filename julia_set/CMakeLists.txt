@@ -16,7 +16,6 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(sensor_msgs REQUIRED)
 find_package(ros2_cuda_ipc_core REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(CUDAToolkit REQUIRED)
@@ -65,15 +64,8 @@ target_link_libraries(colorize_node
   julia_set_helpers
 )
 
-## GPU Image Transport
-add_executable(gpu_image_transport src/gpu_image_transport.cpp)
-target_link_libraries(gpu_image_transport
-  julia_set_helpers
-)
-
 ament_target_dependencies(julia_set_publisher
   rclcpp
-  sensor_msgs
   ros2_cuda_ipc_core
   ros2_cuda_ipc_msgs
 )
@@ -84,18 +76,10 @@ ament_target_dependencies(colorize_node
   ros2_cuda_ipc_msgs
 )
 
-ament_target_dependencies(gpu_image_transport
-  rclcpp
-  sensor_msgs
-  ros2_cuda_ipc_core
-  ros2_cuda_ipc_msgs
-)
-
 install(TARGETS
   julia_set_helpers
   julia_set_publisher
   colorize_node
-  gpu_image_transport
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -125,6 +109,6 @@ if(BUILD_TESTING)
   endif()
 endif()
 
-ament_export_dependencies(rclcpp sensor_msgs ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
+ament_export_dependencies(rclcpp ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
 
 ament_package()
