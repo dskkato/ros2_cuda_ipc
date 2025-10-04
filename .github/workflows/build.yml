@@ -33,7 +33,25 @@ jobs:
             --event-handlers console_direct+ \
             --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
+      - name: Detect CUDA availability
+        id: cuda-check
+        run: |
+          set -eo pipefail
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            echo "cuda=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [ -e /proc/driver/nvidia/version ] || [ -d /dev/nvidia0 ]; then
+            echo "cuda=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          echo "CUDA devices not detected; tests will be skipped." >&2
+          echo "cuda=false" >> "${GITHUB_OUTPUT}"
+
       - name: Run tests
+        if: steps.cuda-check.outputs.cuda == 'true'
         run: |
           set -eo pipefail
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
@@ -42,10 +60,16 @@ jobs:
             --packages-skip example_type_adapters julia_set_original simple_increment
 
       - name: Check test results
+        if: steps.cuda-check.outputs.cuda == 'true'
         run: |
           set -eo pipefail
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
           colcon test-result --verbose
+
+      - name: Skip tests (no CUDA detected)
+        if: steps.cuda-check.outputs.cuda != 'true'
+        run: |
+          echo "Skipping colcon test because CUDA is unavailable on this runner."
 
       - name: Upload test logs on failure
         if: ${{ failure() }}
