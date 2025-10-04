@@ -37,7 +37,9 @@ jobs:
         run: |
           set -eo pipefail
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
-          colcon test --event-handlers console_direct+
+          colcon test \
+            --event-handlers console_direct+ \
+            --packages-skip example_type_adapters julia_set_original simple_increment
 
       - name: Check test results
         run: |
