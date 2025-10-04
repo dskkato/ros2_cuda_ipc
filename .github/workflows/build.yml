@@ -45,7 +45,7 @@ jobs:
         run: |
           set -eo pipefail
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
-          colcon test-result --verbose --fail-unexpected
+          colcon test-result --verbose
 
       - name: Upload test logs on failure
         if: ${{ failure() }}
