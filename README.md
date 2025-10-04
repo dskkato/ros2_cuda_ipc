@@ -149,6 +149,25 @@ ros2 run sample_nodes gpu_pointcloud_subscriber
 
 ## テスト
 
+### CI コンテナイメージのビルド
+
+GitHub Actions の `build` ワークフローは `ghcr.io/dskkato/ros2-cuda-ipc-dev:<ROS_DISTRO>` というタグ名のコンテナイメージを前提に動作します。
+`scripts/build_container.sh` は `--ros-distro` を指定すると同名のタグを自動で付与するため、各ディストロ向けのイメージを次のように作成・公開できます:
+
+```bash
+# Humble (既存の :latest を :humble にリタグする場合にも利用可能)
+./scripts/build_container.sh --ros-distro humble --push
+
+# Iron
+./scripts/build_container.sh --ros-distro iron --push
+
+# Jazzy
+./scripts/build_container.sh --ros-distro jazzy --push
+```
+
+`docker login ghcr.io` を事前に実行してから `--push` を付けてください。タグを明示的に変えたい場合は `--tag` オプションで `ghcr.io/dskkato/` プレフィックスを含まない `リポジトリ:タグ` を渡せば上書きできます。
+
+
 `ros2_cuda_ipc_core` には gtest ベースの単体テストが含まれています。
 
 - `test_type_adapters.cpp`: CUDA IPC メッセージ型アダプタの変換確認
