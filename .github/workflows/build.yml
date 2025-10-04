@@ -29,7 +29,6 @@ jobs:
           set -eo pipefail
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
           colcon build \
-            --merge-install \
             --symlink-install \
             --event-handlers console_direct+ \
             --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
