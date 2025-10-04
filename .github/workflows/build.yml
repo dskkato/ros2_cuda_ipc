@@ -1,8 +1,9 @@
-name: build-check
+name: build
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,24 +11,45 @@ permissions:
 
 jobs:
   colcon-build:
+    name: Build and Test
     runs-on: ubuntu-22.04
     container:
-      image: ghcr.io/dskkato/ros2-cuda-ipc:latest
+      image: ghcr.io/dskkato/ros2-cuda-ipc-dev:latest
     env:
       ROS_DISTRO: humble
-    steps:
-      - uses: actions/checkout@v4
-      - name: Export ROS environment
-        run: |
-          source /opt/ros/${ROS_DISTRO}/setup.bash
-          for var in AMENT_PREFIX_PATH COLCON_PREFIX_PATH LD_LIBRARY_PATH PATH PKG_CONFIG_PATH PYTHONPATH ROS_DISTRO ROS_ETC_DIR ROS_LOCALHOST_ONLY ROS_PACKAGE_PATH ROS_VERSION ROS_PYTHON_VERSION RMW_IMPLEMENTATION; do
-            if [[ -n "${!var:-}" ]]; then
-              echo "${var}=${!var}" >> "${GITHUB_ENV}"
-            fi
-          done
+    defaults:
+      run:
         shell: bash
-      - uses: ros-tooling/action-ros-ci@v0.3
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build workspace
+        run: |
+          set -euo pipefail
+          source "/opt/ros/${ROS_DISTRO}/setup.bash"
+          colcon build \
+            --merge-install \
+            --symlink-install \
+            --event-handlers console_direct+ \
+            --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Run tests
+        run: |
+          set -euo pipefail
+          source "/opt/ros/${ROS_DISTRO}/setup.bash"
+          colcon test --event-handlers console_direct+
+
+      - name: Check test results
+        run: |
+          set -euo pipefail
+          source "/opt/ros/${ROS_DISTRO}/setup.bash"
+          colcon test-result --verbose --fail-unexpected
+
+      - name: Upload test logs on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
         with:
-          package-name: "ros2_cuda_ipc_msgs ros2_cuda_ipc_core sample_nodes julia_set"
-          target-ros2-distro: humble
-          skip-tests: true
+          name: colcon-test-logs
+          path: log/latest_test
+          if-no-files-found: ignore
