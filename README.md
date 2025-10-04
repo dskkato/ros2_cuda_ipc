@@ -165,7 +165,7 @@ GitHub Actions の `build` ワークフローは `ghcr.io/dskkato/ros2-cuda-ipc-
 ./scripts/build_container.sh --ros-distro jazzy --push
 ```
 
-`docker login ghcr.io` を事前に実行してから `--push` を付けてください。タグを明示的に変えたい場合は `--tag` オプションで `ghcr.io/dskkato/` プレフィックスを含まない `リポジトリ:タグ` を渡せば上書きできます。
+`docker login ghcr.io` を事前に実行してから `--push` を付けてください。タグを明示的に変えたい場合は `--tag` オプションで `ghcr.io/dskkato/リポジトリ:タグ` のように *プレフィックスを含めた* フルリポジトリ名を渡してください（スクリプトはこの形式を期待します）。
 
 
 `ros2_cuda_ipc_core` には gtest ベースの単体テストが含まれています。
