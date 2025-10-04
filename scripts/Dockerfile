@@ -9,11 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         nvidia-cuda-toolkit \
-        python3-pip \
     && rm -rf /var/lib/apt/lists/*
-
-# Install pre-commit
-RUN pip3 install pre-commit --no-cache-dir
 
 # Initialize rosdep (safe to rerun if already initialized)
 RUN rosdep update || (rosdep init && rosdep update)

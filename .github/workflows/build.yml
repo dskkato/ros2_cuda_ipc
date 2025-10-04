@@ -11,12 +11,22 @@ permissions:
 
 jobs:
   colcon-build:
-    name: Build and Test
+    name: Build and Test (${{ matrix.ros_distro }})
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: humble
+            container_tag: humble
+          - ros_distro: iron
+            container_tag: iron
+          - ros_distro: jazzy
+            container_tag: jazzy
     container:
-      image: ghcr.io/dskkato/ros2-cuda-ipc-dev:latest
+      image: ghcr.io/dskkato/ros2-cuda-ipc-dev:${{ matrix.container_tag }}
     env:
-      ROS_DISTRO: humble
+      ROS_DISTRO: ${{ matrix.ros_distro }}
     defaults:
       run:
         shell: bash
