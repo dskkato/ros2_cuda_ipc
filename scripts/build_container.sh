@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-Set -euo pipefail
+set -euo pipefail
 
 # Build the development container image used by the project
 
