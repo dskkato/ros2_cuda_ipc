@@ -8,7 +8,7 @@ usage() {
 Usage: build_container.sh [options]
 
 Options:
-  -t, --tag TAG            Set the image tag (default: ros2-cuda-ipc-dev:latest)
+  -t, --tag TAG            Set the image tag (default: ros2-cuda-ipc:latest)
   -r, --ros-distro DISTRO  Override ROS_DISTRO build arg (default: humble)
       --build-arg ARG      Provide an additional docker build argument (repeatable)
       --no-cache           Disable build cache

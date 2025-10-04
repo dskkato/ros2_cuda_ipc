@@ -12,7 +12,7 @@ jobs:
   colcon-build:
     runs-on: ubuntu-22.04
     container:
-      image: ghcr.io/dskkato/ros2-cuda-ipc-dev:latest
+      image: ghcr.io/dskkato/ros2-cuda-ipc:latest
     env:
       ROS_DISTRO: humble
     steps:
