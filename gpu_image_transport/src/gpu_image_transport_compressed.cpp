@@ -6,6 +6,7 @@
 #include <limits>
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <string>
 #include <utility>
 #include <vector>
@@ -127,11 +128,22 @@ class GpuImageTransportCompressedNode : public GpuImageTransportNodeBase {
     cv::Mat host_view(static_cast<int>(height), static_cast<int>(width),
                       cv_type, host_buffer_data(), step_bytes);
 
+    const std::string encoding_lower = to_lower(view.encoding);
+    const cv::Mat *source_view = &host_view;
+    cv::Mat converted_view;
+    if (encoding_lower == "rgb8" && channels == 3) {
+      cv::cvtColor(host_view, converted_view, cv::COLOR_RGB2BGR);
+      source_view = &converted_view;
+    } else if (encoding_lower == "rgba8" && channels == 4) {
+      cv::cvtColor(host_view, converted_view, cv::COLOR_RGBA2BGRA);
+      source_view = &converted_view;
+    }
+
     sensor_msgs::msg::CompressedImage msg;
     msg.header = view.header;
     msg.format = compressed_format_;
 
-    if (!cv::imencode(compressed_extension_, host_view, msg.data,
+    if (!cv::imencode(compressed_extension_, *source_view, msg.data,
                       compression_params_)) {
       RCLCPP_ERROR(get_logger(), "cv::imencode failed for format '%s'",
                    compressed_format_.c_str());
