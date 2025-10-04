@@ -89,12 +89,14 @@ iteration depth:
 ros2 launch julia_set julia_set_demo.launch.py zoom:=0.8 max_iterations:=600
 ```
 
-To forward compressed output from the transport node, enable the launch flag to
-spawn the dedicated compression executable and optionally specify the format:
+To forward an additional compressed output from the transport node while
+keeping the raw CPU topic, enable the launch flag to spawn the dedicated
+compression executable and optionally specify the format or topic name:
 
 ```bash
 ros2 launch julia_set julia_set_demo.launch.py \
-  use_compressed_output:=true compressed_format:=jpeg jpeg_quality:=90
+  use_compressed_output:=true compressed_format:=jpeg jpeg_quality:=90 \
+  compressed_topic_name:=julia_set/image_compressed
 ```
 
 The subscriber logs sampled pixel values once the CUDA event signals that the
