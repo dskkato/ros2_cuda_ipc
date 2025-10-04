@@ -42,17 +42,26 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("shm_name", default_value="/ros2_cuda_ipc_julia"),
         DeclareLaunchArgument("device_index", default_value="0"),
         DeclareLaunchArgument("topic_name", default_value="julia_set/image"),
-        DeclareLaunchArgument("colorized_topic_name", default_value="julia_set/colorized"),
-        DeclareLaunchArgument("cpu_topic_name", default_value="julia_set/image_cpu"),
-        DeclareLaunchArgument("sample_bytes", default_value="64"),
+        DeclareLaunchArgument(
+            "colorized_topic_name", default_value="julia_set/colorized"
+        ),
+        DeclareLaunchArgument("cpu_topic_name", default_value="julia_set/raw"),
+        DeclareLaunchArgument(
+            "compressed_topic_name", default_value="julia_set/compressed"
+        ),
         DeclareLaunchArgument("log_full_copy", default_value="false"),
+        DeclareLaunchArgument("use_compressed_output", default_value="false"),
+        DeclareLaunchArgument("compressed_format", default_value="jpeg"),
+        DeclareLaunchArgument("jpeg_quality", default_value="95"),
         DeclareLaunchArgument("enable_nsys", default_value="false"),
         DeclareLaunchArgument(
-            "nsys_profile_label", default_value="",
+            "nsys_profile_label",
+            default_value="",
             description="Label appended to nsys profile outputs",
         ),
         DeclareLaunchArgument(
-            "nsys_profile_flags", default_value=DEFAULT_NSYS_FLAGS,
+            "nsys_profile_flags",
+            default_value=DEFAULT_NSYS_FLAGS,
             description="Flags forwarded to nsys profile",
         ),
     ]
@@ -86,8 +95,6 @@ def launch_setup(context) -> List[Node]:
     channels = as_int("channels")
     max_iterations = as_int("max_iterations")
     device_index = as_int("device_index")
-    sample_bytes = as_int("sample_bytes")
-
     zoom = as_float("zoom")
     offset_x = as_float("offset_x")
     offset_y = as_float("offset_y")
@@ -97,12 +104,16 @@ def launch_setup(context) -> List[Node]:
 
     animate = as_bool("animate")
     log_full_copy = as_bool("log_full_copy")
+    use_compressed_output = as_bool("use_compressed_output")
+    compressed_format = value("compressed_format")
+    jpeg_quality = as_int("jpeg_quality")
 
     frame_id = value("frame_id")
     shm_name = value("shm_name")
     topic_name = value("topic_name")
     colorized_topic = value("colorized_topic_name")
     cpu_topic = value("cpu_topic_name")
+    compressed_topic = value("compressed_topic_name")
 
     enable_nsys = IfCondition(LaunchConfiguration("enable_nsys")).evaluate(context)
     nsys_flags = value("nsys_profile_flags") or DEFAULT_NSYS_FLAGS
@@ -173,27 +184,52 @@ def launch_setup(context) -> List[Node]:
 
     colorize = Node(**colorize_kwargs)
 
-    transport_params = {
-        "input_topic_name": colorized_topic,
-        "cpu_topic_name": cpu_topic,
-        "sample_bytes": sample_bytes,
-    }
+    if not use_compressed_output:
+        transport_params = {
+            "input_topic_name": colorized_topic,
+            "cpu_topic_name": cpu_topic,
+        }
 
-    transport_kwargs = dict(
-        package="gpu_image_transport",
-        executable="gpu_image_transport",
-        name="gpu_image_transport",
-        parameters=[transport_params],
-        output="screen",
-    )
-    if enable_nsys and profile_base:
-        transport_kwargs["prefix"] = (
-            f"nsys profile {nsys_flags} -o {profile_base}-gpu-transport"
+        transport_kwargs = dict(
+            package="gpu_image_transport",
+            executable="gpu_image_transport",
+            name="gpu_image_transport",
+            parameters=[transport_params],
+            output="screen",
         )
 
-    gpu_transport = Node(**transport_kwargs)
+        if enable_nsys and profile_base:
+            transport_kwargs["prefix"] = (
+                f"nsys profile {nsys_flags} -o {profile_base}-gpu-transport"
+            )
 
-    return [publisher, colorize, gpu_transport]
+        gpu_transport = Node(**transport_kwargs)
+    else:
+        compressed_params = {
+            "input_topic_name": colorized_topic,
+            "cpu_topic_name": compressed_topic,
+            "compressed_format": compressed_format,
+            "jpeg_quality": jpeg_quality,
+        }
+
+        compressed_kwargs = dict(
+            package="gpu_image_transport",
+            executable="gpu_image_transport_compressed",
+            name="gpu_image_transport_compressed",
+            parameters=[compressed_params],
+            output="screen",
+        )
+
+        if enable_nsys and profile_base:
+            compressed_kwargs["prefix"] = (
+                f"nsys profile {nsys_flags} -o {profile_base}-gpu-transport-compressed"
+            )
+
+        gpu_transport = Node(**compressed_kwargs)
+
+    nodes: List[Node] = [publisher, colorize, gpu_transport]
+
+    return nodes
 
 
 def build_profile_name(
