@@ -1,6 +1,6 @@
 {
   "name": "ros2-cuda-ipc",
-  "image": "ghcr.io/dskkato/ros2-cuda-ipc:0.0.1",
+  "image": "ghcr.io/dskkato/ros2-cuda-ipc-dev:latest",
   "runArgs": [
     "--gpus=all",
     "--env",
