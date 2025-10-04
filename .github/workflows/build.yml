@@ -26,7 +26,7 @@ jobs:
 
       - name: Build workspace
         run: |
-          set -euo pipefail
+          set -eo pipefail
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
           colcon build \
             --merge-install \
@@ -36,13 +36,13 @@ jobs:
 
       - name: Run tests
         run: |
-          set -euo pipefail
+          set -eo pipefail
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
           colcon test --event-handlers console_direct+
 
       - name: Check test results
         run: |
-          set -euo pipefail
+          set -eo pipefail
           source "/opt/ros/${ROS_DISTRO}/setup.bash"
           colcon test-result --verbose --fail-unexpected
 
