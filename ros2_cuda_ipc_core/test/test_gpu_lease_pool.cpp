@@ -8,8 +8,8 @@
 #include <string>
 #include <thread>
 
-#include "julia_set/cuda/gpu_lease_pool.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 
 namespace {
@@ -23,17 +23,19 @@ std::string make_unique_shm_name(const std::string &prefix) {
 
 }  // namespace
 
+using ros2_cuda_ipc_core::cuda::GpuLeasePool;
+
 TEST(GpuLeasePoolTest, InitialiseAndAcquireSetsPendingWhenSubscribersPresent) {
   const std::string shm_name = make_unique_shm_name("gpu_pool_basic");
-  julia_set::GpuLeasePool pool({shm_name, 2, std::chrono::milliseconds(100)});
   auto logger = rclcpp::get_logger("GpuLeasePoolTest");
+  GpuLeasePool pool({shm_name, 2, std::chrono::milliseconds(100)}, logger);
 
-  ASSERT_TRUE(pool.initialise(1024, 0, logger));
+  ASSERT_TRUE(pool.initialise(1024, 0));
   EXPECT_TRUE(pool.is_initialised());
   EXPECT_EQ(pool.frame_size_bytes(), 1024u);
   EXPECT_EQ(pool.device_index(), 0);
 
-  auto slot_opt = pool.acquire(1, logger);
+  auto slot_opt = pool.acquire(1);
   ASSERT_TRUE(slot_opt.has_value());
   auto *slot = *slot_opt;
   ASSERT_NE(slot, nullptr);
@@ -47,18 +49,18 @@ TEST(GpuLeasePoolTest, InitialiseAndAcquireSetsPendingWhenSubscribersPresent) {
   ASSERT_TRUE(pending.has_value());
   EXPECT_EQ(pending.value(), 1u);
 
-  pool.reset(logger);
+  pool.reset();
   ::shm_unlink(shm_name.c_str());
 }
 
 TEST(GpuLeasePoolTest, AcquireWithoutSubscribersDoesNotSetPendingDeadline) {
   const std::string shm_name = make_unique_shm_name("gpu_pool_nosub");
-  julia_set::GpuLeasePool pool({shm_name, 1, std::chrono::milliseconds(100)});
   auto logger = rclcpp::get_logger("GpuLeasePoolTest");
+  GpuLeasePool pool({shm_name, 1, std::chrono::milliseconds(100)}, logger);
 
-  ASSERT_TRUE(pool.initialise(512, 0, logger));
+  ASSERT_TRUE(pool.initialise(512, 0));
 
-  auto slot_opt = pool.acquire(0, logger);
+  auto slot_opt = pool.acquire(0);
   ASSERT_TRUE(slot_opt.has_value());
   auto *slot = *slot_opt;
   ASSERT_NE(slot, nullptr);
@@ -69,18 +71,18 @@ TEST(GpuLeasePoolTest, AcquireWithoutSubscribersDoesNotSetPendingDeadline) {
   ASSERT_TRUE(pending.has_value());
   EXPECT_EQ(pending.value(), 0u);
 
-  pool.reset(logger);
+  pool.reset();
   ::shm_unlink(shm_name.c_str());
 }
 
 TEST(GpuLeasePoolTest, ReclaimStalePendingClearsLease) {
   const std::string shm_name = make_unique_shm_name("gpu_pool_reclaim");
-  julia_set::GpuLeasePool pool({shm_name, 1, std::chrono::milliseconds(1)});
   auto logger = rclcpp::get_logger("GpuLeasePoolTest");
+  GpuLeasePool pool({shm_name, 1, std::chrono::milliseconds(1)}, logger);
 
-  ASSERT_TRUE(pool.initialise(256, 0, logger));
+  ASSERT_TRUE(pool.initialise(256, 0));
 
-  auto slot_opt = pool.acquire(1, logger);
+  auto slot_opt = pool.acquire(1);
   ASSERT_TRUE(slot_opt.has_value());
   auto *slot = *slot_opt;
   ASSERT_NE(slot, nullptr);
@@ -91,14 +93,14 @@ TEST(GpuLeasePoolTest, ReclaimStalePendingClearsLease) {
   EXPECT_EQ(pending_before.value(), 1u);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  pool.reclaim_stale_pending(logger);
+  pool.reclaim_stale_pending();
 
   auto pending_after =
       ros2_cuda_ipc_core::LeaseHandle::current_pending(shm_name, slot->index);
   ASSERT_TRUE(pending_after.has_value());
   EXPECT_EQ(pending_after.value(), 0u);
 
-  pool.reset(logger);
+  pool.reset();
   ::shm_unlink(shm_name.c_str());
 }
 
