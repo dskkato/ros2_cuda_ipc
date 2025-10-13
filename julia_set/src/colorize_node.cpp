@@ -6,10 +6,10 @@
 #include <stdexcept>
 #include <string>
 
-#include "julia_set/cuda/cuda_util.hpp"
-#include "julia_set/cuda/gpu_lease_pool.hpp"
 #include "julia_set/cuda/julia_kernel.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
+#include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
 #include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
@@ -17,6 +17,8 @@
 namespace julia_set {
 
 using ros2_cuda_ipc_core::NvtxScopedRange;
+using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
+using ros2_cuda_ipc_core::cuda::GpuLeasePool;
 
 class ColorizeNode : public rclcpp::Node {
  public:
@@ -35,7 +37,7 @@ class ColorizeNode : public rclcpp::Node {
             declare_parameter<int>("output_slot_count", 4))),
         pending_ttl_(std::chrono::milliseconds(
             declare_parameter<int>("output_pending_ttl_ms", 300))),
-        pool_({output_shm_name_, slot_count_, pending_ttl_}),
+        pool_({output_shm_name_, slot_count_, pending_ttl_}, get_logger()),
         output_encoding_(
             declare_parameter<std::string>("output_encoding", "rgb8")) {
     if (output_channels_ < 3) {
@@ -48,7 +50,8 @@ class ColorizeNode : public rclcpp::Node {
       RCLCPP_WARN(get_logger(),
                   "output_slot_count was zero; defaulting to 1 slot");
       slot_count_ = 1;
-      pool_ = GpuLeasePool({output_shm_name_, slot_count_, pending_ttl_});
+      pool_ = GpuLeasePool({output_shm_name_, slot_count_, pending_ttl_},
+                           get_logger());
     }
 
     const cudaError_t err =
@@ -80,7 +83,7 @@ class ColorizeNode : public rclcpp::Node {
 
   ~ColorizeNode() override {
     auto logger = get_logger();
-    pool_.reset(logger);
+    pool_.reset();
     width_ = 0;
     height_ = 0;
     frame_size_bytes_ = 0;
@@ -126,9 +129,9 @@ class ColorizeNode : public rclcpp::Node {
       return;
     }
 
-    pool_.reclaim_stale_pending(logger);
+    pool_.reclaim_stale_pending();
 
-    auto slot_opt = pool_.acquire(subscribers, logger);
+    auto slot_opt = pool_.acquire(subscribers);
     if (!slot_opt.has_value() || *slot_opt == nullptr) {
       RCLCPP_WARN_THROTTLE(logger, *get_clock(), 2000,
                            "No available GPU slots for colorized output");
@@ -136,7 +139,7 @@ class ColorizeNode : public rclcpp::Node {
     }
     auto &slot = **slot_opt;
 
-    const auto cancel_slot = [&]() { pool_.cancel_pending(slot, logger); };
+    const auto cancel_slot = [&]() { pool_.cancel_pending(slot); };
 
     cudaError_t err = cudaSetDevice(device_index_);
     if (err != cudaSuccess) {
@@ -196,7 +199,7 @@ class ColorizeNode : public rclcpp::Node {
     }
 
     auto logger = get_logger();
-    pool_.reset(logger);
+    pool_.reset();
 
     cudaError_t err = cudaSetDevice(device_id);
     if (err != cudaSuccess) {
@@ -215,7 +218,7 @@ class ColorizeNode : public rclcpp::Node {
     frame_size_bytes_ =
         static_cast<uint64_t>(width_) * height_ * output_channels_;
 
-    if (!pool_.initialise(frame_size_bytes_, device_index_, logger)) {
+    if (!pool_.initialise(frame_size_bytes_, device_index_)) {
       width_ = 0;
       height_ = 0;
       device_index_ = -1;

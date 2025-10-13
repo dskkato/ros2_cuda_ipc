@@ -19,14 +19,15 @@
 #include <cmath>
 #include <stdexcept>
 
-#include "julia_set/cuda/cuda_util.hpp"
 #include "julia_set/cuda/julia_kernel.hpp"
 #include "rclcpp/logging.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 
 namespace julia_set {
 
 using ros2_cuda_ipc_core::NvtxScopedRange;
+using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
 namespace {
 
 uint32_t dtype_bytes(ros2_cuda_ipc_core::DType dtype) {
@@ -49,9 +50,12 @@ uint32_t dtype_bytes(ros2_cuda_ipc_core::DType dtype) {
 
 }  // namespace
 
-JuliaPublisherHelper::JuliaPublisherHelper(const Config &config)
+JuliaPublisherHelper::JuliaPublisherHelper(const Config &config,
+                                           const rclcpp::Logger &logger)
     : config_(config),
-      pool_({config_.shm_name, config_.slot_count, config_.pending_ttl}) {
+      logger_(logger),
+      pool_({config_.shm_name, config_.slot_count, config_.pending_ttl},
+            logger_.get_child("GpuLeasePool")) {
   if (config_.slot_count == 0) {
     throw std::runtime_error("slot_count must be greater than zero");
   }
@@ -70,19 +74,17 @@ JuliaPublisherHelper::JuliaPublisherHelper(const Config &config)
                              cuda_error_to_string(err));
   }
 
-  auto logger = rclcpp::get_logger("JuliaPublisherHelper");
-  if (!pool_.initialise(frame_size_bytes_, config_.device_index, logger)) {
+  if (!pool_.initialise(frame_size_bytes_, config_.device_index)) {
     throw std::runtime_error("Failed to initialise GPU lease pool");
   }
 }
 
 JuliaPublisherHelper::~JuliaPublisherHelper() {
-  auto logger = rclcpp::get_logger("JuliaPublisherHelper");
-  pool_.reset(logger);
+  pool_.reset();
   if (stream_) {
     const cudaError_t stream_err = cudaStreamDestroy(stream_);
     if (stream_err != cudaSuccess) {
-      RCLCPP_ERROR(logger, "cudaStreamDestroy failed: %s",
+      RCLCPP_ERROR(logger_, "cudaStreamDestroy failed: %s",
                    cuda_error_to_string(stream_err).c_str());
     }
     stream_ = nullptr;
@@ -96,25 +98,23 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
     return std::nullopt;
   }
 
-  auto logger = rclcpp::get_logger("JuliaPublisherHelper");
-
   if (config_.dtype != ros2_cuda_ipc_core::DType::U8) {
-    RCLCPP_ERROR(logger, "Unsupported dtype for Julia set rendering");
+    RCLCPP_ERROR(logger_, "Unsupported dtype for Julia set rendering");
     return std::nullopt;
   }
 
   if (config_.channels != 1) {
-    RCLCPP_ERROR(logger,
+    RCLCPP_ERROR(logger_,
                  "JuliaPublisherHelper expects single-channel output (got %u)",
                  config_.channels);
     return std::nullopt;
   }
 
-  pool_.reclaim_stale_pending(logger);
+  pool_.reclaim_stale_pending();
 
-  auto slot_ptr = pool_.acquire(subscriber_count, logger);
+  auto slot_ptr = pool_.acquire(subscriber_count);
   if (!slot_ptr.has_value() || *slot_ptr == nullptr) {
-    RCLCPP_WARN(logger, "No available GPU slots (all leases in use)");
+    RCLCPP_WARN(logger_, "No available GPU slots (all leases in use)");
     return std::nullopt;
   }
 
@@ -137,7 +137,7 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
                               stream_);
   }
   if (err != cudaSuccess) {
-    RCLCPP_ERROR(logger, "launch_julia_kernel failed for slot %u: %s",
+    RCLCPP_ERROR(logger_, "launch_julia_kernel failed for slot %u: %s",
                  slot->index, cuda_error_to_string(err).c_str());
     return std::nullopt;
   }
@@ -147,7 +147,7 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
     err = cudaEventRecord(slot->event, stream_);
   }
   if (err != cudaSuccess) {
-    RCLCPP_ERROR(logger, "cudaEventRecord failed for slot %u: %s", slot->index,
+    RCLCPP_ERROR(logger_, "cudaEventRecord failed for slot %u: %s", slot->index,
                  cuda_error_to_string(err).c_str());
     return std::nullopt;
   }
