@@ -5,14 +5,13 @@
 #include <vector>
 
 #include "rclcpp/logging.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
 
 namespace sample_nodes {
 namespace {
 
-std::string cuda_error_to_string(cudaError_t err) {
-  return std::string(cudaGetErrorName(err)) + ": " + cudaGetErrorString(err);
-}
+using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
 
 }  // namespace
 

@@ -23,6 +23,8 @@ add_library(${PROJECT_NAME}
   src/image_view.cpp
   src/pointcloud2_view.cpp
   src/lease_handle.cpp
+  src/cuda_util.cpp
+  src/gpu_lease_pool.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -58,6 +60,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_lease_handle ${PROJECT_NAME})
   ament_add_gtest(test_type_adapters test/test_type_adapters.cpp)
   target_link_libraries(test_type_adapters ${PROJECT_NAME})
+  ament_add_gtest(test_gpu_lease_pool test/test_gpu_lease_pool.cpp)
+  target_link_libraries(test_gpu_lease_pool ${PROJECT_NAME})
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

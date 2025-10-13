@@ -23,8 +23,6 @@ find_package(CUDAToolkit REQUIRED)
 # julia set kernels
 add_library(julia_set_helpers
   src/cuda/julia_set.cu
-  src/cuda/gpu_lease_pool.cpp
-  src/cuda/cuda_util.cpp
 )
 
 set_target_properties(julia_set_helpers PROPERTIES
@@ -90,24 +88,6 @@ install(DIRECTORY include/
 install(DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
 )
-
-if(BUILD_TESTING)
-  find_package(ament_cmake_gtest REQUIRED)
-
-  ament_add_gtest(test_gpu_lease_pool
-    test/test_gpu_lease_pool.cpp
-  )
-
-  if(TARGET test_gpu_lease_pool)
-    target_link_libraries(test_gpu_lease_pool
-      julia_set_helpers
-    )
-    ament_target_dependencies(test_gpu_lease_pool
-      rclcpp
-      ros2_cuda_ipc_core
-    )
-  endif()
-endif()
 
 ament_export_dependencies(rclcpp ros2_cuda_ipc_core ros2_cuda_ipc_msgs)
 

@@ -7,7 +7,8 @@
 #include <optional>
 #include <string>
 
-#include "julia_set/cuda/gpu_lease_pool.hpp"
+#include "rclcpp/logger.hpp"
+#include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
 
 namespace julia_set {
@@ -32,7 +33,7 @@ class JuliaPublisherHelper {
     uint32_t max_iterations = 300;
   };
 
-  explicit JuliaPublisherHelper(const Config &config);
+  JuliaPublisherHelper(const Config &config, const rclcpp::Logger &logger);
   ~JuliaPublisherHelper();
 
   JuliaPublisherHelper(const JuliaPublisherHelper &) = delete;
@@ -47,7 +48,8 @@ class JuliaPublisherHelper {
 
  private:
   Config config_;
-  GpuLeasePool pool_;
+  rclcpp::Logger logger_;
+  ros2_cuda_ipc_core::cuda::GpuLeasePool pool_;
   cudaStream_t stream_ = nullptr;
   uint64_t frame_size_bytes_ = 0;
 };

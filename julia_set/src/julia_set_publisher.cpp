@@ -88,7 +88,7 @@ class JuliaSetPublisherNode : public rclcpp::Node {
     config.max_iterations =
         static_cast<uint32_t>(declare_parameter<int>("max_iterations", 300));
 
-    helper_ = std::make_unique<JuliaPublisherHelper>(config);
+    helper_ = std::make_unique<JuliaPublisherHelper>(config, get_logger());
 
     rclcpp::PublisherOptions options;
     options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;

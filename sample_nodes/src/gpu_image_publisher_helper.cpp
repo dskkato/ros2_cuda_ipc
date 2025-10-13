@@ -4,13 +4,12 @@
 #include <stdexcept>
 
 #include "rclcpp/logging.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 
 namespace sample_nodes {
 namespace {
 
-std::string cuda_error_to_string(cudaError_t err) {
-  return std::string(cudaGetErrorName(err)) + ": " + cudaGetErrorString(err);
-}
+using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
 
 uint32_t dtype_bytes(ros2_cuda_ipc_core::DType dtype) {
   switch (dtype) {
