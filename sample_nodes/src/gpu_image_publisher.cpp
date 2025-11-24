@@ -5,6 +5,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 #include "sample_nodes/gpu_image_publisher_helper.hpp"
+#include "sample_nodes/tracing.hpp"
 
 namespace sample_nodes {
 namespace {
@@ -100,6 +101,9 @@ class GpuImagePublisherNode : public rclcpp::Node {
     view->header.stamp = now();
     view->header.frame_id = frame_id_;
     publisher_->publish(*view);
+    SAMPLE_NODES_TRACE_MESSAGE_PUBLICATION(
+        static_cast<int32_t>(view->core.slot_id), view->core.generation,
+        view->core.byte_size, view->core.device_id);
     ++frame_counter_;
   }
 

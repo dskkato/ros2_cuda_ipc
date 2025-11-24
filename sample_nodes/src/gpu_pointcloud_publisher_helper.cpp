@@ -6,6 +6,7 @@
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
+#include "sample_nodes/tracing.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
 
 namespace sample_nodes {
@@ -123,12 +124,19 @@ GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
 
   auto free_slot =
       ros2_cuda_ipc_core::LeaseHandle::choose_empty_slot(config_.shm_name);
+  SAMPLE_NODES_TRACE_SLOT_SELECTION(
+      free_slot.has_value() ? static_cast<int32_t>(free_slot.value()) : -1,
+      free_slot.has_value() ? slots_[free_slot.value()].generation : 0,
+      cloud_size_bytes_, config_.device_index, free_slot.has_value() ? 1 : 0);
   if (!free_slot.has_value()) {
     RCLCPP_WARN(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
                 "No available GPU slots (all leases in use)");
     return std::nullopt;
   }
   if (free_slot.value() >= slots_.size()) {
+    SAMPLE_NODES_TRACE_SLOT_SELECTION(static_cast<int32_t>(free_slot.value()),
+                                      0, cloud_size_bytes_,
+                                      config_.device_index, 0);
     RCLCPP_ERROR(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
                  "LeaseHandle returned invalid slot index %u",
                  free_slot.value());
@@ -140,11 +148,17 @@ GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
   auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
       config_.shm_name, slot.index, subscriber_count);
   if (!gen.has_value()) {
+    SAMPLE_NODES_TRACE_GENERATION_BUMP(static_cast<int32_t>(slot.index),
+                                       slot.generation, cloud_size_bytes_,
+                                       config_.device_index, 0);
     RCLCPP_WARN(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
                 "Failed to bump generation for slot %u", slot.index);
     return std::nullopt;
   }
   slot.generation = gen.value();
+  SAMPLE_NODES_TRACE_GENERATION_BUMP(static_cast<int32_t>(slot.index),
+                                     slot.generation, cloud_size_bytes_,
+                                     config_.device_index, 1);
 
   const auto now = std::chrono::steady_clock::now();
   if (subscriber_count > 0 && config_.pending_ttl.count() > 0) {
@@ -163,11 +177,17 @@ GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
 
   err = cudaEventRecord(slot.event, stream_);
   if (err != cudaSuccess) {
+    SAMPLE_NODES_TRACE_EVENT_RECORD(static_cast<int32_t>(slot.index),
+                                    slot.generation, cloud_size_bytes_,
+                                    config_.device_index, 0);
     RCLCPP_ERROR(rclcpp::get_logger("GpuPointCloudPublisherHelper"),
                  "cudaEventRecord failed: %s",
                  cuda_error_to_string(err).c_str());
     return std::nullopt;
   }
+  SAMPLE_NODES_TRACE_EVENT_RECORD(static_cast<int32_t>(slot.index),
+                                  slot.generation, cloud_size_bytes_,
+                                  config_.device_index, 1);
 
   ros2_cuda_ipc_core::PointCloud2View view;
   view.core.dev_ptr = slot.device_ptr;

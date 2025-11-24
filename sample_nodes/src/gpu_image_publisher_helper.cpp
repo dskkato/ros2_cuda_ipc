@@ -5,6 +5,7 @@
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
+#include "sample_nodes/tracing.hpp"
 
 namespace sample_nodes {
 namespace {
@@ -127,12 +128,19 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
 
   auto free_slot =
       ros2_cuda_ipc_core::LeaseHandle::choose_empty_slot(config_.shm_name);
+  SAMPLE_NODES_TRACE_SLOT_SELECTION(
+      free_slot.has_value() ? static_cast<int32_t>(free_slot.value()) : -1,
+      free_slot.has_value() ? slots_[free_slot.value()].generation : 0,
+      frame_size_bytes_, config_.device_index, free_slot.has_value() ? 1 : 0);
   if (!free_slot.has_value()) {
     RCLCPP_WARN(rclcpp::get_logger("GpuImagePublisherHelper"),
                 "No available GPU slots (all leases in use)");
     return std::nullopt;
   }
   if (free_slot.value() >= slots_.size()) {
+    SAMPLE_NODES_TRACE_SLOT_SELECTION(static_cast<int32_t>(free_slot.value()),
+                                      0, frame_size_bytes_,
+                                      config_.device_index, 0);
     RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
                  "LeaseHandle returned invalid slot index %u",
                  free_slot.value());
@@ -144,11 +152,17 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
   auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
       config_.shm_name, slot.index, subscriber_count);
   if (!gen.has_value()) {
+    SAMPLE_NODES_TRACE_GENERATION_BUMP(static_cast<int32_t>(slot.index),
+                                       slot.generation, frame_size_bytes_,
+                                       config_.device_index, 0);
     RCLCPP_WARN(rclcpp::get_logger("GpuImagePublisherHelper"),
                 "Failed to bump generation for slot %u", slot.index);
     return std::nullopt;
   }
   slot.generation = gen.value();
+  SAMPLE_NODES_TRACE_GENERATION_BUMP(static_cast<int32_t>(slot.index),
+                                     slot.generation, frame_size_bytes_,
+                                     config_.device_index, 1);
 
   const auto now = std::chrono::steady_clock::now();
   if (subscriber_count > 0 && config_.pending_ttl.count() > 0) {
@@ -157,31 +171,52 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
     slot.pending_deadline = {};
   }
 
+  SAMPLE_NODES_TRACE_CUDA_MEMSET_START(static_cast<int32_t>(slot.index),
+                                       slot.generation, frame_size_bytes_,
+                                       config_.device_index);
   cudaError_t err =
       cudaMemsetAsync(slot.device_ptr, fill_value, frame_size_bytes_, stream_);
   if (err != cudaSuccess) {
+    SAMPLE_NODES_TRACE_CUDA_MEMSET_STOP(static_cast<int32_t>(slot.index),
+                                        slot.generation, frame_size_bytes_,
+                                        config_.device_index, 0);
     RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
                  "cudaMemsetAsync failed: %s",
                  cuda_error_to_string(err).c_str());
     return std::nullopt;
   }
+  SAMPLE_NODES_TRACE_CUDA_MEMSET_STOP(static_cast<int32_t>(slot.index),
+                                      slot.generation, frame_size_bytes_,
+                                      config_.device_index, 1);
 
   err = cudaEventRecord(slot.event, stream_);
   if (err != cudaSuccess) {
+    SAMPLE_NODES_TRACE_EVENT_RECORD(static_cast<int32_t>(slot.index),
+                                    slot.generation, frame_size_bytes_,
+                                    config_.device_index, 0);
     RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
                  "cudaEventRecord failed: %s",
                  cuda_error_to_string(err).c_str());
     return std::nullopt;
   }
+  SAMPLE_NODES_TRACE_EVENT_RECORD(static_cast<int32_t>(slot.index),
+                                  slot.generation, frame_size_bytes_,
+                                  config_.device_index, 1);
 
   // optional wait to ensure data ready for demo (event ensures consumer waits)
   err = cudaStreamSynchronize(stream_);
   if (err != cudaSuccess) {
+    SAMPLE_NODES_TRACE_STREAM_SYNC(static_cast<int32_t>(slot.index),
+                                   slot.generation, frame_size_bytes_,
+                                   config_.device_index, 0);
     RCLCPP_ERROR(rclcpp::get_logger("GpuImagePublisherHelper"),
                  "cudaStreamSynchronize failed: %s",
                  cuda_error_to_string(err).c_str());
     return std::nullopt;
   }
+  SAMPLE_NODES_TRACE_STREAM_SYNC(static_cast<int32_t>(slot.index),
+                                 slot.generation, frame_size_bytes_,
+                                 config_.device_index, 1);
 
   ros2_cuda_ipc_core::ImageView view;
   view.core.dev_ptr = slot.device_ptr;

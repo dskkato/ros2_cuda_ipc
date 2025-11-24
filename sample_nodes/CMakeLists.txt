@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+option(SAMPLE_NODES_ENABLE_TRACING "Enable LTTng tracepoints for sample_nodes" OFF)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra)
 endif()
@@ -16,9 +18,18 @@ find_package(ros2_cuda_ipc_core REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
+if(SAMPLE_NODES_ENABLE_TRACING)
+  find_package(LTTngUST QUIET)
+  if(NOT LTTngUST_FOUND)
+    message(WARNING "LTTngUST not found; disabling SAMPLE_NODES_ENABLE_TRACING")
+    set(SAMPLE_NODES_ENABLE_TRACING OFF)
+  endif()
+endif()
+
 add_library(sample_nodes_helpers
   src/gpu_image_publisher_helper.cpp
   src/gpu_pointcloud_publisher_helper.cpp
+  $<$<BOOL:${SAMPLE_NODES_ENABLE_TRACING}>:src/tracing.cpp>
 )
 
 target_include_directories(sample_nodes_helpers
@@ -33,6 +44,18 @@ ament_target_dependencies(sample_nodes_helpers
   ros2_cuda_ipc_core
   ros2_cuda_ipc_msgs
 )
+
+if(SAMPLE_NODES_ENABLE_TRACING)
+  if(TARGET LTTng::UST)
+    target_compile_definitions(sample_nodes_helpers PUBLIC SAMPLE_NODES_ENABLE_TRACING)
+    target_link_libraries(sample_nodes_helpers LTTng::UST)
+  elseif(TARGET LTTngUST::lttng-ust)
+    target_compile_definitions(sample_nodes_helpers PUBLIC SAMPLE_NODES_ENABLE_TRACING)
+    target_link_libraries(sample_nodes_helpers LTTngUST::lttng-ust)
+  else()
+    message(WARNING "No LTTng UST target available; disabling tracing support")
+  endif()
+endif()
 
 target_link_libraries(sample_nodes_helpers
   CUDA::cudart
