@@ -1,5 +1,3 @@
-#pragma once
-
 #include <cstdint>
 
 #define TRACEPOINT_PROVIDER sample_nodes
