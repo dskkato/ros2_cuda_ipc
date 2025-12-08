@@ -129,8 +129,6 @@ ros2 run sample_nodes gpu_image_subscriber
 ros2 run sample_nodes gpu_pointcloud_subscriber
 ```
 
-トレース取得に必要な LTTng / ros2_tracing のセットアップ手順は [doc/tracing.md](doc/tracing.md) を参照してください。
-
 ## コアコンポーネントとヘルパー
 
 - `ros2_cuda_ipc_core::ImageView` / `PointCloud2View`: CUDA IPC ハンドルを ROS 2 メッセージとして受け渡すための型アダプタ。`ros2_cuda_ipc_core/include/ros2_cuda_ipc_core` に実装があります。
