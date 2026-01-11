@@ -1,5 +1,3 @@
-#include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -7,8 +5,8 @@
 #include <string>
 
 #include "julia_set/julia_publisher_helper.hpp"
+#include "julia_set/memory_backend_utils.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
@@ -40,22 +38,6 @@ ros2_cuda_ipc_core::DType parse_dtype(const std::string &name) {
     return ros2_cuda_ipc_core::DType::U32;
   }
   throw std::runtime_error("Unsupported dtype: " + name);
-}
-
-ros2_cuda_ipc_core::MemoryBackendKind parse_memory_backend(
-    std::string name, const rclcpp::Logger &logger) {
-  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
-    return static_cast<char>(std::tolower(c));
-  });
-  if (name == "cuda" || name == "cuda_ipc" || name == "ipc") {
-    return ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
-  }
-  if (name == "vmm_fd" || name == "vmm-fd" || name == "vmm" || name == "fd") {
-    return ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD;
-  }
-  RCLCPP_WARN(logger, "Unknown memory_backend='%s'; defaulting to CUDA IPC",
-              name.c_str());
-  return ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
 }
 
 }  // namespace
