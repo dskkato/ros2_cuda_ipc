@@ -12,6 +12,7 @@
 
 #### BufferCore
 
+* backend 識別子（CUDA IPC / VMM + FD）
 * CUDA IPC ハンドル (mem_handle, event_handle)
 * 参照カウント用共有メモリ名 (shm_name)
 * 識別情報 (device_id, slot_id, generation)
@@ -21,8 +22,13 @@
 ```msg
 # gpu_zero_copy_msgs/msg/BufferCore.msg
 
-# CUDA IPC handles (opaque bytes)
-uint8[64] mem_handle        # cudaIpcMemHandle_t
+# Memory backend type
+uint8 CUDA_IPC=0
+uint8 VMM_FD=1
+uint8 backend
+
+# CUDA IPC handles / backend payload (opaque bytes)
+uint8[64] mem_handle        # cudaIpcMemHandle_t (CUDA_IPC) or uuid bytes (VMM_FD)
 uint8[64] event_handle      # cudaIpcEventHandle_t
 
 # Shared memory for reference counting
@@ -148,6 +154,53 @@ private:
 BufferView 自体はハンドルの開閉を行わず、TypeAdapter が初回に開いたハンドルを
 プロセス内で共有する。これにより CopyConstructible という rclcpp の要件を
 満たしつつ、フレームごとの open/close コストを排除する。
+
+#### MemoryBackend の抽象化
+
+BufferView がハンドルを開く処理は MemoryBackend に委譲し、`BufferCore.backend`
+で現在の backend を識別する。
+
+* `backend=CUDA_IPC` (0): mem\_handle/event\_handle ともに従来どおり CUDA IPC のハンドルを内包する。
+* `backend=VMM_FD` (1): mem\_handle には FD を引くための uuid（最大 64 byte）を格納し、実ハンドルは
+  OS レベルで共有した FD から `cuMemImportFromShareableHandle` で復元する。event\_handle は引き続き
+  `cudaIpcEventHandle_t` を利用する。
+
+MemoryBackend は「BufferCore へのシリアライズ」「dev\_ptr 取得」「クリーンアップ」の 3 点をラップする
+薄いクラスで、BufferView は backend に応じた open 処理をキャッシュ層経由で呼び分けるだけで済む。
+イベントハンドル（`cudaIpcEventHandle_t`）は共通実装を維持し、CUDA IPC ベースの同期を継続する。
+
+##### x86 + dGPU: 既存の cudaIpcMemHandle_t パス
+
+* Publisher は各 Slot の VRAM を `cudaMalloc` で確保し、`cudaIpcGetMemHandle`/`cudaIpcGetEventHandle`
+  でハンドルを生成して BufferCore に埋め込む（`backend=CUDA_IPC`）。
+* Subscriber は `cudaIpcOpenMemHandle`/`cudaIpcOpenEventHandle` で BufferView を構築し、slot\_id +
+  generation で世代管理する実装を据え置く。
+* BufferCore.msg の `backend` フィールドが追加された以外は既存の設計と互換であり、x86+dGPU
+  環境では MemoryBackend の実装を差し替える必要がない。
+
+##### Jetson Orin: CUDA VMM + FD 配布
+
+Jetson Orin は CUDA IPC のメモリ共有をサポートしていないため、CUDA VMM (`cuMemCreate`) で確保した
+GPU メモリを「Shareable FD」として扱い、`backend=VMM_FD` で配布する。
+
+1. **publisher 側の準備**
+   * Slot ごとに uuid（例: `8-4-4-4-12` 形式）を払い出し、`mem_handle` に詰める。
+   * `cuMemCreate` で確保したハンドルを `cuMemExportToShareableHandle` で FD 化し、uuid ごとに
+     `/tmp/cuda_memory_pool_<uuid>.sock` の Unix domain socket を作成。
+   * Subscriber からの接続を待ち、`SCM_RIGHTS` で FD を配布する。FD を持つプロセスは
+     `cuMemImportFromShareableHandle` で VMM アドレス空間にマップできる。
+2. **ROS 2 publish**
+   * ROS メッセージには slot\_id、generation、`cudaIpcEventHandle_t` と uuid（mem\_handle）だけを入れる。
+     メモリ自体は FD 配布済みなので、フレームごとに再送する必要がない。
+   * Subscriber は `mem_handle` から uuid を引き、まだ FD を import していなければ Unix ソケット経由で取得
+     し、`cuMemImportFromShareableHandle` でデバイスポインタを確立する。ready イベントは従来通り
+     `cudaIpcOpenEventHandle` で開く。
+3. **BufferView と世代管理**
+   * slot\_id + generation によりメモリ再初期化を検出し、FD の差し替えや VMM unmap をトリガーする。
+   * Backend が異なる場合でも BufferView の API は同じで、`backend` による切替は内部実装に留める。
+
+この設計により、GPU メモリの配布方法だけを backend で差し替えて、ROS 2 メッセージ形式と
+BufferView/TypeAdapter の API を維持したまま Jetson Orin をサポートできる。
 
 #### ImageView（BufferView + 薄い解釈）
 

@@ -1,3 +1,8 @@
+# Memory backend type
+uint8 CUDA_IPC=0
+uint8 VMM_FD=1
+uint8 backend
+
 # CUDA IPC handles (opaque byte arrays)
 uint8[64] mem_handle
 uint8[64] event_handle
