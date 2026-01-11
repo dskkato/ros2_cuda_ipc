@@ -32,9 +32,21 @@ inline constexpr MemoryBackendKind backend_from_byte(uint8_t value) noexcept {
   }
 }
 
+inline bool is_safe_uuid_char(char c) noexcept {
+  // Allow only alphanumeric characters and hyphens to avoid path traversal.
+  return (c >= '0' && c <= '9') ||
+         (c >= 'A' && c <= 'Z') ||
+         (c >= 'a' && c <= 'z') ||
+         (c == '-');
+}
+
 inline std::string build_memory_socket_path(std::string_view uuid) {
   std::string path = "/tmp/cuda_memory_pool_";
-  path.append(uuid.begin(), uuid.end());
+  for (char c : uuid) {
+    if (is_safe_uuid_char(c)) {
+      path.push_back(c);
+    }
+  }
   path.append(".sock");
   return path;
 }

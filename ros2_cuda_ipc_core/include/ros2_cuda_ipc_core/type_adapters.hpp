@@ -144,7 +144,7 @@ inline std::optional<VmmPayload> parse_vmm_payload(
                 "Received VMM_FD backend payload without UUID bytes set");
     return std::nullopt;
   }
-  if (length >= payload.size()) {
+  if (length > payload.size()) {
     length = payload.size() - 1;
   }
   VmmPayload result;

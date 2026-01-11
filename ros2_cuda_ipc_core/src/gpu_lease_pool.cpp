@@ -48,15 +48,20 @@ uint64_t align_up(uint64_t value, uint64_t alignment) {
 std::string cu_result_to_string(CUresult result) {
   const char *name = nullptr;
   const char *desc = nullptr;
-  cuGetErrorName(result, &name);
-  cuGetErrorString(result, &desc);
-  if (!name) {
+
+  // Attempt to retrieve human-readable error name and description.
+  // Fall back to default strings if the CUDA calls fail or return null.
+  CUresult name_result = cuGetErrorName(result, &name);
+  if (name_result != CUDA_SUCCESS || !name) {
     name = "UNKNOWN";
   }
-  if (!desc) {
+
+  CUresult desc_result = cuGetErrorString(result, &desc);
+  if (desc_result != CUDA_SUCCESS || !desc) {
     desc = "unknown";
   }
-  return std::string(name) + ": " + desc;
+
+  return std::string{name} + ": " + desc;
 }
 
 void store_u64_le(uint8_t *dest, uint64_t value) {
