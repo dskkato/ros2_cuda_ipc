@@ -1,5 +1,7 @@
 #include <cuda_runtime_api.h>
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -11,6 +13,7 @@
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
+#include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
@@ -19,6 +22,27 @@ namespace julia_set {
 using ros2_cuda_ipc_core::NvtxScopedRange;
 using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
 using ros2_cuda_ipc_core::cuda::GpuLeasePool;
+
+namespace {
+
+ros2_cuda_ipc_core::MemoryBackendKind parse_memory_backend(
+    std::string name, const rclcpp::Logger &logger) {
+  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (name == "cuda" || name == "cuda_ipc" || name == "ipc") {
+    return ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
+  }
+  if (name == "vmm_fd" || name == "vmm-fd" || name == "vmm" || name == "fd") {
+    return ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD;
+  }
+
+  RCLCPP_WARN(logger, "Unknown memory_backend='%s'; defaulting to CUDA IPC",
+              name.c_str());
+  return ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
+}
+
+}  // namespace
 
 class ColorizeNode : public rclcpp::Node {
  public:
@@ -37,7 +61,11 @@ class ColorizeNode : public rclcpp::Node {
             declare_parameter<int>("output_slot_count", 4))),
         pending_ttl_(std::chrono::milliseconds(
             declare_parameter<int>("output_pending_ttl_ms", 300))),
-        pool_({output_shm_name_, slot_count_, pending_ttl_}, get_logger()),
+        backend_(parse_memory_backend(
+            declare_parameter<std::string>("memory_backend", "cuda_ipc"),
+            get_logger())),
+        pool_({output_shm_name_, slot_count_, pending_ttl_, backend_},
+              get_logger()),
         output_encoding_(
             declare_parameter<std::string>("output_encoding", "rgb8")) {
     if (output_channels_ < 3) {
@@ -50,8 +78,9 @@ class ColorizeNode : public rclcpp::Node {
       RCLCPP_WARN(get_logger(),
                   "output_slot_count was zero; defaulting to 1 slot");
       slot_count_ = 1;
-      pool_ = GpuLeasePool({output_shm_name_, slot_count_, pending_ttl_},
-                           get_logger());
+      pool_ =
+          GpuLeasePool({output_shm_name_, slot_count_, pending_ttl_, backend_},
+                       get_logger());
     }
 
     const cudaError_t err =
@@ -245,7 +274,8 @@ class ColorizeNode : public rclcpp::Node {
     view.core.slot_id = slot.index;
     view.core.generation = slot.generation;
     view.core.shm_name = output_shm_name_;
-    view.core.set_ipc_handles(slot.mem_handle, slot.event_handle);
+    view.core.set_memory_handles(slot.backend, slot.mem_handle.data(),
+                                 slot.mem_handle.size(), slot.event_handle);
     view.dtype = ros2_cuda_ipc_core::DType::U8;
     view.shape = {height_, width_, output_channels_};
     view.strides = {static_cast<uint64_t>(width_) * output_channels_,
@@ -267,6 +297,8 @@ class ColorizeNode : public rclcpp::Node {
   uint32_t output_channels_ = 3;
   std::size_t slot_count_ = 0;
   std::chrono::milliseconds pending_ttl_{300};
+  ros2_cuda_ipc_core::MemoryBackendKind backend_ =
+      ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
   GpuLeasePool pool_;
   std::string output_encoding_;
 };

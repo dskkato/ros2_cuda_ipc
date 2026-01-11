@@ -10,6 +10,7 @@
 #include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
+#include "ros2_cuda_ipc_core/memory_types.hpp"
 
 namespace julia_set {
 
@@ -31,6 +32,8 @@ class JuliaPublisherHelper {
     float constant_real = -0.8f;
     float constant_imag = 0.156f;
     uint32_t max_iterations = 300;
+    ros2_cuda_ipc_core::MemoryBackendKind backend =
+        ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
   };
 
   JuliaPublisherHelper(const Config &config, const rclcpp::Logger &logger);

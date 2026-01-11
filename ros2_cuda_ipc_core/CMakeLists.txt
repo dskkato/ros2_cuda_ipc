@@ -17,6 +17,10 @@ find_package(rosidl_default_runtime REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_library(UUID_LIB uuid)
+if(NOT UUID_LIB)
+  message(FATAL_ERROR "Failed to find libuuid (uuid)")
+endif()
 
 add_library(${PROJECT_NAME}
   src/buffer_view.cpp
@@ -41,7 +45,7 @@ ament_target_dependencies(${PROJECT_NAME}
   std_msgs
 )
 
-target_link_libraries(${PROJECT_NAME} CUDA::cudart)
+target_link_libraries(${PROJECT_NAME} CUDA::cudart CUDA::cuda_driver ${UUID_LIB})
 
 install(TARGETS ${PROJECT_NAME}
   EXPORT export_${PROJECT_NAME}

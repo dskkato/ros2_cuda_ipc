@@ -54,7 +54,8 @@ JuliaPublisherHelper::JuliaPublisherHelper(const Config &config,
                                            const rclcpp::Logger &logger)
     : config_(config),
       logger_(logger),
-      pool_({config_.shm_name, config_.slot_count, config_.pending_ttl},
+      pool_({config_.shm_name, config_.slot_count, config_.pending_ttl,
+             config_.backend},
             logger_.get_child("GpuLeasePool")) {
   if (config_.slot_count == 0) {
     throw std::runtime_error("slot_count must be greater than zero");
@@ -160,7 +161,8 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
   view.core.slot_id = slot->index;
   view.core.generation = slot->generation;
   view.core.shm_name = config_.shm_name;
-  view.core.set_ipc_handles(slot->mem_handle, slot->event_handle);
+  view.core.set_memory_handles(slot->backend, slot->mem_handle.data(),
+                               slot->mem_handle.size(), slot->event_handle);
   view.dtype = config_.dtype;
   view.shape = {config_.height, config_.width, config_.channels};
   const uint64_t elem_size = dtype_bytes(config_.dtype);

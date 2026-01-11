@@ -41,6 +41,11 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("frame_id", default_value="julia_frame"),
         DeclareLaunchArgument("shm_name", default_value="/ros2_cuda_ipc_julia"),
         DeclareLaunchArgument("device_index", default_value="0"),
+        DeclareLaunchArgument(
+            "memory_backend",
+            default_value="cuda_ipc",
+            description="Memory backend: cuda_ipc or vmm_fd",
+        ),
         DeclareLaunchArgument("topic_name", default_value="julia_set/image"),
         DeclareLaunchArgument(
             "colorized_topic_name", default_value="julia_set/colorized"
@@ -95,6 +100,7 @@ def launch_setup(context) -> List[Node]:
     channels = as_int("channels")
     max_iterations = as_int("max_iterations")
     device_index = as_int("device_index")
+    memory_backend = value("memory_backend")
     zoom = as_float("zoom")
     offset_x = as_float("offset_x")
     offset_y = as_float("offset_y")
@@ -143,6 +149,7 @@ def launch_setup(context) -> List[Node]:
         "shm_name": shm_name,
         "device_index": device_index,
         "topic_name": topic_name,
+        "memory_backend": memory_backend,
     }
 
     publisher_kwargs = dict(
@@ -168,6 +175,7 @@ def launch_setup(context) -> List[Node]:
         "output_channels": 3,
         "output_encoding": "rgb8",
         "output_shm_name": colorize_shm_name,
+        "memory_backend": memory_backend,
     }
 
     colorize_kwargs = dict(

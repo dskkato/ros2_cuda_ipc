@@ -1,19 +1,31 @@
 #pragma once
 
+#include <cuda.h>
 #include <cuda_runtime_api.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
+#include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <rclcpp/logging.hpp>
 #include <rclcpp/type_adapter.hpp>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "ros2_cuda_ipc_core/buffer_view.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/pointcloud2_view.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
@@ -26,17 +38,18 @@ namespace ros2_cuda_ipc_core {
 namespace detail {
 
 struct IpcHandleKey {
-  std::array<uint8_t, sizeof(cudaIpcMemHandle_t)> mem{};
+  uint8_t backend = 0;
+  MemoryHandlePayload mem{};
   std::array<uint8_t, sizeof(cudaIpcEventHandle_t)> evt{};
 
   bool operator==(const IpcHandleKey &other) const noexcept {
-    return mem == other.mem && evt == other.evt;
+    return backend == other.backend && mem == other.mem && evt == other.evt;
   }
 };
 
 struct IpcHandleKeyHash {
   std::size_t operator()(const IpcHandleKey &key) const noexcept {
-    std::size_t hash = 0;
+    std::size_t hash = key.backend;
     for (uint8_t byte : key.mem) {
       hash = hash * 131U + byte;
     }
@@ -50,6 +63,9 @@ struct IpcHandleKeyHash {
 struct CachedIpcHandles {
   void *dev_ptr = nullptr;
   cudaEvent_t event = nullptr;
+  CUdeviceptr vmm_address = 0;
+  CUmemGenericAllocationHandle vmm_allocation = 0;
+  std::size_t allocation_size = 0;
 };
 
 inline std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash> &
@@ -65,6 +81,235 @@ ipc_handle_cache() {
 inline std::mutex &ipc_handle_cache_mutex() {
   static std::mutex mutex;
   return mutex;
+}
+
+inline std::string cu_result_to_string(CUresult result) {
+  const char *name = nullptr;
+  const char *desc = nullptr;
+  cuGetErrorName(result, &name);
+  cuGetErrorString(result, &desc);
+  if (!name) {
+    name = "UNKNOWN";
+  }
+  if (!desc) {
+    desc = "unknown";
+  }
+  return std::string(name) + ": " + desc;
+}
+
+inline bool ensure_cuda_driver_initialised(const rclcpp::Logger &logger) {
+  static std::once_flag once;
+  static CUresult init_status = CUDA_SUCCESS;
+  std::call_once(once, [&]() { init_status = cuInit(0); });
+  if (init_status != CUDA_SUCCESS) {
+    RCLCPP_ERROR(logger, "cuInit failed: %s",
+                 cu_result_to_string(init_status).c_str());
+    return false;
+  }
+  return true;
+}
+
+inline uint64_t load_u64_le(const uint8_t *data) {
+  uint64_t value = 0;
+  for (int i = 7; i >= 0; --i) {
+    value = (value << 8) | data[i];
+  }
+  return value;
+}
+
+inline void store_u64_le(uint8_t *dest, uint64_t value) {
+  for (int i = 0; i < 8; ++i) {
+    dest[i] = static_cast<uint8_t>(value & 0xFF);
+    value >>= 8;
+  }
+}
+
+struct VmmPayload {
+  std::string uuid;
+  std::size_t allocation_size = 0;
+};
+
+inline std::optional<VmmPayload> parse_vmm_payload(
+    const MemoryHandlePayload &payload, const rclcpp::Logger &logger) {
+  std::size_t length = 0;
+  while (length < payload.size()) {
+    const uint8_t byte = payload[length];
+    if (byte == 0) {
+      break;
+    }
+    ++length;
+  }
+  if (length == 0) {
+    RCLCPP_WARN(logger,
+                "Received VMM_FD backend payload without UUID bytes set");
+    return std::nullopt;
+  }
+  if (length >= payload.size()) {
+    length = payload.size() - 1;
+  }
+  VmmPayload result;
+  result.uuid.assign(reinterpret_cast<const char *>(payload.data()), length);
+  if (result.uuid.size() >= sizeof(sockaddr_un::sun_path)) {
+    RCLCPP_WARN(logger, "UUID %s is too long for AF_UNIX path",
+                result.uuid.c_str());
+    return std::nullopt;
+  }
+  if (payload.size() >= 64) {
+    result.allocation_size =
+        static_cast<std::size_t>(load_u64_le(payload.data() + 56));
+  }
+  return result;
+}
+
+inline std::optional<int> request_fd_from_publisher(
+    const std::string &path, const rclcpp::Logger &logger) {
+  int sock = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+  if (sock < 0) {
+    if (errno == EINVAL || errno == EPROTOTYPE) {
+      sock = ::socket(AF_UNIX, SOCK_STREAM, 0);
+      if (sock >= 0) {
+        fcntl(sock, F_SETFD, FD_CLOEXEC);
+      }
+    }
+  }
+  if (sock < 0) {
+    RCLCPP_WARN(logger, "socket(AF_UNIX) failed: %s", strerror(errno));
+    return std::nullopt;
+  }
+
+  sockaddr_un addr{};
+  addr.sun_family = AF_UNIX;
+  if (path.size() >= sizeof(addr.sun_path)) {
+    RCLCPP_WARN(logger, "Socket path %s is too long", path.c_str());
+    ::close(sock);
+    return std::nullopt;
+  }
+  std::strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+  if (::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+    RCLCPP_WARN(logger, "connect(%s) failed: %s", path.c_str(),
+                strerror(errno));
+    ::close(sock);
+    return std::nullopt;
+  }
+
+  char buf = 0;
+  struct iovec iov {
+    &buf, 1
+  };
+  alignas(struct cmsghdr) char cmsg_buf[CMSG_SPACE(sizeof(int))];
+  struct msghdr msg {};
+  msg.msg_iov = &iov;
+  msg.msg_iovlen = 1;
+  msg.msg_control = cmsg_buf;
+  msg.msg_controllen = sizeof(cmsg_buf);
+  const ssize_t received = ::recvmsg(sock, &msg, 0);
+  if (received <= 0) {
+    RCLCPP_WARN(logger, "recvmsg on %s failed: %s", path.c_str(),
+                strerror(errno));
+    ::close(sock);
+    return std::nullopt;
+  }
+
+  cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  if (!cmsg || cmsg->cmsg_level != SOL_SOCKET ||
+      cmsg->cmsg_type != SCM_RIGHTS || cmsg->cmsg_len < CMSG_LEN(sizeof(int))) {
+    RCLCPP_WARN(logger, "recvmsg on %s missing SCM_RIGHTS payload",
+                path.c_str());
+    ::close(sock);
+    return std::nullopt;
+  }
+
+  int fd = -1;
+  std::memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
+  ::close(sock);
+  if (fd < 0) {
+    RCLCPP_WARN(logger, "recvmsg returned invalid fd for %s", path.c_str());
+    return std::nullopt;
+  }
+  return fd;
+}
+
+struct VmmOpenResult {
+  void *dev_ptr = nullptr;
+  CUdeviceptr address = 0;
+  CUmemGenericAllocationHandle allocation = 0;
+  std::size_t allocation_size = 0;
+};
+
+inline std::optional<VmmOpenResult> open_vmm_allocation(
+    const MemoryHandlePayload &payload, uint32_t device_id,
+    std::size_t fallback_size, const rclcpp::Logger &logger) {
+  auto meta = parse_vmm_payload(payload, logger);
+  if (!meta.has_value()) {
+    return std::nullopt;
+  }
+  if (!ensure_cuda_driver_initialised(logger)) {
+    return std::nullopt;
+  }
+  const auto socket_path = build_memory_socket_path(meta->uuid);
+  auto fd_opt = request_fd_from_publisher(socket_path, logger);
+  if (!fd_opt.has_value()) {
+    return std::nullopt;
+  }
+  const int fd = fd_opt.value();
+  CUmemGenericAllocationHandle allocation = 0;
+  void *os_handle = reinterpret_cast<void *>(static_cast<intptr_t>(fd));
+  CUresult cu_res = cuMemImportFromShareableHandle(
+      &allocation, os_handle, CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR);
+  ::close(fd);
+  if (cu_res != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuMemImportFromShareableHandle failed: %s",
+                cu_result_to_string(cu_res).c_str());
+    return std::nullopt;
+  }
+
+  std::size_t allocation_size =
+      meta->allocation_size > 0 ? meta->allocation_size : fallback_size;
+  if (allocation_size == 0) {
+    RCLCPP_WARN(logger, "VMM payload for uuid %s lacked allocation size",
+                meta->uuid.c_str());
+    cuMemRelease(allocation);
+    return std::nullopt;
+  }
+
+  CUdeviceptr address = 0;
+  cu_res = cuMemAddressReserve(&address, allocation_size, 0, 0, 0);
+  if (cu_res != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuMemAddressReserve failed: %s",
+                cu_result_to_string(cu_res).c_str());
+    cuMemRelease(allocation);
+    return std::nullopt;
+  }
+
+  cu_res = cuMemMap(address, allocation_size, 0, allocation, 0);
+  if (cu_res != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuMemMap failed: %s",
+                cu_result_to_string(cu_res).c_str());
+    cuMemAddressFree(address, allocation_size);
+    cuMemRelease(allocation);
+    return std::nullopt;
+  }
+
+  CUmemAccessDesc access_desc{};
+  access_desc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+  access_desc.location.id = static_cast<int>(device_id);
+  access_desc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+  cu_res = cuMemSetAccess(address, allocation_size, &access_desc, 1);
+  if (cu_res != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuMemSetAccess failed: %s",
+                cu_result_to_string(cu_res).c_str());
+    cuMemUnmap(address, allocation_size);
+    cuMemAddressFree(address, allocation_size);
+    cuMemRelease(allocation);
+    return std::nullopt;
+  }
+
+  VmmOpenResult result;
+  result.dev_ptr = reinterpret_cast<void *>(address);
+  result.address = address;
+  result.allocation = allocation;
+  result.allocation_size = allocation_size;
+  return result;
 }
 
 }  // namespace detail
@@ -90,9 +335,10 @@ inline void fill_buffer_core_message(const BufferView &view,
   msg.slot_id = view.slot_id;
   msg.generation = view.generation;
   msg.byte_size = view.byte_size;
+  msg.backend = ros2_cuda_ipc_core::to_backend_byte(view.backend());
   if (view.handles_ready()) {
-    std::memcpy(msg.mem_handle.data(), &view.mem_handle(),
-                sizeof(cudaIpcMemHandle_t));
+    const auto &payload = view.mem_payload();
+    std::memcpy(msg.mem_handle.data(), payload.data(), payload.size());
     std::memcpy(msg.event_handle.data(), &view.event_handle(),
                 sizeof(cudaIpcEventHandle_t));
   } else {
@@ -122,6 +368,9 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
                                 custom_type &view) {
     view.reset();
 
+    const auto backend = ros2_cuda_ipc_core::backend_from_byte(
+        static_cast<uint8_t>(msg.backend));
+
     auto lease = ros2_cuda_ipc_core::LeaseHandle::acquire(
         msg.shm_name, msg.slot_id, msg.generation);
     if (!lease.valid()) {
@@ -135,12 +384,12 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     auto lease_ptr =
         std::make_shared<ros2_cuda_ipc_core::LeaseHandle>(std::move(lease));
 
-    cudaIpcMemHandle_t mem_handle = ros2_cuda_ipc_core::to_cuda_mem_handle(msg);
     cudaIpcEventHandle_t event_handle =
         ros2_cuda_ipc_core::to_cuda_event_handle(msg);
 
     ros2_cuda_ipc_core::detail::IpcHandleKey key{};
-    std::memcpy(key.mem.data(), &mem_handle, sizeof(mem_handle));
+    key.backend = static_cast<uint8_t>(msg.backend);
+    key.mem = msg.mem_handle;
     std::memcpy(key.evt.data(), &event_handle, sizeof(event_handle));
 
     void *dev_ptr = nullptr;
@@ -158,37 +407,86 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     }
 
     if (!dev_ptr || !evt) {
-      auto err = cudaIpcOpenMemHandle(&dev_ptr, mem_handle,
-                                      cudaIpcMemLazyEnablePeerAccess);
-      if (err != cudaSuccess) {
-        RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
-                    "cudaIpcOpenMemHandle failed: %s", cudaGetErrorString(err));
-        view = ros2_cuda_ipc_core::BufferView{};
-        return;
-      }
-
-      err = cudaIpcOpenEventHandle(&evt, event_handle);
-      if (err != cudaSuccess) {
-        cudaIpcCloseMemHandle(dev_ptr);
-        RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
-                    "cudaIpcOpenEventHandle failed: %s",
-                    cudaGetErrorString(err));
-        view = ros2_cuda_ipc_core::BufferView{};
-        return;
-      }
-
-      {
-        std::lock_guard<std::mutex> lock(
-            ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
-        auto &cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
-        auto [it, inserted] = cache.emplace(
-            key, ros2_cuda_ipc_core::detail::CachedIpcHandles{dev_ptr, evt});
-        if (!inserted) {
-          // Another thread populated the cache while we were opening.
+      if (backend == ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC) {
+        cudaIpcMemHandle_t mem_handle =
+            ros2_cuda_ipc_core::to_cuda_mem_handle(msg);
+        auto err = cudaIpcOpenMemHandle(&dev_ptr, mem_handle,
+                                        cudaIpcMemLazyEnablePeerAccess);
+        if (err != cudaSuccess) {
+          RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
+                      "cudaIpcOpenMemHandle failed: %s",
+                      cudaGetErrorString(err));
+          view = ros2_cuda_ipc_core::BufferView{};
+          return;
+        }
+        err = cudaIpcOpenEventHandle(&evt, event_handle);
+        if (err != cudaSuccess) {
           cudaIpcCloseMemHandle(dev_ptr);
-          cudaEventDestroy(evt);
-          dev_ptr = it->second.dev_ptr;
-          evt = it->second.event;
+          RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
+                      "cudaIpcOpenEventHandle failed: %s",
+                      cudaGetErrorString(err));
+          view = ros2_cuda_ipc_core::BufferView{};
+          return;
+        }
+        {
+          std::lock_guard<std::mutex> lock(
+              ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
+          auto &cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
+          auto [it, inserted] = cache.emplace(
+              key, ros2_cuda_ipc_core::detail::CachedIpcHandles{dev_ptr, evt});
+          if (!inserted) {
+            cudaIpcCloseMemHandle(dev_ptr);
+            cudaEventDestroy(evt);
+            dev_ptr = it->second.dev_ptr;
+            evt = it->second.event;
+          }
+        }
+      } else if (backend == ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD) {
+        auto logger = rclcpp::get_logger("ros2_cuda_ipc_core.BufferView");
+        auto vmm_result = ros2_cuda_ipc_core::detail::open_vmm_allocation(
+            msg.mem_handle, msg.device_id,
+            static_cast<std::size_t>(msg.byte_size), logger);
+        if (!vmm_result.has_value()) {
+          view = ros2_cuda_ipc_core::BufferView{};
+          return;
+        }
+        dev_ptr = vmm_result->dev_ptr;
+        auto err = cudaIpcOpenEventHandle(&evt, event_handle);
+        if (err != cudaSuccess) {
+          RCLCPP_WARN(logger,
+                      "cudaIpcOpenEventHandle failed for VMM backend: %s",
+                      cudaGetErrorString(err));
+          ros2_cuda_ipc_core::detail::CachedIpcHandles cleanup{
+              dev_ptr, nullptr, vmm_result->address, vmm_result->allocation,
+              vmm_result->allocation_size};
+          if (cleanup.vmm_address) {
+            cuMemUnmap(cleanup.vmm_address, cleanup.allocation_size);
+            cuMemAddressFree(cleanup.vmm_address, cleanup.allocation_size);
+          }
+          if (cleanup.vmm_allocation) {
+            cuMemRelease(cleanup.vmm_allocation);
+          }
+          view = ros2_cuda_ipc_core::BufferView{};
+          return;
+        }
+
+        {
+          std::lock_guard<std::mutex> lock(
+              ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
+          auto &cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
+          auto [it, inserted] = cache.emplace(
+              key, ros2_cuda_ipc_core::detail::CachedIpcHandles{
+                       dev_ptr, evt, vmm_result->address,
+                       vmm_result->allocation, vmm_result->allocation_size});
+          if (!inserted) {
+            // Another thread populated the cache while we were opening.
+            cuMemUnmap(vmm_result->address, vmm_result->allocation_size);
+            cuMemAddressFree(vmm_result->address, vmm_result->allocation_size);
+            cuMemRelease(vmm_result->allocation);
+            cudaEventDestroy(evt);
+            dev_ptr = it->second.dev_ptr;
+            evt = it->second.event;
+          }
         }
       }
     }
@@ -202,7 +500,8 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     opened.generation = msg.generation;
     opened.shm_name = msg.shm_name;
     opened.lease = std::move(lease_ptr);
-    opened.set_ipc_handles(mem_handle, event_handle);
+    opened.set_memory_handles(backend, msg.mem_handle.data(),
+                              msg.mem_handle.size(), event_handle);
     view = std::move(opened);
   }
 

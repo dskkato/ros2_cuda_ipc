@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -6,6 +8,7 @@
 
 #include "julia_set/julia_publisher_helper.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
@@ -37,6 +40,22 @@ ros2_cuda_ipc_core::DType parse_dtype(const std::string &name) {
     return ros2_cuda_ipc_core::DType::U32;
   }
   throw std::runtime_error("Unsupported dtype: " + name);
+}
+
+ros2_cuda_ipc_core::MemoryBackendKind parse_memory_backend(
+    std::string name, const rclcpp::Logger &logger) {
+  std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (name == "cuda" || name == "cuda_ipc" || name == "ipc") {
+    return ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
+  }
+  if (name == "vmm_fd" || name == "vmm-fd" || name == "vmm" || name == "fd") {
+    return ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD;
+  }
+  RCLCPP_WARN(logger, "Unknown memory_backend='%s'; defaulting to CUDA IPC",
+              name.c_str());
+  return ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
 }
 
 }  // namespace
@@ -87,6 +106,9 @@ class JuliaSetPublisherNode : public rclcpp::Node {
         static_cast<float>(declare_parameter<double>("constant_imag", 0.156));
     config.max_iterations =
         static_cast<uint32_t>(declare_parameter<int>("max_iterations", 300));
+    const std::string backend_param =
+        declare_parameter<std::string>("memory_backend", "cuda_ipc");
+    config.backend = parse_memory_backend(backend_param, get_logger());
 
     helper_ = std::make_unique<JuliaPublisherHelper>(config, get_logger());
 
