@@ -7,11 +7,11 @@
 #include <string>
 
 #include "julia_set/cuda/julia_kernel.hpp"
-#include "julia_set/memory_backend_utils.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
+#include "ros2_cuda_ipc_core/memory_backend_utils.hpp"
 #include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
@@ -38,7 +38,7 @@ class ColorizeNode : public rclcpp::Node {
             declare_parameter<int>("output_slot_count", 4))),
         pending_ttl_(std::chrono::milliseconds(
             declare_parameter<int>("output_pending_ttl_ms", 300))),
-        backend_(parse_memory_backend(
+        backend_(ros2_cuda_ipc_core::parse_memory_backend(
             declare_parameter<std::string>("memory_backend", "cuda_ipc"),
             get_logger())),
         pool_({output_shm_name_, slot_count_, pending_ttl_, backend_},

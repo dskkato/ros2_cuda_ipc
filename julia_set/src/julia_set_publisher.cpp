@@ -5,8 +5,8 @@
 #include <string>
 
 #include "julia_set/julia_publisher_helper.hpp"
-#include "julia_set/memory_backend_utils.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "ros2_cuda_ipc_core/memory_backend_utils.hpp"
 #include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
@@ -90,7 +90,8 @@ class JuliaSetPublisherNode : public rclcpp::Node {
         static_cast<uint32_t>(declare_parameter<int>("max_iterations", 300));
     const std::string backend_param =
         declare_parameter<std::string>("memory_backend", "cuda_ipc");
-    config.backend = parse_memory_backend(backend_param, get_logger());
+    config.backend =
+        ros2_cuda_ipc_core::parse_memory_backend(backend_param, get_logger());
 
     helper_ = std::make_unique<JuliaPublisherHelper>(config, get_logger());
 
