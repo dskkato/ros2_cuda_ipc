@@ -57,7 +57,13 @@ class UnixFdServer {
   UnixFdServer(std::string socket_path, int fd_to_send, rclcpp::Logger logger)
       : path_(std::move(socket_path)),
         fd_(fd_to_send),
-        logger_(std::move(logger)) {}
+        logger_(std::move(logger)) {
+    if (fd_ < 0) {
+      RCLCPP_ERROR(logger_, "Cannot start UnixFdServer at %s with invalid fd",
+                   path_.c_str());
+      throw std::invalid_argument("Invalid fd for UnixFdServer");
+    }
+  }
 
   ~UnixFdServer() { stop(); }
 
@@ -140,11 +146,9 @@ class UnixFdServer {
 
   void send_fd(int client) {
     char buf = 'F';
-    struct iovec iov {
-      &buf, 1
-    };
+    struct iovec iov{&buf, 1};
     alignas(struct cmsghdr) char cmsg_buf[CMSG_SPACE(sizeof(int))];
-    struct msghdr msg {};
+    struct msghdr msg{};
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
     msg.msg_control = cmsg_buf;
@@ -161,7 +165,7 @@ class UnixFdServer {
   }
 
   std::string path_;
-  int fd_ = -1;
+  const int fd_ = -1;
   int listen_fd_ = -1;
   std::atomic<bool> running_{false};
   std::thread worker_;
