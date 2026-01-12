@@ -45,10 +45,11 @@ uint64_t align_up(uint64_t value, uint64_t alignment) {
 class UnixFdServer {
  public:
   /**
-   * @brief Create a server bound to `socket_path` that distributes `fd_to_send`.
+   * @brief Create a server bound to `socket_path` that distributes
+   * `fd_to_send`.
    *
-   * @param socket_path Filesystem location (e.g. `/tmp/cuda_memory_pool_x.sock`)
-   *        where subscribers will connect.
+   * @param socket_path Filesystem location (e.g.
+   * `/tmp/cuda_memory_pool_x.sock`) where subscribers will connect.
    * @param fd_to_send Shareable FD returned by CUDA; must be >= 0.
    * @param logger Logger for diagnostics.
    *
@@ -72,8 +73,9 @@ class UnixFdServer {
   /**
    * @brief Start listening for client connections.
    *
-   * Creates the `AF_UNIX` socket, removes any stale path, `bind`s and `listen`s,
-   * then spawns a background accept loop that forwards the shareable FD.
+   * Creates the `AF_UNIX` socket, removes any stale path, `bind`s and
+   * `listen`s, then spawns a background accept loop that forwards the shareable
+   * FD.
    *
    * @return true if the server thread started successfully.
    */
@@ -210,6 +212,13 @@ class UnixFdServer {
   rclcpp::Logger logger_;
 };
 
+/**
+ * @brief Runtime state for a VMM-backed slot (address, FD server, etc.).
+ *
+ * Owns the CUDA driver objects and POSIX FD server used to share the
+ * allocation. Destruction tears down the mapping, frees the allocation, closes
+ * the FD, and stops the Unix socket server.
+ */
 struct VmmSlotState : public GpuLeasePool::SlotBackendState {
   ~VmmSlotState() override {
     if (server) {
@@ -237,8 +246,26 @@ struct VmmSlotState : public GpuLeasePool::SlotBackendState {
   std::unique_ptr<UnixFdServer> server;
 };
 
+/**
+ * @brief Memory backend that emulates cudaMalloc via CUDA VMM + shareable FDs.
+ *
+ * Jetson Orin lacks CUDA IPC memory handles, so we allocate memory through the
+ * driver API (`cuMemCreate` + `cuMemMap`) and export a POSIX FD that
+ * subscribers import. Each slot has a dedicated UUID + Unix socket for
+ * distributing the FD.
+ */
 class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
  public:
+  /**
+   * @brief Allocate and share GPU memory for every slot.
+   *
+   * Layout:
+   * 1. Build a `CUmemAllocationProp` that targets the publishing device.
+   * 2. Query the device granularity so we request aligned sizes.
+   * 3. For each slot: reserve address space, create allocation, map it, set
+   *    access rights, export to FD, and spin up a UnixFdServer that hands out
+   *    the FD using a randomly generated UUID.
+   */
   bool allocate(uint64_t frame_size_bytes, int device_index,
                 std::vector<GpuLeasePool::Slot> &slots,
                 rclcpp::Logger logger) override {
@@ -247,9 +274,11 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
     }
 
     CUmemAllocationProp prop{};
+    // Request pinned memory on the publisher's GPU.
     prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
     prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
     prop.location.id = device_index;
+    // Exportable as a POSIX file descriptor for peer processes.
     prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
 
     size_t granularity = 0;
@@ -267,6 +296,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
       state->allocation_size = aligned_size;
 
       CUdeviceptr address = 0;
+      // Reserve virtual address space (no backing memory yet).
       res = cuMemAddressReserve(&address, aligned_size, 0, 0, 0);
       if (res != CUDA_SUCCESS) {
         RCLCPP_ERROR(logger, "cuMemAddressReserve failed: %s",
@@ -276,6 +306,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
       }
       state->address = address;
 
+      // cuMemCreate: allocate physical memory described by prop.
       res = cuMemCreate(&state->allocation, aligned_size, &prop, 0);
       if (res != CUDA_SUCCESS) {
         RCLCPP_ERROR(logger, "cuMemCreate failed: %s",
@@ -294,6 +325,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
 
       CUmemAccessDesc access_desc{};
       access_desc.location = prop.location;
+      // Allow both read and write so publishers/subscribers can update content.
       access_desc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
       res = cuMemSetAccess(address, aligned_size, &access_desc, 1);
       if (res != CUDA_SUCCESS) {
@@ -303,6 +335,8 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
         return false;
       }
 
+      // Export allocation as an inheritable POSIX FD so other processes can
+      // import.
       res = cuMemExportToShareableHandle(
           &state->shareable_fd, state->allocation,
           CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR, 0);
@@ -319,6 +353,8 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
         }
       }
 
+      // Generate a UUID that subscribers embed in ROS messages to discover the
+      // socket.
       uuid_t uuid_bytes;
       uuid_generate(uuid_bytes);
       char uuid_str[37] = {};
@@ -337,6 +373,8 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
       slot.device_ptr = reinterpret_cast<void *>(state->address);
       slot.backend = ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD;
       slot.backend_state = state;
+      // Store UUID bytes into the ROS message payload so subscribers know which
+      // socket to contact.
       if (!ros2_cuda_ipc_core::encode_uuid_payload(state->uuid,
                                                    slot.mem_handle)) {
         RCLCPP_ERROR(logger, "Failed to encode UUID payload for slot %u",
@@ -348,6 +386,12 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
     return true;
   }
 
+  /**
+   * @brief Release slot allocations and clear metadata.
+   *
+   * The per-slot VmmSlotState RAII cleanup tears down CUDA driver resources and
+   * socket servers; here we simply drop pointers and reset bookkeeping fields.
+   */
   void destroy(std::vector<GpuLeasePool::Slot> &slots,
                rclcpp::Logger logger) noexcept override {
     (void)logger;
@@ -362,6 +406,11 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
   }
 
  private:
+  /**
+   * @brief Ensure the CUDA driver is initialised before using driver APIs.
+   *
+   * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
+   */
   bool ensure_driver(const rclcpp::Logger &logger) {
     static std::once_flag once;
     static CUresult status = CUDA_SUCCESS;
