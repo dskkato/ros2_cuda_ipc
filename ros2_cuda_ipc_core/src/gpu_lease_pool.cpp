@@ -45,13 +45,6 @@ uint64_t align_up(uint64_t value, uint64_t alignment) {
   return value + alignment - remainder;
 }
 
-void store_u64_le(uint8_t *dest, uint64_t value) {
-  for (int i = 0; i < 8; ++i) {
-    dest[i] = static_cast<uint8_t>(value & 0xFF);
-    value >>= 8;
-  }
-}
-
 class UnixFdServer {
  public:
   UnixFdServer(std::string socket_path, int fd_to_send, rclcpp::Logger logger)

@@ -238,7 +238,7 @@ TEST_F(TypeAdapterTest, ConvertToCustomVmmWithoutSocketReturnsInvalid) {
   msg.byte_size = 1024;
   msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD;
   msg.mem_handle.fill(0);
-  const std::string uuid = "missing-vmm-handle";
+  const std::string uuid = "12345678-1234-5678-1234-567812345678";
   std::copy(uuid.begin(), uuid.end(), msg.mem_handle.begin());
   msg.event_handle.fill(0);
 

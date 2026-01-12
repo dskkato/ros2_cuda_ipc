@@ -52,4 +52,19 @@ inline std::string build_memory_socket_path(std::string_view uuid) {
 
 using MemoryHandlePayload = std::array<uint8_t, kMemoryHandleSize>;
 
+inline uint64_t load_u64_le(const uint8_t *data) {
+  uint64_t value = 0;
+  for (int i = 7; i >= 0; --i) {
+    value = (value << 8) | data[i];
+  }
+  return value;
+}
+
+inline void store_u64_le(uint8_t *dest, uint64_t value) {
+  for (int i = 0; i < 8; ++i) {
+    dest[i] = static_cast<uint8_t>(value & 0xFF);
+    value >>= 8;
+  }
+}
+
 }  // namespace ros2_cuda_ipc_core
