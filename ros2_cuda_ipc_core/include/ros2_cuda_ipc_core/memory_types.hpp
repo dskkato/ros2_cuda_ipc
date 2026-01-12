@@ -1,9 +1,12 @@
 #pragma once
 
+#include <uuid/uuid.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -35,6 +38,12 @@ inline constexpr MemoryBackendKind backend_from_byte(uint8_t value) noexcept {
 }
 
 inline std::string build_memory_socket_path(std::string_view uuid) {
+  // Validate UUID format
+  uuid_t tmp;
+  if (uuid_parse_range(uuid.begin(), uuid.end(), tmp) != 0) {
+    throw std::invalid_argument("Invalid UUID format");
+  }
+
   std::string path = "/tmp/cuda_memory_pool_";
   path.append(uuid.begin(), uuid.end());
   path.append(".sock");
