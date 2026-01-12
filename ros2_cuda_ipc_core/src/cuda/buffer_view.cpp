@@ -95,10 +95,10 @@ void BufferView::set_ipc_handles(const cudaIpcMemHandle_t &mem,
   handles_ready_ = true;
 }
 
-void BufferView::set_memory_handles(MemoryBackendKind backend,
-                                    const uint8_t *payload_bytes,
-                                    std::size_t payload_size,
-                                    const cudaIpcEventHandle_t &evt) noexcept {
+void BufferView::set_ipc_handles(MemoryBackendKind backend,
+                                 const uint8_t *payload_bytes,
+                                 std::size_t payload_size,
+                                 const cudaIpcEventHandle_t &evt) noexcept {
   backend_ = backend;
   std::memset(mem_payload_.data(), 0, mem_payload_.size());
   if (payload_bytes != nullptr && payload_size > 0) {

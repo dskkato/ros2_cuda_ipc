@@ -251,8 +251,8 @@ class ColorizeNode : public rclcpp::Node {
     view.core.slot_id = slot.index;
     view.core.generation = slot.generation;
     view.core.shm_name = output_shm_name_;
-    view.core.set_memory_handles(slot.backend, slot.mem_handle.data(),
-                                 slot.mem_handle.size(), slot.event_handle);
+    view.core.set_ipc_handles(slot.backend, slot.mem_handle.data(),
+                              slot.mem_handle.size(), slot.event_handle);
     view.dtype = ros2_cuda_ipc_core::DType::U8;
     view.shape = {height_, width_, output_channels_};
     view.strides = {static_cast<uint64_t>(width_) * output_channels_,

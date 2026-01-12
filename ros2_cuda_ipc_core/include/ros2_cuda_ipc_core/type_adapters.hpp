@@ -488,8 +488,8 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     opened.generation = msg.generation;
     opened.shm_name = msg.shm_name;
     opened.lease = std::move(lease_ptr);
-    opened.set_memory_handles(backend, msg.mem_handle.data(),
-                              msg.mem_handle.size(), event_handle);
+    opened.set_ipc_handles(backend, msg.mem_handle.data(),
+                           msg.mem_handle.size(), event_handle);
     view = std::move(opened);
   }
 

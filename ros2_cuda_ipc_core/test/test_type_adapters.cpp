@@ -200,8 +200,8 @@ TEST_F(TypeAdapterTest, ConvertToRosMessagePreservesVmmPayload) {
   ASSERT_TRUE(ros2_cuda_ipc_core::encode_uuid_payload(uuid, payload));
 
   cudaIpcEventHandle_t event_handle{};
-  view.set_memory_handles(ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD,
-                          payload.data(), payload.size(), event_handle);
+  view.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD,
+                       payload.data(), payload.size(), event_handle);
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   rclcpp::TypeAdapter<
