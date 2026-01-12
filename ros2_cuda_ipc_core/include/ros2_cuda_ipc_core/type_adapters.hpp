@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <uuid/uuid.h>
 
 #include <algorithm>
 #include <array>
@@ -82,6 +83,17 @@ inline std::mutex &ipc_handle_cache_mutex() {
   return mutex;
 }
 
+inline std::size_t align_up_size(std::size_t value, std::size_t alignment) {
+  if (alignment == 0) {
+    return value;
+  }
+  const std::size_t remainder = value % alignment;
+  if (remainder == 0) {
+    return value;
+  }
+  return value + alignment - remainder;
+}
+
 inline bool ensure_cuda_driver_initialised(const rclcpp::Logger &logger) {
   static std::once_flag once;
   static CUresult init_status = CUDA_SUCCESS;
@@ -97,37 +109,32 @@ inline bool ensure_cuda_driver_initialised(const rclcpp::Logger &logger) {
 
 struct VmmPayload {
   std::string uuid;
-  std::size_t allocation_size = 0;
 };
 
 inline std::optional<VmmPayload> parse_vmm_payload(
     const MemoryHandlePayload &payload, const rclcpp::Logger &logger) {
-  std::size_t length = 0;
-  while (length < payload.size()) {
-    const uint8_t byte = payload[length];
-    if (byte == 0) {
-      break;
-    }
-    ++length;
-  }
-  if (length == 0) {
-    RCLCPP_WARN(logger,
-                "Received VMM_FD backend payload without UUID bytes set");
+  const uint32_t length = load_u32_le(payload.data());
+  if (length == 0 || length > ros2_cuda_ipc_core::kVmmUuidMaxLength ||
+      length + 4 > payload.size()) {
+    RCLCPP_WARN(logger, "Received invalid VMM_FD payload length=%u (max=%zu)",
+                length, ros2_cuda_ipc_core::kVmmUuidMaxLength);
     return std::nullopt;
   }
-  if (length > payload.size()) {
-    length = payload.size() - 1;
+
+  // Validate UUID format
+  uuid_t uuid;
+  const char *uuid_str = reinterpret_cast<const char *>(payload.data() + 4);
+  if (uuid_parse_range(uuid_str, uuid_str + length, uuid) != 0) {
+    // do not print since it may not be null-terminated
+    RCLCPP_WARN(logger, "Failed to parse UUID from VMM_FD payload");
+    return std::nullopt;
   }
   VmmPayload result;
-  result.uuid.assign(reinterpret_cast<const char *>(payload.data()), length);
+  result.uuid.assign(uuid_str, length);
   if (result.uuid.size() >= sizeof(sockaddr_un::sun_path)) {
     RCLCPP_WARN(logger, "UUID %s is too long for AF_UNIX path",
                 result.uuid.c_str());
     return std::nullopt;
-  }
-  if (payload.size() >= 64) {
-    result.allocation_size =
-        static_cast<std::size_t>(load_u64_le(payload.data() + 56));
   }
   return result;
 }
@@ -209,7 +216,7 @@ struct VmmOpenResult {
 
 inline std::optional<VmmOpenResult> open_vmm_allocation(
     const MemoryHandlePayload &payload, uint32_t device_id,
-    std::size_t fallback_size, const rclcpp::Logger &logger) {
+    std::size_t byte_size, const rclcpp::Logger &logger) {
   auto meta = parse_vmm_payload(payload, logger);
   if (!meta.has_value()) {
     return std::nullopt;
@@ -234,13 +241,24 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
     return std::nullopt;
   }
 
-  std::size_t allocation_size =
-      meta->allocation_size > 0 ? meta->allocation_size : fallback_size;
-  if (allocation_size == 0) {
-    RCLCPP_WARN(logger, "VMM payload for uuid %s lacked allocation size",
-                meta->uuid.c_str());
+  CUmemAllocationProp prop{};
+  prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+  prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+  prop.location.id = static_cast<int>(device_id);
+  prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
+  std::size_t granularity = 0;
+  cu_res = cuMemGetAllocationGranularity(&granularity, &prop,
+                                         CU_MEM_ALLOC_GRANULARITY_MINIMUM);
+  if (cu_res != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuMemGetAllocationGranularity failed: %s",
+                ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
     cuMemRelease(allocation);
     return std::nullopt;
+  }
+
+  std::size_t allocation_size = align_up_size(byte_size, granularity);
+  if (allocation_size == 0) {
+    allocation_size = granularity;
   }
 
   CUdeviceptr address = 0;
@@ -262,8 +280,7 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   }
 
   CUmemAccessDesc access_desc{};
-  access_desc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  access_desc.location.id = static_cast<int>(device_id);
+  access_desc.location = prop.location;
   access_desc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
   cu_res = cuMemSetAccess(address, allocation_size, &access_desc, 1);
   if (cu_res != CUDA_SUCCESS) {

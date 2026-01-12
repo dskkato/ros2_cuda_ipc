@@ -195,15 +195,9 @@ TEST_F(TypeAdapterTest, ConvertToRosMessagePreservesVmmPayload) {
   view.generation = 11;
   view.shm_name = "/vmm_buf_meta";
 
-  std::array<uint8_t, ros2_cuda_ipc_core::kMemoryHandleSize> payload{};
+  ros2_cuda_ipc_core::MemoryHandlePayload payload{};
   const std::string uuid = "test-vmm-handle";
-  std::copy(uuid.begin(), uuid.end(), payload.begin());
-  // store allocation size hint in last 8 bytes
-  const uint64_t allocation_size = 4096;
-  for (int i = 0; i < 8; ++i) {
-    payload[payload.size() - 8 + i] =
-        static_cast<uint8_t>((allocation_size >> (i * 8)) & 0xFF);
-  }
+  ASSERT_TRUE(ros2_cuda_ipc_core::encode_uuid_payload(uuid, payload));
 
   cudaIpcEventHandle_t event_handle{};
   view.set_memory_handles(ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD,
@@ -239,7 +233,7 @@ TEST_F(TypeAdapterTest, ConvertToCustomVmmWithoutSocketReturnsInvalid) {
   msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD;
   msg.mem_handle.fill(0);
   const std::string uuid = "12345678-1234-5678-1234-567812345678";
-  std::copy(uuid.begin(), uuid.end(), msg.mem_handle.begin());
+  ASSERT_TRUE(ros2_cuda_ipc_core::encode_uuid_payload(uuid, msg.mem_handle));
   msg.event_handle.fill(0);
 
   ros2_cuda_ipc_core::BufferView view;

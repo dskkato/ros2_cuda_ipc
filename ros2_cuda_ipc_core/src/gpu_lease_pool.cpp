@@ -342,13 +342,13 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
       slot.device_ptr = reinterpret_cast<void *>(state->address);
       slot.backend = ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD;
       slot.backend_state = state;
-      slot.mem_handle.fill(0);
-      const auto uuid_len = std::min(state->uuid.size(),
-                                     slot.mem_handle.size() - sizeof(uint64_t));
-      std::memcpy(slot.mem_handle.data(), state->uuid.data(), uuid_len);
-      store_u64_le(
-          slot.mem_handle.data() + slot.mem_handle.size() - sizeof(uint64_t),
-          state->allocation_size);
+      if (!ros2_cuda_ipc_core::encode_uuid_payload(state->uuid,
+                                                   slot.mem_handle)) {
+        RCLCPP_ERROR(logger, "Failed to encode UUID payload for slot %u",
+                     slot.index);
+        destroy(slots, logger);
+        return false;
+      }
     }
     return true;
   }
