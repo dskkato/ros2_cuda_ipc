@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
-#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -19,10 +18,10 @@
 #include <rclcpp/logging.hpp>
 #include <rclcpp/type_adapter.hpp>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 
 #include "ros2_cuda_ipc_core/buffer_view.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
@@ -83,27 +82,14 @@ inline std::mutex &ipc_handle_cache_mutex() {
   return mutex;
 }
 
-inline std::string cu_result_to_string(CUresult result) {
-  const char *name = nullptr;
-  const char *desc = nullptr;
-  cuGetErrorName(result, &name);
-  cuGetErrorString(result, &desc);
-  if (!name) {
-    name = "UNKNOWN";
-  }
-  if (!desc) {
-    desc = "unknown";
-  }
-  return std::string(name) + ": " + desc;
-}
-
 inline bool ensure_cuda_driver_initialised(const rclcpp::Logger &logger) {
   static std::once_flag once;
   static CUresult init_status = CUDA_SUCCESS;
   std::call_once(once, [&]() { init_status = cuInit(0); });
   if (init_status != CUDA_SUCCESS) {
-    RCLCPP_ERROR(logger, "cuInit failed: %s",
-                 cu_result_to_string(init_status).c_str());
+    RCLCPP_ERROR(
+        logger, "cuInit failed: %s",
+        ros2_cuda_ipc_core::cuda::cu_result_to_string(init_status).c_str());
     return false;
   }
   return true;
@@ -259,7 +245,7 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   ::close(fd);
   if (cu_res != CUDA_SUCCESS) {
     RCLCPP_WARN(logger, "cuMemImportFromShareableHandle failed: %s",
-                cu_result_to_string(cu_res).c_str());
+                ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
     return std::nullopt;
   }
 
@@ -276,7 +262,7 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   cu_res = cuMemAddressReserve(&address, allocation_size, 0, 0, 0);
   if (cu_res != CUDA_SUCCESS) {
     RCLCPP_WARN(logger, "cuMemAddressReserve failed: %s",
-                cu_result_to_string(cu_res).c_str());
+                ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
     cuMemRelease(allocation);
     return std::nullopt;
   }
@@ -284,7 +270,7 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   cu_res = cuMemMap(address, allocation_size, 0, allocation, 0);
   if (cu_res != CUDA_SUCCESS) {
     RCLCPP_WARN(logger, "cuMemMap failed: %s",
-                cu_result_to_string(cu_res).c_str());
+                ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
     cuMemAddressFree(address, allocation_size);
     cuMemRelease(allocation);
     return std::nullopt;
@@ -297,7 +283,7 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   cu_res = cuMemSetAccess(address, allocation_size, &access_desc, 1);
   if (cu_res != CUDA_SUCCESS) {
     RCLCPP_WARN(logger, "cuMemSetAccess failed: %s",
-                cu_result_to_string(cu_res).c_str());
+                ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
     cuMemUnmap(address, allocation_size);
     cuMemAddressFree(address, allocation_size);
     cuMemRelease(allocation);
