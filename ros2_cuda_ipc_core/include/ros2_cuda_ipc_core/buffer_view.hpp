@@ -40,8 +40,6 @@ struct BufferView {
 
   void reset() noexcept;
 
-  void set_ipc_handles(const cudaIpcMemHandle_t &mem,
-                       const cudaIpcEventHandle_t &evt) noexcept;
   void set_ipc_handles(MemoryBackendKind backend, const uint8_t *payload_bytes,
                        std::size_t payload_size,
                        const cudaIpcEventHandle_t &evt) noexcept;

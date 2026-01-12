@@ -133,12 +133,14 @@ struct BufferView {
   }
 
   void reset() noexcept;             // dev_ptr/evt をリセットし lease を解放
-  void set_ipc_handles(const cudaIpcMemHandle_t& mem,
+  void set_ipc_handles(MemoryBackendKind backend,
+                       const uint8_t* payload_bytes,
+                       std::size_t payload_size,
                        const cudaIpcEventHandle_t& evt) noexcept;
   bool handles_ready() const noexcept;
 
 private:
-  cudaIpcMemHandle_t mem_handle_{};  // Publisher から渡されたハンドル
+  MemoryHandlePayload mem_payload_{};  // Publisher から渡されたハンドル
   cudaIpcEventHandle_t event_handle_{};
   bool handles_ready_ = false;
 };

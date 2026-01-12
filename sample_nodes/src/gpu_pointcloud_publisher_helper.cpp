@@ -177,7 +177,9 @@ GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
   view.core.slot_id = slot.index;
   view.core.generation = slot.generation;
   view.core.shm_name = config_.shm_name;
-  view.core.set_ipc_handles(slot.mem_handle, slot.event_handle);
+  view.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
+                            reinterpret_cast<const uint8_t *>(&slot.mem_handle),
+                            sizeof(slot.mem_handle), slot.event_handle);
   view.height = config_.height;
   view.width = config_.width;
   view.point_step = point_step_;

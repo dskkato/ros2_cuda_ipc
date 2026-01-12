@@ -170,7 +170,9 @@ TEST_F(TypeAdapterTest, ConvertToRosMessageCopiesMetadata) {
   std::memset(&mem_handle, 0x12, sizeof(mem_handle));
   cudaIpcEventHandle_t event_handle{};
   std::memset(&event_handle, 0x34, sizeof(event_handle));
-  view.set_ipc_handles(mem_handle, event_handle);
+  view.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
+                       reinterpret_cast<const uint8_t *>(&mem_handle),
+                       sizeof(mem_handle), event_handle);
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   rclcpp::TypeAdapter<
@@ -293,7 +295,9 @@ TEST_F(TypeAdapterTest, DISABLED_ImageViewRoundTripTransfersHeaderAndLayout) {
   emit.core.shm_name = "/demo";
   cudaIpcMemHandle_t dummy_mem{};
   cudaIpcEventHandle_t dummy_evt{};
-  emit.core.set_ipc_handles(dummy_mem, dummy_evt);
+  emit.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
+                            reinterpret_cast<const uint8_t *>(&dummy_mem),
+                            sizeof(dummy_mem), dummy_evt);
 
   ros2_cuda_ipc_msgs::msg::GpuImage out_msg;
   rclcpp::TypeAdapter<
@@ -360,7 +364,9 @@ TEST_F(TypeAdapterTest, DISABLED_PointCloudViewRoundTripTransfersLayout) {
   emit.core.shm_name = "/pc_demo";
   cudaIpcMemHandle_t dummy_mem{};
   cudaIpcEventHandle_t dummy_evt{};
-  emit.core.set_ipc_handles(dummy_mem, dummy_evt);
+  emit.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
+                            reinterpret_cast<const uint8_t *>(&dummy_mem),
+                            sizeof(dummy_mem), dummy_evt);
   emit.height = 1;
   emit.width = 10;
   emit.point_step = 12;

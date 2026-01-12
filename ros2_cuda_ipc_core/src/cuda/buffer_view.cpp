@@ -86,15 +86,6 @@ void BufferView::reset() noexcept {
   lease.reset();
 }
 
-void BufferView::set_ipc_handles(const cudaIpcMemHandle_t &mem,
-                                 const cudaIpcEventHandle_t &evt) noexcept {
-  std::memset(mem_payload_.data(), 0, mem_payload_.size());
-  std::memcpy(mem_payload_.data(), &mem, sizeof(mem));
-  backend_ = MemoryBackendKind::CUDA_IPC;
-  std::memcpy(&event_handle_, &evt, sizeof(event_handle_));
-  handles_ready_ = true;
-}
-
 void BufferView::set_ipc_handles(MemoryBackendKind backend,
                                  const uint8_t *payload_bytes,
                                  std::size_t payload_size,
