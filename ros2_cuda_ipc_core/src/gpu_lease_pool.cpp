@@ -95,8 +95,8 @@ class UnixFdServer {
       return false;
     }
 
-    running_.store(true, std::memory_order_release);
     listen_fd_ = sock;
+    running_.store(true, std::memory_order_release);
     worker_ = std::thread([this]() { run(); });
     return true;
   }
