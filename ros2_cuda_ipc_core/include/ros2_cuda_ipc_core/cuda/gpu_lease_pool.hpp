@@ -24,7 +24,9 @@ class GpuLeasePool {
         ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
   };
 
-  struct SlotBackendState;
+  struct SlotBackendState {
+    virtual ~SlotBackendState() = default;
+  };
 
   struct Slot {
     uint32_t index = 0;
