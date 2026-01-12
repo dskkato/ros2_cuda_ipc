@@ -131,11 +131,6 @@ inline std::optional<VmmPayload> parse_vmm_payload(
   }
   VmmPayload result;
   result.uuid.assign(uuid_str, length);
-  if (result.uuid.size() >= sizeof(sockaddr_un::sun_path)) {
-    RCLCPP_WARN(logger, "UUID %s is too long for AF_UNIX path",
-                result.uuid.c_str());
-    return std::nullopt;
-  }
   return result;
 }
 
@@ -225,6 +220,11 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
     return std::nullopt;
   }
   const auto socket_path = build_memory_socket_path(meta->uuid);
+  if (socket_path.size() >= sizeof(sockaddr_un::sun_path)) {
+    RCLCPP_WARN(logger, "UUID %s is too long for AF_UNIX path",
+                socket_path.c_str());
+    return std::nullopt;
+  }
   auto fd_opt = request_fd_from_publisher(socket_path, logger);
   if (!fd_opt.has_value()) {
     return std::nullopt;
