@@ -139,9 +139,11 @@ class UnixFdServer {
 
   void send_fd(int client) {
     char buf = 'F';
-    struct iovec iov{&buf, 1};
+    struct iovec iov {
+      &buf, 1
+    };
     alignas(struct cmsghdr) char cmsg_buf[CMSG_SPACE(sizeof(int))];
-    struct msghdr msg{};
+    struct msghdr msg {};
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
     msg.msg_control = cmsg_buf;
