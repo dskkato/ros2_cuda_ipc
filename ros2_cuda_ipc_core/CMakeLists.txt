@@ -18,23 +18,24 @@ find_package(CUDAToolkit REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_library(UUID_LIB uuid)
+
 if(NOT UUID_LIB)
   message(FATAL_ERROR "Failed to find libuuid (uuid)")
 endif()
 
 add_library(${PROJECT_NAME}
-  src/buffer_view.cpp
+  src/cuda/buffer_view.cpp
+  src/cuda/cuda_util.cpp
   src/image_view.cpp
   src/pointcloud2_view.cpp
   src/lease_handle.cpp
-  src/cuda_util.cpp
   src/gpu_lease_pool.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 
 ament_target_dependencies(${PROJECT_NAME}
