@@ -35,8 +35,26 @@ uint64_t align_up(uint64_t value, uint64_t alignment) {
   return value + alignment - remainder;
 }
 
+/**
+ * @brief Helper that serves a shareable file descriptor over a Unix socket.
+ *
+ * The VMM backend exports CUDA memory as a POSIX FD. `UnixFdServer` listens on
+ * an `AF_UNIX` socket (one per slot) and sends that FD to every client via
+ * `SCM_RIGHTS`. This isolates the POSIX details from the backend logic.
+ */
 class UnixFdServer {
  public:
+  /**
+   * @brief Create a server bound to `socket_path` that distributes `fd_to_send`.
+   *
+   * @param socket_path Filesystem location (e.g. `/tmp/cuda_memory_pool_x.sock`)
+   *        where subscribers will connect.
+   * @param fd_to_send Shareable FD returned by CUDA; must be >= 0.
+   * @param logger Logger for diagnostics.
+   *
+   * Invalid descriptors are rejected up front so that clients never receive an
+   * unusable FD.
+   */
   UnixFdServer(std::string socket_path, int fd_to_send, rclcpp::Logger logger)
       : path_(std::move(socket_path)),
         fd_(fd_to_send),
@@ -48,15 +66,27 @@ class UnixFdServer {
     }
   }
 
+  /// @brief Destructor stops the worker thread and removes the socket path.
   ~UnixFdServer() { stop(); }
 
+  /**
+   * @brief Start listening for client connections.
+   *
+   * Creates the `AF_UNIX` socket, removes any stale path, `bind`s and `listen`s,
+   * then spawns a background accept loop that forwards the shareable FD.
+   *
+   * @return true if the server thread started successfully.
+   */
   bool start() {
     stop();
+    // socket(2): request a close-on-exec Unix domain stream socket.
     int sock = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (sock < 0) {
+      // Some kernels reject SOCK_CLOEXEC; fall back to plain socket + fcntl.
       if (errno == EINVAL || errno == EPROTOTYPE) {
         sock = ::socket(AF_UNIX, SOCK_STREAM, 0);
         if (sock >= 0) {
+          // fcntl(F_SETFD): apply FD_CLOEXEC manually on success.
           fcntl(sock, F_SETFD, FD_CLOEXEC);
         }
       }
@@ -66,11 +96,13 @@ class UnixFdServer {
       return false;
     }
 
+    // unlink(2): remove stale path if a previous process left it behind.
     ::unlink(path_.c_str());
 
     sockaddr_un addr{};
     addr.sun_family = AF_UNIX;
     std::strncpy(addr.sun_path, path_.c_str(), sizeof(addr.sun_path) - 1);
+    // bind(2): attach socket to filesystem path so subscribers can connect.
     if (::bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
       RCLCPP_ERROR(logger_, "bind(%s) failed: %s", path_.c_str(),
                    strerror(errno));
@@ -78,6 +110,7 @@ class UnixFdServer {
       return false;
     }
 
+    // listen(2): enable incoming connection queue.
     if (::listen(sock, 16) < 0) {
       RCLCPP_ERROR(logger_, "listen(%s) failed: %s", path_.c_str(),
                    strerror(errno));
@@ -91,6 +124,12 @@ class UnixFdServer {
     return true;
   }
 
+  /**
+   * @brief Stop listening and tear down resources.
+   *
+   * Signals the thread to exit, shuts down the listening socket, joins the
+   * worker, and unlinks the filesystem entry to avoid leaving garbage behind.
+   */
   void stop() {
     running_.store(false, std::memory_order_release);
     if (listen_fd_ >= 0) {
@@ -105,8 +144,15 @@ class UnixFdServer {
   }
 
  private:
+  /**
+   * @brief Accept loop that serves each subscriber connection.
+   *
+   * Blocks on `accept(2)` while `running_` is true. Each accepted client socket
+   * is marked close-on-exec, receives the FD, and is closed immediately after.
+   */
   void run() {
     while (running_.load(std::memory_order_acquire)) {
+      // accept(2): block until a client connects; returns a per-connection FD.
       int client = ::accept(listen_fd_, nullptr, nullptr);
       if (client < 0) {
         if (errno == EINTR) {
@@ -127,6 +173,13 @@ class UnixFdServer {
     }
   }
 
+  /**
+   * @brief Send the held file descriptor to a connected client.
+   *
+   * Uses `sendmsg(2)` with ancillary data (`SCM_RIGHTS`) to transfer the FD.
+   * A single-byte payload is included because some kernels require non-empty
+   * payloads when sending control messages.
+   */
   void send_fd(int client) {
     char buf = 'F';
     struct iovec iov {
