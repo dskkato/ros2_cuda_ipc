@@ -7,7 +7,6 @@
 #include <unistd.h>
 #include <uuid/uuid.h>
 
-#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cstring>

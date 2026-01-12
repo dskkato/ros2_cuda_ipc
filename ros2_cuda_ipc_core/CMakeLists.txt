@@ -24,12 +24,12 @@ if(NOT UUID_LIB)
 endif()
 
 add_library(${PROJECT_NAME}
-  src/cuda/buffer_view.cpp
+  src/cuda/gpu_lease_pool.cpp
   src/cuda/cuda_util.cpp
+  src/buffer_view.cpp
   src/image_view.cpp
-  src/pointcloud2_view.cpp
   src/lease_handle.cpp
-  src/gpu_lease_pool.cpp
+  src/pointcloud2_view.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
