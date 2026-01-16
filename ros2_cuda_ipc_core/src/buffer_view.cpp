@@ -1,5 +1,6 @@
 #include "ros2_cuda_ipc_core/buffer_view.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 namespace ros2_cuda_ipc_core {
@@ -23,8 +24,9 @@ BufferView &BufferView::operator=(const BufferView &other) {
   generation = other.generation;
   shm_name = other.shm_name;
   lease = other.lease;
-  mem_handle_ = other.mem_handle_;
+  mem_payload_ = other.mem_payload_;
   event_handle_ = other.event_handle_;
+  backend_ = other.backend_;
   handles_ready_ = other.handles_ready_;
 
   return *this;
@@ -49,8 +51,9 @@ BufferView &BufferView::operator=(BufferView &&other) noexcept {
   generation = other.generation;
   shm_name = std::move(other.shm_name);
   lease = std::move(other.lease);
-  mem_handle_ = other.mem_handle_;
+  mem_payload_ = other.mem_payload_;
   event_handle_ = other.event_handle_;
+  backend_ = other.backend_;
   handles_ready_ = other.handles_ready_;
   other.dev_ptr = nullptr;
   other.ready_evt = nullptr;
@@ -79,12 +82,21 @@ void BufferView::reset() noexcept {
   generation = 0;
   shm_name.clear();
   handles_ready_ = false;
+  backend_ = MemoryBackendKind::CUDA_IPC;
   lease.reset();
 }
 
-void BufferView::set_ipc_handles(const cudaIpcMemHandle_t &mem,
+void BufferView::set_ipc_handles(MemoryBackendKind backend,
+                                 const uint8_t *payload_bytes,
+                                 std::size_t payload_size,
                                  const cudaIpcEventHandle_t &evt) noexcept {
-  std::memcpy(&mem_handle_, &mem, sizeof(mem_handle_));
+  backend_ = backend;
+  std::memset(mem_payload_.data(), 0, mem_payload_.size());
+  if (payload_bytes != nullptr && payload_size > 0) {
+    const auto copy =
+        std::min(payload_size, static_cast<std::size_t>(mem_payload_.size()));
+    std::memcpy(mem_payload_.data(), payload_bytes, copy);
+  }
   std::memcpy(&event_handle_, &evt, sizeof(event_handle_));
   handles_ready_ = true;
 }

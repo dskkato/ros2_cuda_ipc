@@ -3,6 +3,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstring>
 #include <rclcpp/rclcpp.hpp>
@@ -11,6 +13,7 @@
 
 #include "ros2_cuda_ipc_core/buffer_view.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
 
@@ -104,6 +107,7 @@ TEST_F(TypeAdapterTest, DISABLED_ConvertToCustomSuccess) {
   msg.device_id = 1;
   msg.generation = gen.value();
   msg.byte_size = kBufferSize;
+  msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC;
   std::memcpy(msg.mem_handle.data(), &mem_handle, sizeof(mem_handle));
   std::memcpy(msg.event_handle.data(), &event_handle, sizeof(event_handle));
 
@@ -143,6 +147,7 @@ TEST_F(TypeAdapterTest, ConvertToCustomLeaseFailureReturnsInvalid) {
   msg.device_id = 1;
   msg.generation = 42;  // wrong generation
   msg.byte_size = 256;
+  msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC;
 
   ros2_cuda_ipc_core::BufferView view;
   rclcpp::TypeAdapter<
@@ -165,7 +170,9 @@ TEST_F(TypeAdapterTest, ConvertToRosMessageCopiesMetadata) {
   std::memset(&mem_handle, 0x12, sizeof(mem_handle));
   cudaIpcEventHandle_t event_handle{};
   std::memset(&event_handle, 0x34, sizeof(event_handle));
-  view.set_ipc_handles(mem_handle, event_handle);
+  view.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
+                       reinterpret_cast<const uint8_t *>(&mem_handle),
+                       sizeof(mem_handle), event_handle);
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   rclcpp::TypeAdapter<
@@ -177,8 +184,71 @@ TEST_F(TypeAdapterTest, ConvertToRosMessageCopiesMetadata) {
   EXPECT_EQ(msg.slot_id, 5u);
   EXPECT_EQ(msg.generation, 9u);
   EXPECT_EQ(msg.shm_name, "/buf_meta");
+  EXPECT_EQ(msg.backend, ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC);
   EXPECT_EQ(msg.mem_handle[0], 0x12);
   EXPECT_EQ(msg.event_handle[0], 0x34);
+}
+
+TEST_F(TypeAdapterTest, ConvertToRosMessagePreservesVmmPayload) {
+  ros2_cuda_ipc_core::BufferView view;
+  view.device_id = 3;
+  view.byte_size = 128;
+  view.slot_id = 7;
+  view.generation = 11;
+  view.shm_name = "/vmm_buf_meta";
+
+  ros2_cuda_ipc_core::MemoryHandlePayload payload{};
+  const std::string uuid = "test-vmm-handle";
+  ASSERT_TRUE(ros2_cuda_ipc_core::encode_uuid_payload(uuid, payload));
+
+  cudaIpcEventHandle_t event_handle{};
+  view.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD,
+                       payload.data(), payload.size(), event_handle);
+
+  ros2_cuda_ipc_msgs::msg::BufferCore msg;
+  rclcpp::TypeAdapter<
+      ros2_cuda_ipc_core::BufferView,
+      ros2_cuda_ipc_msgs::msg::BufferCore>::convert_to_ros_message(view, msg);
+
+  EXPECT_EQ(msg.device_id, 3u);
+  EXPECT_EQ(msg.byte_size, 128u);
+  EXPECT_EQ(msg.slot_id, 7u);
+  EXPECT_EQ(msg.generation, 11u);
+  EXPECT_EQ(msg.shm_name, "/vmm_buf_meta");
+  EXPECT_EQ(msg.backend, ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD);
+  EXPECT_TRUE(
+      std::equal(payload.begin(), payload.end(), msg.mem_handle.begin()));
+}
+
+TEST_F(TypeAdapterTest, ConvertToCustomVmmWithoutSocketReturnsInvalid) {
+  const std::string shm_name = make_unique_shm_name("adapter_vmm_fail");
+  ASSERT_TRUE(ros2_cuda_ipc_core::LeaseHandle::init(shm_name, 1));
+  auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(shm_name, 0, 1);
+  ASSERT_TRUE(gen.has_value());
+
+  ros2_cuda_ipc_msgs::msg::BufferCore msg;
+  msg.shm_name = shm_name;
+  msg.slot_id = 0;
+  msg.device_id = 0;
+  msg.generation = gen.value();
+  msg.byte_size = 1024;
+  msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD;
+  msg.mem_handle.fill(0);
+  const std::string uuid = "12345678-1234-5678-1234-567812345678";
+  ASSERT_TRUE(ros2_cuda_ipc_core::encode_uuid_payload(uuid, msg.mem_handle));
+  msg.event_handle.fill(0);
+
+  ros2_cuda_ipc_core::BufferView view;
+  rclcpp::TypeAdapter<
+      ros2_cuda_ipc_core::BufferView,
+      ros2_cuda_ipc_msgs::msg::BufferCore>::convert_to_custom(msg, view);
+  EXPECT_FALSE(view.valid());
+
+  auto refcnt = ros2_cuda_ipc_core::LeaseHandle::current_refcount(shm_name, 0);
+  ASSERT_TRUE(refcnt.has_value());
+  EXPECT_EQ(refcnt.value(), 0u);
+
+  ::shm_unlink(shm_name.c_str());
 }
 
 TEST_F(TypeAdapterTest, DISABLED_ImageViewRoundTripTransfersHeaderAndLayout) {
@@ -225,7 +295,9 @@ TEST_F(TypeAdapterTest, DISABLED_ImageViewRoundTripTransfersHeaderAndLayout) {
   emit.core.shm_name = "/demo";
   cudaIpcMemHandle_t dummy_mem{};
   cudaIpcEventHandle_t dummy_evt{};
-  emit.core.set_ipc_handles(dummy_mem, dummy_evt);
+  emit.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
+                            reinterpret_cast<const uint8_t *>(&dummy_mem),
+                            sizeof(dummy_mem), dummy_evt);
 
   ros2_cuda_ipc_msgs::msg::GpuImage out_msg;
   rclcpp::TypeAdapter<
@@ -292,7 +364,9 @@ TEST_F(TypeAdapterTest, DISABLED_PointCloudViewRoundTripTransfersLayout) {
   emit.core.shm_name = "/pc_demo";
   cudaIpcMemHandle_t dummy_mem{};
   cudaIpcEventHandle_t dummy_evt{};
-  emit.core.set_ipc_handles(dummy_mem, dummy_evt);
+  emit.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
+                            reinterpret_cast<const uint8_t *>(&dummy_mem),
+                            sizeof(dummy_mem), dummy_evt);
   emit.height = 1;
   emit.width = 10;
   emit.point_step = 12;

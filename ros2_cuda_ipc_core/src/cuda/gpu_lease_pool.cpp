@@ -1,18 +1,30 @@
 #include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
 
-#include <utility>
+#include <memory>
 
 #include "rclcpp/logging.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_ipc_memory_backend.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
+#include "ros2_cuda_ipc_core/cuda/vmm_fd_memory_backend.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::cuda {
+
 namespace {
 using Clock = std::chrono::steady_clock;
 
 bool deadline_reached(const Clock::time_point &deadline,
                       const Clock::time_point &now) {
   return deadline.time_since_epoch().count() != 0 && now >= deadline;
+}
+
+std::unique_ptr<GpuLeasePool::MemoryBackend> make_backend(
+    ros2_cuda_ipc_core::MemoryBackendKind backend) {
+  if (backend == ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD) {
+    return make_vmm_fd_memory_backend();
+  }
+  return make_cuda_ipc_memory_backend();
 }
 
 }  // namespace
@@ -154,25 +166,23 @@ bool GpuLeasePool::cancel_pending(Slot &slot) {
 }
 
 bool GpuLeasePool::allocate_slots() {
-  for (auto &slot : slots_) {
-    cudaError_t err = cudaMalloc(&slot.device_ptr, frame_size_bytes_);
-    if (err != cudaSuccess) {
-      RCLCPP_ERROR(logger_, "cudaMalloc failed: %s",
-                   cuda_error_to_string(err).c_str());
-      return false;
-    }
+  memory_backend_ = make_backend(config_.backend);
+  if (!memory_backend_) {
+    RCLCPP_ERROR(logger_, "Failed to create memory backend");
+    return false;
+  }
 
-    err = cudaEventCreateWithFlags(
+  if (!memory_backend_->allocate(frame_size_bytes_, device_index_, slots_,
+                                 logger_)) {
+    memory_backend_.reset();
+    return false;
+  }
+
+  for (auto &slot : slots_) {
+    cudaError_t err = cudaEventCreateWithFlags(
         &slot.event, cudaEventDisableTiming | cudaEventInterprocess);
     if (err != cudaSuccess) {
       RCLCPP_ERROR(logger_, "cudaEventCreateWithFlags failed: %s",
-                   cuda_error_to_string(err).c_str());
-      return false;
-    }
-
-    err = cudaIpcGetMemHandle(&slot.mem_handle, slot.device_ptr);
-    if (err != cudaSuccess) {
-      RCLCPP_ERROR(logger_, "cudaIpcGetMemHandle failed: %s",
                    cuda_error_to_string(err).c_str());
       return false;
     }
@@ -202,15 +212,11 @@ void GpuLeasePool::destroy_slots() noexcept {
       }
       slot.event = nullptr;
     }
-    if (slot.device_ptr) {
-      const cudaError_t free_err = cudaFree(slot.device_ptr);
-      if (free_err != cudaSuccess) {
-        RCLCPP_ERROR(logger_, "cudaFree failed for slot %u: %s", slot.index,
-                     cuda_error_to_string(free_err).c_str());
-      }
-      slot.device_ptr = nullptr;
-    }
     slot.pending_deadline = {};
+  }
+  if (memory_backend_) {
+    memory_backend_->destroy(slots_, logger_);
+    memory_backend_.reset();
   }
   slots_.clear();
   frame_size_bytes_ = 0;
