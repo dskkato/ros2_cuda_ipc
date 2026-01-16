@@ -397,6 +397,18 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     }
 
     if (!dev_ptr || !evt) {
+      // Need to open IPC handles. EventHandle is supported for both backends.
+      {
+        auto err = cudaIpcOpenEventHandle(&evt, event_handle);
+        if (err != cudaSuccess) {
+          RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
+                      "cudaIpcOpenEventHandle failed: %s",
+                      cudaGetErrorString(err));
+          view = ros2_cuda_ipc_core::BufferView{};
+          return;
+        }
+      }
+
       if (backend == ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC) {
         cudaIpcMemHandle_t mem_handle =
             ros2_cuda_ipc_core::to_cuda_mem_handle(msg);
@@ -409,7 +421,6 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
           view = ros2_cuda_ipc_core::BufferView{};
           return;
         }
-        err = cudaIpcOpenEventHandle(&evt, event_handle);
         if (err != cudaSuccess) {
           cudaIpcCloseMemHandle(dev_ptr);
           RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
@@ -440,26 +451,8 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
           view = ros2_cuda_ipc_core::BufferView{};
           return;
         }
-        dev_ptr = vmm_result->dev_ptr;
-        auto err = cudaIpcOpenEventHandle(&evt, event_handle);
-        if (err != cudaSuccess) {
-          RCLCPP_WARN(logger,
-                      "cudaIpcOpenEventHandle failed for VMM backend: %s",
-                      cudaGetErrorString(err));
-          ros2_cuda_ipc_core::detail::CachedIpcHandles cleanup{
-              dev_ptr, nullptr, vmm_result->address, vmm_result->allocation,
-              vmm_result->allocation_size};
-          if (cleanup.vmm_address) {
-            cuMemUnmap(cleanup.vmm_address, cleanup.allocation_size);
-            cuMemAddressFree(cleanup.vmm_address, cleanup.allocation_size);
-          }
-          if (cleanup.vmm_allocation) {
-            cuMemRelease(cleanup.vmm_allocation);
-          }
-          view = ros2_cuda_ipc_core::BufferView{};
-          return;
-        }
 
+        dev_ptr = vmm_result->dev_ptr;
         {
           std::lock_guard<std::mutex> lock(
               ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
