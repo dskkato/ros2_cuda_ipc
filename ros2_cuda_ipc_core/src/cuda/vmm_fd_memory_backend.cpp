@@ -196,6 +196,12 @@ class UnixFdServer {
     msg.msg_control = cmsg_buf;
     msg.msg_controllen = sizeof(cmsg_buf);
     cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    if (!cmsg) {
+      RCLCPP_WARN(logger_,
+                  "sendmsg setup failed for %s: missing control message header",
+                  path_.c_str());
+      return;
+    }
     cmsg->cmsg_level = SOL_SOCKET;
     cmsg->cmsg_type = SCM_RIGHTS;
     cmsg->cmsg_len = CMSG_LEN(sizeof(int));
