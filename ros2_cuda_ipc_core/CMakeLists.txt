@@ -17,20 +17,27 @@ find_package(rosidl_default_runtime REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_library(UUID_LIB uuid)
+
+if(NOT UUID_LIB)
+  message(FATAL_ERROR "Failed to find libuuid (uuid)")
+endif()
 
 add_library(${PROJECT_NAME}
+  src/cuda/cuda_ipc_memory_backend.cpp
+  src/cuda/gpu_lease_pool.cpp
+  src/cuda/vmm_fd_memory_backend.cpp
+  src/cuda/cuda_util.cpp
   src/buffer_view.cpp
   src/image_view.cpp
-  src/pointcloud2_view.cpp
   src/lease_handle.cpp
-  src/cuda_util.cpp
-  src/gpu_lease_pool.cpp
+  src/pointcloud2_view.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
 
 ament_target_dependencies(${PROJECT_NAME}
@@ -41,7 +48,7 @@ ament_target_dependencies(${PROJECT_NAME}
   std_msgs
 )
 
-target_link_libraries(${PROJECT_NAME} CUDA::cudart)
+target_link_libraries(${PROJECT_NAME} CUDA::cudart CUDA::cuda_driver ${UUID_LIB})
 
 install(TARGETS ${PROJECT_NAME}
   EXPORT export_${PROJECT_NAME}

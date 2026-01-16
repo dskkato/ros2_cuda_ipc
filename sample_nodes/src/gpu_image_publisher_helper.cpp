@@ -191,7 +191,9 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
   view.core.slot_id = slot.index;
   view.core.generation = slot.generation;
   view.core.shm_name = config_.shm_name;
-  view.core.set_ipc_handles(slot.mem_handle, slot.event_handle);
+  view.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
+                            reinterpret_cast<const uint8_t *>(&slot.mem_handle),
+                            sizeof(slot.mem_handle), slot.event_handle);
   view.dtype = config_.dtype;
   view.shape = {config_.height, config_.width, config_.channels};
   const uint64_t elem_size = dtype_bytes(config_.dtype);

@@ -182,6 +182,65 @@ colcon test --packages-select ros2_cuda_ipc_core sample_nodes
 colcon test-result --verbose
 ```
 
+## メモリバックエンドの選択
+
+`ros2_cuda_ipc` は GPU メモリの共有方式として、**2 種類のバックエンド**をサポートしています。
+
+### CUDA IPC バックエンド（デフォルト）
+
+x86_64 + dGPU 環境で利用可能な標準的な方式です。`cudaIpcMemHandle_t` / `cudaIpcEventHandle_t` を使用してプロセス間でゼロコピー共有を行います。
+
+**適用環境:**
+- x86_64 アーキテクチャ + dGPU（NVIDIA GeForce, Quadro, Tesla など）
+- CUDA IPC のメモリ共有機能がサポートされている環境
+
+### VMM + FD バックエンド（Jetson Orin 向け）
+
+Jetson Orin のような CUDA IPC のメモリ共有をサポートしていない環境のために用意された代替バックエンドです。CUDA Driver API の Virtual Memory Management（VMM）を使用して GPU メモリを確保し、POSIX ファイルディスクリプタ（FD）として共有します。
+
+**適用環境:**
+- Jetson Orin（統合 GPU を持つ ARM64 プラットフォーム）
+- CUDA IPC のメモリ共有が使えない環境
+
+**技術詳細:**
+- Publisher が `cuMemCreate` で GPU メモリを確保し、`cuMemExportToShareableHandle` で FD 化
+- FD は Unix domain socket（`/tmp/cuda_memory_pool_<uuid>.sock`）経由で配布
+- Subscriber は `cuMemImportFromShareableHandle` でメモリをインポート
+- イベント同期は引き続き `cudaIpcEventHandle_t` を使用
+
+詳細な設計については [doc/design.md](doc/design.md) の「MemoryBackend の抽象化」セクションを参照してください。
+
+### バックエンドの指定方法
+
+バックエンドは起動時に `memory_backend` パラメータで指定します。
+
+#### Julia Set デモでの指定例
+
+```bash
+# CUDA IPC バックエンド（デフォルト）
+ros2 launch julia_set julia_set_demo.launch.py memory_backend:=cuda_ipc
+
+# VMM + FD バックエンド（Jetson Orin 向け）
+ros2 launch julia_set julia_set_demo.launch.py memory_backend:=vmm_fd
+```
+
+#### サンプルノードでの指定例
+
+```bash
+# GpuImagePublisher で VMM + FD バックエンドを使用
+ros2 run sample_nodes gpu_image_publisher \
+  --ros-args -p memory_backend:=vmm_fd
+
+# GpuPointCloudPublisher で VMM + FD バックエンドを使用
+ros2 run sample_nodes gpu_pointcloud_publisher \
+  --ros-args -p memory_backend:=vmm_fd
+```
+
+**注意事項:**
+- Publisher と Subscriber は**同じバックエンド**を使用する必要があります
+- デフォルトは `cuda_ipc` です（互換性のため）
+- `vmm_fd` は他の名前（`vmm-fd`, `vmm`, `fd`）でも指定可能です
+
 ## CUDA について（core は CUDA 前提）
 
 - `ros2_cuda_ipc_core` は CUDA が利用可能な環境を前提にビルドされます（`find_package(CUDAToolkit REQUIRED)`）。

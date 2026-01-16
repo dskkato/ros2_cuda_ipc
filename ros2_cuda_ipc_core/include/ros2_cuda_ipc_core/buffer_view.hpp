@@ -2,11 +2,13 @@
 
 #include <cuda_runtime_api.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
 
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core {
 
@@ -38,17 +40,22 @@ struct BufferView {
 
   void reset() noexcept;
 
-  void set_ipc_handles(const cudaIpcMemHandle_t &mem,
+  void set_ipc_handles(MemoryBackendKind backend, const uint8_t *payload_bytes,
+                       std::size_t payload_size,
                        const cudaIpcEventHandle_t &evt) noexcept;
-  const cudaIpcMemHandle_t &mem_handle() const noexcept { return mem_handle_; }
+  const MemoryHandlePayload &mem_payload() const noexcept {
+    return mem_payload_;
+  }
   const cudaIpcEventHandle_t &event_handle() const noexcept {
     return event_handle_;
   }
+  MemoryBackendKind backend() const noexcept { return backend_; }
   bool handles_ready() const noexcept { return handles_ready_; }
 
  private:
-  cudaIpcMemHandle_t mem_handle_{};
+  MemoryHandlePayload mem_payload_{};
   cudaIpcEventHandle_t event_handle_{};
+  MemoryBackendKind backend_ = MemoryBackendKind::CUDA_IPC;
   bool handles_ready_ = false;
 };
 
