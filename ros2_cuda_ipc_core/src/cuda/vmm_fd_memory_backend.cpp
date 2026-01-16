@@ -20,6 +20,7 @@
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
+#include "ros2_cuda_ipc_core/posix_error.hpp"
 
 namespace ros2_cuda_ipc_core::cuda {
 namespace {
@@ -94,7 +95,8 @@ class UnixFdServer {
       }
     }
     if (sock < 0) {
-      RCLCPP_ERROR(logger_, "socket(AF_UNIX) failed: %s", strerror(errno));
+      RCLCPP_ERROR(logger_, "socket(AF_UNIX) failed: %s",
+                   errno_to_string().c_str());
       return false;
     }
 
@@ -107,7 +109,7 @@ class UnixFdServer {
     // bind(2): attach socket to filesystem path so subscribers can connect.
     if (::bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
       RCLCPP_ERROR(logger_, "bind(%s) failed: %s", path_.c_str(),
-                   strerror(errno));
+                   errno_to_string().c_str());
       ::close(sock);
       return false;
     }
@@ -115,7 +117,7 @@ class UnixFdServer {
     // listen(2): enable incoming connection queue.
     if (::listen(sock, 16) < 0) {
       RCLCPP_ERROR(logger_, "listen(%s) failed: %s", path_.c_str(),
-                   strerror(errno));
+                   errno_to_string().c_str());
       ::close(sock);
       return false;
     }
@@ -162,7 +164,7 @@ class UnixFdServer {
         }
         if (running_.load(std::memory_order_acquire)) {
           RCLCPP_WARN(logger_, "accept(%s) failed: %s", path_.c_str(),
-                      strerror(errno));
+                      errno_to_string().c_str());
         }
         continue;
       }
@@ -200,7 +202,7 @@ class UnixFdServer {
     std::memcpy(CMSG_DATA(cmsg), &fd_, sizeof(int));
     if (::sendmsg(client, &msg, 0) < 0) {
       RCLCPP_WARN(logger_, "sendmsg failed on %s: %s", path_.c_str(),
-                  strerror(errno));
+                  errno_to_string().c_str());
     }
   }
 

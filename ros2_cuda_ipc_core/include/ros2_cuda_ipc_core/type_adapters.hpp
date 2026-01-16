@@ -27,6 +27,7 @@
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/pointcloud2_view.hpp"
+#include "ros2_cuda_ipc_core/posix_error.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_point_cloud2.hpp"
@@ -146,7 +147,8 @@ inline std::optional<int> request_fd_from_publisher(
     }
   }
   if (sock < 0) {
-    RCLCPP_WARN(logger, "socket(AF_UNIX) failed: %s", strerror(errno));
+    RCLCPP_WARN(logger, "socket(AF_UNIX) failed: %s",
+                errno_to_string().c_str());
     return std::nullopt;
   }
 
@@ -160,7 +162,7 @@ inline std::optional<int> request_fd_from_publisher(
   std::strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
   if (::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
     RCLCPP_WARN(logger, "connect(%s) failed: %s", path.c_str(),
-                strerror(errno));
+                errno_to_string().c_str());
     ::close(sock);
     return std::nullopt;
   }
@@ -178,7 +180,7 @@ inline std::optional<int> request_fd_from_publisher(
   const ssize_t received = ::recvmsg(sock, &msg, 0);
   if (received <= 0) {
     RCLCPP_WARN(logger, "recvmsg on %s failed: %s", path.c_str(),
-                strerror(errno));
+                errno_to_string().c_str());
     ::close(sock);
     return std::nullopt;
   }
