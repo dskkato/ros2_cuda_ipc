@@ -18,10 +18,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-# Set CUDA architectures policy to OLD to avoid requiring explicit architectures
-# This allows nvcc to use its default architecture selection
-cmake_policy(SET CMP0104 OLD)
+# Configure CUDA architectures policy to NEW and specify architectures
+# Use 'native' to let CMake detect appropriate architectures for the host
+if(POLICY CMP0104)
+  cmake_policy(SET CMP0104 NEW)
+endif()
 
+# If the user has not specified CUDA architectures, default to 'native'
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES native)
+endif()
 # Find CUDA
 find_package(CUDAToolkit REQUIRED)
 
