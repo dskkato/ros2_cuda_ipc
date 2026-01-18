@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ros2_cuda_ipc_test</name>
+  <version>0.1.0</version>
+  <description>Test applications for CUDA IPC mechanisms (both cudaIpc and VMM-FD)</description>
+  <maintainer email="dskkato@example.com">dskkato</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
