@@ -7,9 +7,6 @@ Starts producer and consumer processes.
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction, Shutdown, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
-import os
-
-
 def generate_launch_description():
     """
     Launch cuda_ipc_producer and cuda_ipc_consumer with a delay.
