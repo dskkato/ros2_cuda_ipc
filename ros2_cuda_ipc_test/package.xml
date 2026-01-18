@@ -3,7 +3,7 @@
   <name>ros2_cuda_ipc_test</name>
   <version>0.1.0</version>
   <description>Test applications for CUDA IPC mechanisms (both cudaIpc and VMM-FD)</description>
-  <maintainer email="dskkato@example.com">dskkato</maintainer>
+  <maintainer email="dskkato@users.noreply.github.com">dskkato</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
