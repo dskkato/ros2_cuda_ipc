@@ -44,7 +44,7 @@ __global__ void add_kernel(int* p, int n, int v) {
 struct MsgHeader {
   int dev;
   size_t logical_bytes;  // 4096
-  size_t alloc_bytes;    // 65536など
+  size_t alloc_bytes;    // Example: 65536 allocated bytes
 };
 
 static int connect_socket(const char* path) {
