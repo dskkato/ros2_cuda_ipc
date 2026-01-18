@@ -1,12 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
-
-# Enable CUDA language support
-# Try to find CUDA compiler before declaring project
-if(NOT DEFINED CMAKE_CUDA_COMPILER)
-  if(EXISTS "/usr/local/cuda/bin/nvcc")
-    set(CMAKE_CUDA_COMPILER "/usr/local/cuda/bin/nvcc")
-  endif()
-endif()
+cmake_minimum_required(VERSION 3.18)
 
 project(ros2_cuda_ipc_test LANGUAGES CXX CUDA)
 
@@ -18,16 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-# Configure CUDA architectures policy to NEW and specify architectures
-# Use 'native' to let CMake detect appropriate architectures for the host
-if(POLICY CMP0104)
-  cmake_policy(SET CMP0104 NEW)
-endif()
+cmake_policy(SET CMP0104 OLD)
 
-# If the user has not specified CUDA architectures, default to 'native'
-if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES 86 89)
-endif()
 # Find CUDA
 find_package(CUDAToolkit REQUIRED)
 
