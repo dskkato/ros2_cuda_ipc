@@ -60,6 +60,7 @@ static int connect_socket(const char* path) {
 
   if (connect(fd, (sockaddr*)&addr, sizeof(addr)) != 0) {
     perror("connect");
+    close(fd);
     exit(2);
   }
   return fd;
