@@ -7,7 +7,6 @@ Starts producer and consumer processes using Driver API Virtual Memory Managemen
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, TimerAction, Shutdown, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
-import os
 
 
 def generate_launch_description():
