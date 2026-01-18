@@ -139,7 +139,6 @@ int main(int argc, char** argv) {
   CU_CHECK(cuDevicePrimaryCtxRetain(&ctx, cu_dev));
   CU_CHECK(cuCtxSetCurrent(ctx));
 
-  // CUdeviceprop prop_dummy; (void)prop_dummy;
   cudaDeviceProp rprop{};
   CUDA_CHECK(cudaGetDeviceProperties(&rprop, dev));
   printf("[producer] device=%d %s (integrated=%d)\n", dev, rprop.name,
