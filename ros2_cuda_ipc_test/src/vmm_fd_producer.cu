@@ -61,10 +61,12 @@ static int make_server_socket(const char* path) {
   unlink(path);
   if (bind(fd, (sockaddr*)&addr, sizeof(addr)) != 0) {
     perror("bind");
+    close(fd);
     exit(2);
   }
   if (listen(fd, 1) != 0) {
     perror("listen");
+    close(fd);
     exit(2);
   }
   return fd;
