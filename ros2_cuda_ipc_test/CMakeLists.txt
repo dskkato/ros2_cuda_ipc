@@ -26,7 +26,7 @@ endif()
 
 # If the user has not specified CUDA architectures, default to 'native'
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES native)
+  set(CMAKE_CUDA_ARCHITECTURES 86 89)
 endif()
 # Find CUDA
 find_package(CUDAToolkit REQUIRED)
