@@ -45,6 +45,9 @@ python3 doc/scripts/generate_bag_preview.py \
 - `ros2_cuda_ipc_msgs` — GPU バッファ共有のためのメッセージ定義
 - `ros2_cuda_ipc_core` — メモリープール、CUDA IPCユーティリティ、マッパの C++ 実装（CUDA 前提）
 - `sample_nodes` — メッセージ送受信を確認する簡単なサンプルノード
+- `ros2_cuda_ipc_test` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
+- `gpu_image_transport` — GPU画像転送用のimage_transport プラグイン
+- `julia_set` — Julia集合のGPU描画デモノード
 
 ## 開発環境セットアップ
 
@@ -70,12 +73,29 @@ cd ros2_cuda_ipc
 # ROS 2 環境をsource
 source /opt/ros/humble/setup.bash
 
+# CUDA コンパイラのパスを設定（必要な場合）
+export CUDACXX=/usr/local/cuda/bin/nvcc
+
 # ビルド
 colcon build --symlink-install
 
 # ビルド成果を反映
 source install/setup.bash
 ```
+
+### CUDA IPC 動作テスト
+
+本ライブラリを使用する前に、お使いの環境でCUDA IPCが正しく動作するかテストできます。
+
+```bash
+# CUDA IPC テスト（従来のcudaIpcGetMemHandle方式）
+ros2 launch ros2_cuda_ipc_test cuda_ipc.launch.py
+
+# VMM-FD テスト（Driver API Virtual Memory Management方式）
+ros2 launch ros2_cuda_ipc_test vmm.launch.py
+```
+
+詳細は [ros2_cuda_ipc_test/README.md](ros2_cuda_ipc_test/README.md) を参照してください。
 
 ### サンプルノード実行
 
