@@ -97,7 +97,7 @@ memo:
 
 #### BufferView
 
-  * BufferCore.msg を開いた状態 (dev_ptr, ready_evt, RAII)。
+  * BufferCore.msg を TypeAdapter が開いた結果 (dev_ptr, ready_evt, LeaseHandle)。
   * データの解釈は持たない。
 
 ```cpp
@@ -240,7 +240,7 @@ enum class DType : uint8_t {
 };
 
 struct ImageView {
-  // === 開かれたGPUバッファ（RAIIは BufferView が保証） ===
+  // === 開かれたGPUバッファ（refcnt の RAII は LeaseHandle が担う） ===
   BufferView core;
 
   // === 汎用レイアウト（GPU/機械向け） ===
@@ -254,7 +254,7 @@ struct ImageView {
 
   // === BufferView を共有する借用ビュー（コピー可能） ===
   ImageView() = default;
-  ~ImageView() = default;                // リソース解放は core の RAII に委譲
+  ~ImageView() = default;                // Lease の解放は core が保持する LeaseHandle に委譲
   ImageView(const ImageView&) = default;
   ImageView& operator=(const ImageView&) = default;
   ImageView(ImageView&&) noexcept = default;
@@ -461,7 +461,7 @@ struct TypeAdapter<BufferView, gpu_zero_copy_msgs::msg::BufferCore> {
   using custom_type = BufferView;
   using ros_message_type = gpu_zero_copy_msgs::msg::BufferCore;
 
-  // Subscriber側：ROS→View（ここで Open＋refcnt++）
+  // Subscriber側：ROS→View（ここで Lease 取得と Open/import）
   static void convert_to_custom(const ros_message_type& src, custom_type& dst);
 
   // Publisher側：View→ROS（ハンドル生成は別レイヤで、ここはメタデータのコピーのみ）
@@ -527,7 +527,8 @@ TODO:
 ## 運用設計のポイント
 
 * **Adapter は同期をしない**：Lease 取得と View 初期化のみを行い、ユーザがストリーム同期を行う。
-* **RAII 一貫**：View の寿命 = ハンドル寿命。LeaseHandle を共有しつつコピー可。
+* **Lease RAII 一貫**：View が LeaseHandle を共有し、最後の参照が消えた時点で refcnt を解放する。
+  IPC/VMM ハンドルは TypeAdapter のプロセス内キャッシュで共有する。
 * **ROS msg の最小メタデータ**：ros2 topic echo / bag で内容をすぐ確認できる程度の情報を追加。
 * **TypeNegotiation の余地**：future work。
 * エラー発生時は「TypeAdapter エラーハンドリングポリシー」に従う。
