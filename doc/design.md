@@ -20,7 +20,7 @@
 * これだけで GPU バッファの受け渡しが可能。
 
 ```msg
-# gpu_zero_copy_msgs/msg/BufferCore.msg
+# ros2_cuda_ipc_msgs/msg/BufferCore.msg
 
 # Memory backend type
 uint8 CUDA_IPC=0
@@ -49,7 +49,7 @@ uint64 byte_size
 * 追加情報: dtype, shape, strides（GPU向け汎用レイアウト）。
 
 ```msg
-# gpu_zero_copy_msgs/msg/GpuImage.msg
+# ros2_cuda_ipc_msgs/msg/GpuImage.msg
 # 画像として扱うために必要な最小限のメタデータを付与。時刻/座標は Header に集約。
 
 std_msgs/Header header         # stamp, frame_id
@@ -60,7 +60,7 @@ uint32[3] shape                 # {H, W, C}（未使用次元は0でも可）
 uint64[3] strides               # バイト単位: {strideH, strideW, strideC}
                                 # 典型: strideH = step, strideW = C*sizeof(T), strideC = sizeof(T)
 
-gpu_zero_copy_msgs/BufferCore core # data buffer
+ros2_cuda_ipc_msgs/BufferCore core # data buffer
 ```
 #### GpuPointCloud2
     
@@ -68,7 +68,7 @@ gpu_zero_copy_msgs/BufferCore core # data buffer
 * 追加情報: width, height, is_dense, point_step, row_step, fields[]。
 
 ```msg
-# gpu_zero_copy_msgs/msg/GpuPointCloud2.msg
+# ros2_cuda_ipc_msgs/msg/GpuPointCloud2.msg
 # 点群として扱うために必要な最小限のメタデータを付与。時刻/座標は Header に集約。
 
 std_msgs/Header                 header       # stamp, frame_id
@@ -83,7 +83,7 @@ uint32 point_step                             # bytes per point
 uint32 row_step                               # bytes per row (if organized)
 
 # Reuse standard PointField for structure
-gpu_zero_copy_msgs/BufferCore  core           # data buffer
+ros2_cuda_ipc_msgs/BufferCore  core           # data buffer
 
 bool   is_dense
 ```
@@ -230,7 +230,7 @@ BufferView/TypeAdapter の API を維持したまま Jetson Orin をサポート
 #pragma once
 #include <cstdint>
 #include <string>
-#include "buffer_view.hpp"
+#include <ros2_cuda_ipc_core/buffer_view.hpp>
 
 // 画素型（必要十分な最小セット。用途に応じて拡張可）
 enum class DType : uint8_t {
@@ -450,16 +450,18 @@ Example:
 ```cpp
 // type_adapter_buffer_view.hpp
 #pragma once
+#include <cstring>
 #include <rclcpp/type_adapter.hpp>
-#include <gpu_zero_copy_msgs/msg/buffer_core.hpp>
-#include "buffer_view.hpp"
+#include <ros2_cuda_ipc_msgs/msg/buffer_core.hpp>
+#include <ros2_cuda_ipc_core/buffer_view.hpp>
 
 namespace rclcpp {
 template<>
-struct TypeAdapter<BufferView, gpu_zero_copy_msgs::msg::BufferCore> {
+struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
+                   ros2_cuda_ipc_msgs::msg::BufferCore> {
   using is_specialized = std::true_type;
-  using custom_type = BufferView;
-  using ros_message_type = gpu_zero_copy_msgs::msg::BufferCore;
+  using custom_type = ros2_cuda_ipc_core::BufferView;
+  using ros_message_type = ros2_cuda_ipc_msgs::msg::BufferCore;
 
   // Subscriber側：ROS→View（ここで Lease 取得と Open/import）
   static void convert_to_custom(const ros_message_type& src, custom_type& dst);
@@ -476,22 +478,26 @@ Implementation (convert_to_custom):
 static void convert_to_custom(const ros_message_type& src, custom_type& dst) {
   // try open memory
   void* ptr = nullptr;
-  auto err = cudaIpcOpenMemHandle(&ptr, src.mem_handle, cudaIpcMemLazyEnablePeerAccess);
+  cudaIpcMemHandle_t mem_handle{};
+  std::memcpy(&mem_handle, src.mem_handle.data(), sizeof(mem_handle));
+  auto err = cudaIpcOpenMemHandle(&ptr, mem_handle, cudaIpcMemLazyEnablePeerAccess);
   if (err != cudaSuccess) {
     RCLCPP_WARN(rclcpp::get_logger("BufferView"),
                 "Failed to open CUDA IPC handle: %s", cudaGetErrorString(err));
-    dst = BufferView{};  // invalid view
+    dst = custom_type{};  // invalid view
     return;
   }
 
   // 同様に event handle を開く
   cudaEvent_t evt{};
-  err = cudaIpcOpenEventHandle(&evt, src.event_handle);
+  cudaIpcEventHandle_t event_handle{};
+  std::memcpy(&event_handle, src.event_handle.data(), sizeof(event_handle));
+  err = cudaIpcOpenEventHandle(&evt, event_handle);
   if (err != cudaSuccess) {
     RCLCPP_WARN(rclcpp::get_logger("BufferView"),
                 "Failed to open CUDA IPC event handle: %s", cudaGetErrorString(err));
     cudaIpcCloseMemHandle(ptr);
-    dst = BufferView{};
+    dst = custom_type{};
     return;
   }
 

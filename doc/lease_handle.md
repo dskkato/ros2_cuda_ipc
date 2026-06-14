@@ -7,7 +7,7 @@
 * **generation**：slot の世代番号。Publisher が再利用時にインクリメントし、Subscriber は受信時に一致を確認する。
 * **refcnt**：slot ごとのプロセス間参照カウント。
 * **pending**：世代ごとに未取得の購読者数。Publisher が publish 前に設定し、各 Subscriber が初回取得で減算する想定。
-* **SHM**：共有メモリ。slot メタ情報（refcnt, generation）を格納する。
+* **SHM**：共有メモリ。slot メタ情報（refcnt, generation, pending）を格納する。
 
 ## 概要
 
@@ -364,7 +364,6 @@ classDiagram
     +operator=(const BufferView&)
     +enqueue_ready_event(stream) : cudaError_t
     +reset() : void
-    -shared_ptr<ControlBlock> control_
   }
 
   class ImageView {
@@ -382,20 +381,10 @@ classDiagram
     +ImageView -> BufferCore.msg
   }
 
-  class ControlBlock {
-    <<RAII>>
-    -void* dev_ptr
-    -cudaEvent_t ready_evt
-    -bool opened_mem_via_ipc
-    -bool opened_event_via_ipc
-    +~ControlBlock()
-  }
-
   BufferCore_msg <.. TypeAdapter : 入力
   TypeAdapter --> ImageView : 生成
   ImageView *-- BufferView : 集約(保持)
   BufferView o-- LeaseHandle : 所有(共有ptr)
-  BufferView o-- ControlBlock : 所有(共有ptr)
 ```
 
 ### シーケンス図
