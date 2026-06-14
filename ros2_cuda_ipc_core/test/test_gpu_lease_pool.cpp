@@ -1,3 +1,4 @@
+#include <cuda_runtime_api.h>
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -25,7 +26,24 @@ std::string make_unique_shm_name(const std::string &prefix) {
 
 using ros2_cuda_ipc_core::cuda::GpuLeasePool;
 
-TEST(GpuLeasePoolTest, InitialiseAndAcquireSetsPendingWhenSubscribersPresent) {
+class GpuLeasePoolTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    int device_count = 0;
+    auto err = cudaGetDeviceCount(&device_count);
+    if (err != cudaSuccess || device_count == 0) {
+      GTEST_SKIP() << "CUDA device not available for tests";
+    }
+
+    err = cudaSetDevice(0);
+    if (err != cudaSuccess) {
+      GTEST_SKIP() << "Failed to select CUDA device 0";
+    }
+  }
+};
+
+TEST_F(GpuLeasePoolTest,
+       InitialiseAndAcquireSetsPendingWhenSubscribersPresent) {
   const std::string shm_name = make_unique_shm_name("gpu_pool_basic");
   auto logger = rclcpp::get_logger("GpuLeasePoolTest");
   GpuLeasePool pool({shm_name, 2, std::chrono::milliseconds(100)}, logger);
@@ -53,7 +71,7 @@ TEST(GpuLeasePoolTest, InitialiseAndAcquireSetsPendingWhenSubscribersPresent) {
   ::shm_unlink(shm_name.c_str());
 }
 
-TEST(GpuLeasePoolTest, AcquireWithoutSubscribersDoesNotSetPendingDeadline) {
+TEST_F(GpuLeasePoolTest, AcquireWithoutSubscribersDoesNotSetPendingDeadline) {
   const std::string shm_name = make_unique_shm_name("gpu_pool_nosub");
   auto logger = rclcpp::get_logger("GpuLeasePoolTest");
   GpuLeasePool pool({shm_name, 1, std::chrono::milliseconds(100)}, logger);
@@ -75,7 +93,7 @@ TEST(GpuLeasePoolTest, AcquireWithoutSubscribersDoesNotSetPendingDeadline) {
   ::shm_unlink(shm_name.c_str());
 }
 
-TEST(GpuLeasePoolTest, ReclaimStalePendingClearsLease) {
+TEST_F(GpuLeasePoolTest, ReclaimStalePendingClearsLease) {
   const std::string shm_name = make_unique_shm_name("gpu_pool_reclaim");
   auto logger = rclcpp::get_logger("GpuLeasePoolTest");
   GpuLeasePool pool({shm_name, 1, std::chrono::milliseconds(1)}, logger);

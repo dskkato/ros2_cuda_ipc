@@ -385,6 +385,13 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     void *dev_ptr = nullptr;
     cudaEvent_t evt = nullptr;
 
+    auto close_opened_event = [&evt]() {
+      if (evt) {
+        cudaEventDestroy(evt);
+        evt = nullptr;
+      }
+    };
+
     {
       std::lock_guard<std::mutex> lock(
           ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
@@ -418,14 +425,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
           RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
                       "cudaIpcOpenMemHandle failed: %s",
                       cudaGetErrorString(err));
-          view = ros2_cuda_ipc_core::BufferView{};
-          return;
-        }
-        if (err != cudaSuccess) {
-          cudaIpcCloseMemHandle(dev_ptr);
-          RCLCPP_WARN(rclcpp::get_logger("ros2_cuda_ipc_core.BufferView"),
-                      "cudaIpcOpenEventHandle failed: %s",
-                      cudaGetErrorString(err));
+          close_opened_event();
           view = ros2_cuda_ipc_core::BufferView{};
           return;
         }
@@ -448,6 +448,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
             msg.mem_handle, msg.device_id,
             static_cast<std::size_t>(msg.byte_size), logger);
         if (!vmm_result.has_value()) {
+          close_opened_event();
           view = ros2_cuda_ipc_core::BufferView{};
           return;
         }

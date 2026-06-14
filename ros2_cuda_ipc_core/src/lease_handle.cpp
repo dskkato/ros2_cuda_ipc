@@ -354,10 +354,17 @@ LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
     return LeaseHandle{};
   }
 
-  const uint32_t prev = ref.fetch_add(1, std::memory_order_acq_rel);
-  if (prev == UINT32_MAX) {
-    RCLCPP_ERROR(lease_logger(), "lease:ref_overflow slot=%u", slot_id);
-    return LeaseHandle{};
+  uint32_t observed_ref = ref.load(std::memory_order_acquire);
+  while (true) {
+    if (observed_ref == UINT32_MAX) {
+      RCLCPP_ERROR(lease_logger(), "lease:ref_overflow slot=%u", slot_id);
+      return LeaseHandle{};
+    }
+    if (ref.compare_exchange_weak(observed_ref, observed_ref + 1,
+                                  std::memory_order_acq_rel,
+                                  std::memory_order_acquire)) {
+      break;
+    }
   }
 
   const uint32_t recheck_gen = gen.load(std::memory_order_acquire);

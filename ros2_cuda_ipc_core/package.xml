@@ -11,6 +11,8 @@
   <depend>rclcpp</depend>
   <depend>rcpputils</depend>
   <depend>ros2_cuda_ipc_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
   <build_depend>libuuid</build_depend>
   <exec_depend>libuuid</exec_depend>
 
