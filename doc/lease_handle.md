@@ -19,8 +19,8 @@ GPU メモリや CUDA IPC とは疎結合で、(`shm_name`, `slot_id`, `generati
 参照カウントを保持するための最小限の状態（マッピング共有ポインタとスロットメタ情報）だけを格納する。
 
 Subscriber 側で生成する `BufferView` は、この `LeaseHandle` を `std::shared_ptr` で保持する。
-CUDA IPC ハンドルや VMM import の結果は BufferView/MemoryBackend 側のプロセス内キャッシュで共有し、
-初回だけ `cudaIpcOpen*Handle` などを呼んで dev_ptr / event を取得する。以降は同じハンドルを
+CUDA IPC ハンドルや VMM import の結果は TypeAdapter 側のプロセス内キャッシュで共有し、
+初回だけ `cudaIpcOpen*Handle` や VMM import を呼んで dev_ptr / event を取得する。以降は同じハンドルを
 利用するため、`BufferView` の破棄時にフレームごとの `cudaIpcClose*` を呼ぶ必要はない。
 
 ## 目的/要件
@@ -218,8 +218,8 @@ private:
 ## Adapter との責務分担（位置づけ）
 
 * TypeAdapter（ROS→View） は、まず`LeaseHandle::acquire()`を試みる。
-  * 成功：Lease が有効になった時点で BufferView の初期化を呼び、必要なら CUDA IPC open や VMM import を行う。
-    * IPC ハンドルは BufferView/MemoryBackend 側のプロセス内キャッシュを参照し、`BufferView` の破棄時に
+  * 成功：Lease が有効になった時点で、必要なら CUDA IPC open や VMM import を行い、BufferView を構築する。
+    * IPC/VMM ハンドルは TypeAdapter 側のプロセス内キャッシュを参照し、`BufferView` の破棄時に
       `cudaIpcClose*` を呼ばない。
   * 失敗：無効 View を返してコールバック側で破棄（例外は使わない）。
 * View の RAII で `LeaseHandle` を共有し、`reset()` 時に `refcnt--` を行う。
