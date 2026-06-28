@@ -3,9 +3,9 @@
 #include <rclcpp/type_adapter.hpp>
 #include <type_traits>
 
-#include "ros2_cuda_ipc_core/buffer_view_mapper.hpp"
-#include "ros2_cuda_ipc_core/image_view_mapper.hpp"
-#include "ros2_cuda_ipc_core/pointcloud2_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/mapper/buffer_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/mapper/image_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/mapper/pointcloud2_view_mapper.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_point_cloud2.hpp"
@@ -21,12 +21,12 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
 
   static void convert_to_custom(const ros_message_type& msg,
                                 custom_type& view) {
-    view = ros2_cuda_ipc_core::map_buffer_view(msg);
+    view = ros2_cuda_ipc_core::mapper::map_buffer_view(msg);
   }
 
   static void convert_to_ros_message(const custom_type& view,
                                      ros_message_type& msg) {
-    ros2_cuda_ipc_core::fill_buffer_core_message(view, msg);
+    ros2_cuda_ipc_core::mapper::fill_buffer_core_message(view, msg);
   }
 };
 
@@ -39,12 +39,12 @@ struct TypeAdapter<ros2_cuda_ipc_core::ImageView,
 
   static void convert_to_custom(const ros_message_type& msg,
                                 custom_type& view) {
-    view = ros2_cuda_ipc_core::map_image_view(msg);
+    view = ros2_cuda_ipc_core::mapper::map_image_view(msg);
   }
 
   static void convert_to_ros_message(const custom_type& view,
                                      ros_message_type& msg) {
-    ros2_cuda_ipc_core::fill_gpu_image_message(view, msg);
+    ros2_cuda_ipc_core::mapper::fill_gpu_image_message(view, msg);
   }
 };
 
@@ -57,12 +57,12 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
 
   static void convert_to_custom(const ros_message_type& msg,
                                 custom_type& view) {
-    view = ros2_cuda_ipc_core::map_pointcloud2_view(msg);
+    view = ros2_cuda_ipc_core::mapper::map_pointcloud2_view(msg);
   }
 
   static void convert_to_ros_message(const custom_type& view,
                                      ros_message_type& msg) {
-    ros2_cuda_ipc_core::fill_gpu_pointcloud2_message(view, msg);
+    ros2_cuda_ipc_core::mapper::fill_gpu_pointcloud2_message(view, msg);
   }
 };
 

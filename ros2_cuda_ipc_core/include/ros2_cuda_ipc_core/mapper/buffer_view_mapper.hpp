@@ -4,7 +4,7 @@
 #include "ros2_cuda_ipc_core/buffer_view.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::mapper {
 
 struct BufferViewMapperOptions {
   rclcpp::Logger logger =
@@ -26,4 +26,4 @@ BufferView map_buffer_view(const ros2_cuda_ipc_msgs::msg::BufferCore& msg);
 void fill_buffer_core_message(const BufferView& view,
                               ros2_cuda_ipc_msgs::msg::BufferCore& msg);
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::mapper

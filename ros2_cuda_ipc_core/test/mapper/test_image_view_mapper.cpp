@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 
-#include "ros2_cuda_ipc_core/image_view_mapper.hpp"
-#include "test_mapper_utils.hpp"
+#include "../test_mapper_utils.hpp"
+#include "ros2_cuda_ipc_core/mapper/image_view_mapper.hpp"
 
 namespace {
 
@@ -34,7 +34,7 @@ TEST_F(ImageViewMapperTest, InvalidCoreReturnsDefaultImageView) {
   msg.core.byte_size = 60;
   msg.core.backend = ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC;
 
-  ros2_cuda_ipc_core::ImageViewMapper mapper;
+  ros2_cuda_ipc_core::mapper::ImageViewMapper mapper;
   auto view = mapper.map(msg);
   EXPECT_FALSE(view.valid());
   EXPECT_TRUE(view.header.frame_id.empty());
@@ -54,7 +54,7 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
   msg.encoding = "mono16";
   msg.core = core;
 
-  ros2_cuda_ipc_core::ImageViewMapper mapper;
+  ros2_cuda_ipc_core::mapper::ImageViewMapper mapper;
   auto view = mapper.map(msg);
   ASSERT_TRUE(view.core.valid());
   EXPECT_EQ(view.header.frame_id, "camera_frame");
@@ -86,7 +86,7 @@ TEST_F(ImageViewMapperTest, FillGpuImageMessageCopiesMetadataAndCore) {
                             sizeof(mem_handle), event_handle);
 
   ros2_cuda_ipc_msgs::msg::GpuImage msg;
-  ros2_cuda_ipc_core::fill_gpu_image_message(view, msg);
+  ros2_cuda_ipc_core::mapper::fill_gpu_image_message(view, msg);
 
   EXPECT_EQ(msg.header.frame_id, "frame");
   EXPECT_EQ(msg.encoding, "rgb8");

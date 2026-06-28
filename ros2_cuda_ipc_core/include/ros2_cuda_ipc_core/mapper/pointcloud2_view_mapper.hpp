@@ -1,10 +1,10 @@
 #pragma once
 
-#include "ros2_cuda_ipc_core/buffer_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/mapper/buffer_view_mapper.hpp"
 #include "ros2_cuda_ipc_core/pointcloud2_view.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_point_cloud2.hpp"
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::mapper {
 
 class PointCloud2ViewMapper {
  public:
@@ -23,4 +23,4 @@ PointCloud2View map_pointcloud2_view(
 void fill_gpu_pointcloud2_message(const PointCloud2View& view,
                                   ros2_cuda_ipc_msgs::msg::GpuPointCloud2& msg);
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::mapper

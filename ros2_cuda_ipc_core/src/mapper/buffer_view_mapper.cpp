@@ -1,4 +1,4 @@
-#include "ros2_cuda_ipc_core/buffer_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/mapper/buffer_view_mapper.hpp"
 
 #include <cstring>
 #include <memory>
@@ -7,7 +7,7 @@
 #include "ros2_cuda_ipc_core/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::mapper {
 
 namespace {
 
@@ -110,4 +110,4 @@ void fill_buffer_core_message(const BufferView& view,
   }
 }
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::mapper

@@ -1,6 +1,6 @@
-#include "ros2_cuda_ipc_core/image_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/mapper/image_view_mapper.hpp"
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::mapper {
 
 namespace {
 
@@ -45,4 +45,4 @@ void fill_gpu_image_message(const ImageView& view,
   fill_buffer_core_message(view.core, msg.core);
 }
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::mapper

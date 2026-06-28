@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 
-#include "ros2_cuda_ipc_core/pointcloud2_view_mapper.hpp"
+#include "../test_mapper_utils.hpp"
+#include "ros2_cuda_ipc_core/mapper/pointcloud2_view_mapper.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
-#include "test_mapper_utils.hpp"
 
 namespace {
 
@@ -36,7 +36,7 @@ TEST_F(PointCloud2ViewMapperTest, InvalidCorePreservesHeaderOnlyBehavior) {
   msg.core.byte_size = 24;
   msg.core.backend = ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC;
 
-  ros2_cuda_ipc_core::PointCloud2ViewMapper mapper;
+  ros2_cuda_ipc_core::mapper::PointCloud2ViewMapper mapper;
   auto view = mapper.map(msg);
   EXPECT_FALSE(view.core.valid());
   EXPECT_EQ(view.header.frame_id, "frame_pc");
@@ -67,7 +67,7 @@ TEST_F(PointCloud2ViewMapperTest, CopiesLayoutWhenCoreIsValid) {
   field_y.offset = 4;
   msg.fields = {field_x, field_y};
 
-  ros2_cuda_ipc_core::PointCloud2ViewMapper mapper;
+  ros2_cuda_ipc_core::mapper::PointCloud2ViewMapper mapper;
   auto view = mapper.map(msg);
   ASSERT_TRUE(view.core.valid());
   EXPECT_EQ(view.header.frame_id, "frame_pc");
@@ -104,7 +104,7 @@ TEST_F(PointCloud2ViewMapperTest,
                  {"y", 4u, sensor_msgs::msg::PointField::FLOAT32, 1u}};
 
   ros2_cuda_ipc_msgs::msg::GpuPointCloud2 msg;
-  ros2_cuda_ipc_core::fill_gpu_pointcloud2_message(view, msg);
+  ros2_cuda_ipc_core::mapper::fill_gpu_pointcloud2_message(view, msg);
 
   EXPECT_EQ(msg.header.frame_id, "frame");
   EXPECT_EQ(msg.width, 10u);

@@ -4,15 +4,15 @@
 #include <algorithm>
 #include <cstring>
 
-#include "ros2_cuda_ipc_core/buffer_view_mapper.hpp"
+#include "../test_mapper_utils.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/mapper/buffer_view_mapper.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
-#include "test_mapper_utils.hpp"
 
 namespace {
 
-using ros2_cuda_ipc_core::BufferViewMapper;
 using ros2_cuda_ipc_core::MemoryBackendKind;
+using ros2_cuda_ipc_core::mapper::BufferViewMapper;
 
 class BufferViewMapperTest : public ::testing::Test {
  protected:
@@ -147,7 +147,7 @@ TEST_F(BufferViewMapperTest, FillBufferCoreMessageCopiesCudaIpcHandles) {
                        sizeof(mem_handle), event_handle);
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
-  ros2_cuda_ipc_core::fill_buffer_core_message(view, msg);
+  ros2_cuda_ipc_core::mapper::fill_buffer_core_message(view, msg);
 
   EXPECT_EQ(msg.device_id, 2u);
   EXPECT_EQ(msg.byte_size, 64u);
@@ -176,7 +176,7 @@ TEST_F(BufferViewMapperTest, FillBufferCoreMessagePreservesVmmPayload) {
                        payload.size(), event_handle);
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
-  ros2_cuda_ipc_core::fill_buffer_core_message(view, msg);
+  ros2_cuda_ipc_core::mapper::fill_buffer_core_message(view, msg);
 
   EXPECT_EQ(msg.backend, ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD);
   EXPECT_TRUE(

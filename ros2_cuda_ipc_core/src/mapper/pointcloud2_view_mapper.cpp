@@ -1,8 +1,8 @@
-#include "ros2_cuda_ipc_core/pointcloud2_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/mapper/pointcloud2_view_mapper.hpp"
 
 #include "sensor_msgs/msg/point_field.hpp"
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::mapper {
 
 namespace {
 
@@ -71,4 +71,4 @@ void fill_gpu_pointcloud2_message(
   fill_buffer_core_message(view.core, msg.core);
 }
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::mapper
