@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Daisuke Kato
+// SPDX-License-Identifier: MIT
+
 #include "ros2_cuda_ipc_core/backend/backend_importer.hpp"
 
 #include "ros2_cuda_ipc_core/backend/cuda_ipc_importer.hpp"

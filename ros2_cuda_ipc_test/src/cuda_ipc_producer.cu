@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Daisuke Kato
+// SPDX-License-Identifier: MIT
+
 // cuda_ipc_producer.cu
 // CUDA IPC producer using cudaIpcGetMemHandle (Runtime API)
 #include <cuda_runtime.h>

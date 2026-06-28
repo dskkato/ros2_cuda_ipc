@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Daisuke Kato
+// SPDX-License-Identifier: MIT
+
 #include "ros2_cuda_ipc_core/buffer_view.hpp"
 
 #include <algorithm>

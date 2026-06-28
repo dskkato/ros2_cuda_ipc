@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Daisuke Kato
+// SPDX-License-Identifier: MIT
+
 #include "ros2_cuda_ipc_core/mapper/pointcloud2_view_mapper.hpp"
 
 #include "sensor_msgs/msg/point_field.hpp"

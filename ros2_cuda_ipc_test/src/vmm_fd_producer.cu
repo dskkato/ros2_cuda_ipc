@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Daisuke Kato
+// SPDX-License-Identifier: MIT
+
 // vmm_fd_producer.cu
 // VMM-FD producer using Driver API Virtual Memory Management with POSIX FD
 // export

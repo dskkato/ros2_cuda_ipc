@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Daisuke Kato
+// SPDX-License-Identifier: MIT
+
 #include <cmath>
 
 #include "julia_set/cuda/julia_kernel.hpp"
