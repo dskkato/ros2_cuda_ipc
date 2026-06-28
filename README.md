@@ -98,7 +98,7 @@ ros2 launch ros2_cuda_ipc_test vmm.launch.py
 
 ### Julia Set デモ実行
 
-GPU 上で Julia 集合を描画し、`ros2_cuda_ipc_core` の `GpuLeasePool` と TypeAdapter を使って ROS 2 プロセス間で GPU 画像を共有するデモです。
+GPU 上で Julia 集合を描画し、`ros2_cuda_ipc_core` の `GpuLeasePool` と TypeAdapter API を使って ROS 2 プロセス間で GPU 画像を共有するデモです。
 
 ```bash
 ros2 launch julia_set julia_set_demo.launch.py
@@ -117,10 +117,17 @@ ros2 launch julia_set julia_set_demo.launch.py
 
 ## コアコンポーネントとヘルパー
 
-- `ros2_cuda_ipc_core::ImageView` / `PointCloud2View`: CUDA IPC ハンドルを ROS 2 メッセージとして受け渡すための型アダプタ。`ros2_cuda_ipc_core/include/ros2_cuda_ipc_core` に実装があります。
-- `ros2_cuda_ipc_core::BufferView`: 任意バッファ向けの基盤ビュー。Publisher/Subscriber 間で共有メモリのメタデータを運びます。
+- `ros2_cuda_ipc_core::BufferView`: 任意バッファ向けの基盤ビューです。受信側では import 済み GPU resource と lease を保持します。
+- `ros2_cuda_ipc_core::ImageView` / `PointCloud2View`: `BufferView` に画像・点群メタデータを重ねた custom type です。
+- `ros2_cuda_ipc_core::BufferViewMapper` / `ImageViewMapper` / `PointCloud2ViewMapper`: `BufferCore` / `GpuImage` / `GpuPointCloud2` から View を構築する明示制御 API です。
+- `ros2_cuda_ipc_core/type_adapters.hpp`: `Publisher<ImageView>` / `Subscription<ImageView>` のように View を直接扱うための薄い TypeAdapter です。内部では mapper API を呼びます。
 - `ros2_cuda_ipc_core::LeaseHandle`: Publisher 側でスロットの貸出状態を管理し、`pending_ttl` の経過で強制解放します。
 - `ros2_cuda_ipc_core::cuda::GpuLeasePool`: Publisher 側の GPU メモリスロット、backend 切り替え、lease 更新をまとめる共通プールです。
+
+受信側 API は 2 系統あります。
+
+- TypeAdapter API: `Subscription<ImageView>` / `Subscription<PointCloud2View>` をそのまま使う高レベル API
+- Mapper API: `Subscription<ros2_cuda_ipc_msgs::msg::GpuImage>` などで raw message を受け、`ImageViewMapper::map()` で明示的に resource import する API
 
 ---
 
@@ -152,13 +159,6 @@ GitHub Actions の `build` ワークフローは `ghcr.io/dskkato/ros2-cuda-ipc-
 ```
 
 `docker login ghcr.io` を事前に実行してから `--push` を付けてください。タグを明示的に変えたい場合は `--tag` オプションで `ghcr.io/dskkato/リポジトリ:タグ` のように *プレフィックスを含めた* フルリポジトリ名を渡してください（スクリプトはこの形式を期待します）。
-
-
-`ros2_cuda_ipc_core` には gtest ベースの単体テストが含まれています。
-
-- `test_type_adapters.cpp`: CUDA IPC/VMM-FD メッセージ型アダプタの変換確認
-- `test_lease_handle.cpp`: スロット貸出しと `pending_ttl` 回収の検証
-- `test_gpu_lease_pool.cpp`: GPU lease pool の slot 管理と backend 初期化の検証
 
 ビルドとテスト実行例:
 

@@ -34,7 +34,7 @@ struct PointCloud2View {
     int num_fields;
   };
 
-  std_msgs::msg::Header header;
+  std_msgs::msg::Header header{};
   BufferView core;
   uint32_t height = 1;
   uint32_t width = 0;
@@ -42,12 +42,6 @@ struct PointCloud2View {
   uint32_t row_step = 0;
   bool is_dense = true;
   std::vector<Field> fields;
-
-  int x_off = -1;
-  int y_off = -1;
-  int z_off = -1;
-  int intensity_off = -1;
-  int rgb_off = -1;
 
   PointCloud2View() = default;
   ~PointCloud2View() = default;

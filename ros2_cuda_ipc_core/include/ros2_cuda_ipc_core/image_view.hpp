@@ -21,7 +21,7 @@ enum class DType : uint8_t {
 };
 
 struct ImageView {
-  std_msgs::msg::Header header;
+  std_msgs::msg::Header header{};
   BufferView core;
   std::array<uint32_t, 3> shape{0, 0, 0};
   std::array<uint64_t, 3> strides{0, 0, 0};

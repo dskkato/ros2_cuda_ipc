@@ -1,77 +1,27 @@
-#pragma once
+#include "ros2_cuda_ipc_core/backend/vmm_fd_importer.hpp"
 
-#include <cuda.h>
-#include <cuda_runtime_api.h>
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include <uuid/uuid.h>
 
-#include <array>
 #include <cerrno>
-#include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <mutex>
 #include <optional>
-#include <rclcpp/logging.hpp>
 #include <string>
-#include <unordered_map>
 
+#include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/posix_error.hpp"
 
-namespace ros2_cuda_ipc_core::detail {
+namespace ros2_cuda_ipc_core::backend {
 
-struct IpcHandleKey {
-  uint8_t backend = 0;
-  MemoryHandlePayload mem{};
-  std::array<uint8_t, sizeof(cudaIpcEventHandle_t)> evt{};
+namespace {
 
-  bool operator==(const IpcHandleKey& other) const noexcept {
-    return backend == other.backend && mem == other.mem && evt == other.evt;
-  }
-};
-
-struct IpcHandleKeyHash {
-  std::size_t operator()(const IpcHandleKey& key) const noexcept {
-    std::size_t hash = key.backend;
-    for (uint8_t byte : key.mem) {
-      hash = hash * 131U + byte;
-    }
-    for (uint8_t byte : key.evt) {
-      hash = hash * 131U + byte;
-    }
-    return hash;
-  }
-};
-
-struct CachedIpcHandles {
-  void* dev_ptr = nullptr;
-  cudaEvent_t event = nullptr;
-  CUdeviceptr vmm_address = 0;
-  CUmemGenericAllocationHandle vmm_allocation = 0;
-  std::size_t allocation_size = 0;
-};
-
-inline std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash>&
-ipc_handle_cache() {
-  // Known limitation: cached IPC handles live for the subscriber process
-  // lifetime. Subscribers cannot safely track publisher lifecycles, so
-  // handles persist until shutdown.
-  static std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash>
-      cache;
-  return cache;
-}
-
-inline std::mutex& ipc_handle_cache_mutex() {
-  static std::mutex mutex;
-  return mutex;
-}
-
-inline std::size_t align_up_size(std::size_t value, std::size_t alignment) {
+std::size_t align_up_size(std::size_t value, std::size_t alignment) {
   if (alignment == 0) {
     return value;
   }
@@ -82,10 +32,10 @@ inline std::size_t align_up_size(std::size_t value, std::size_t alignment) {
   return value + alignment - remainder;
 }
 
-inline bool ensure_cuda_driver_initialised(const rclcpp::Logger& logger) {
+bool ensure_cuda_driver_initialised(const rclcpp::Logger& logger) {
   static std::once_flag once;
   static CUresult init_status = CUDA_SUCCESS;
-  std::call_once(once, [&]() { init_status = cuInit(0); });
+  std::call_once(once, []() { init_status = cuInit(0); });
   if (init_status != CUDA_SUCCESS) {
     RCLCPP_ERROR(
         logger, "cuInit failed: %s",
@@ -99,8 +49,8 @@ struct VmmPayload {
   std::string uuid;
 };
 
-inline std::optional<VmmPayload> parse_vmm_payload(
-    const MemoryHandlePayload& payload, const rclcpp::Logger& logger) {
+std::optional<VmmPayload> parse_vmm_payload(const MemoryHandlePayload& payload,
+                                            const rclcpp::Logger& logger) {
   const uint32_t length = load_u32_le(payload.data());
   if (length == 0 || length > ros2_cuda_ipc_core::kVmmUuidMaxLength ||
       length + 4 > payload.size()) {
@@ -121,8 +71,8 @@ inline std::optional<VmmPayload> parse_vmm_payload(
   return result;
 }
 
-inline std::optional<int> request_fd_from_publisher(
-    const std::string& path, const rclcpp::Logger& logger) {
+std::optional<int> request_fd_from_publisher(const std::string& path,
+                                             const rclcpp::Logger& logger) {
   int sock = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (sock < 0) {
     if (errno == EINVAL || errno == EPROTOTYPE) {
@@ -188,42 +138,42 @@ inline std::optional<int> request_fd_from_publisher(
   return fd;
 }
 
-struct VmmOpenResult {
-  void* dev_ptr = nullptr;
-  CUdeviceptr address = 0;
-  CUmemGenericAllocationHandle allocation = 0;
-  std::size_t allocation_size = 0;
-};
+}  // namespace
 
-inline std::optional<VmmOpenResult> open_vmm_allocation(
-    const MemoryHandlePayload& payload, uint32_t device_id,
-    std::size_t byte_size, const rclcpp::Logger& logger) {
-  auto meta = parse_vmm_payload(payload, logger);
+std::optional<ImportedBuffer> VmmFdImporter::import(
+    const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
+    const cudaIpcEventHandle_t& event_handle,
+    const rclcpp::Logger& logger) const {
+  const auto meta = parse_vmm_payload(msg.mem_handle, logger);
   if (!meta.has_value()) {
     return std::nullopt;
   }
-  if (!ensure_cuda_driver_initialised(logger)) {
-    return std::nullopt;
-  }
 
-  const auto socket_path = build_memory_socket_path(meta->uuid);
+  const std::string socket_path = build_memory_socket_path(meta->uuid);
   if (socket_path.size() >= sizeof(sockaddr_un::sun_path)) {
     RCLCPP_WARN(logger, "UUID %s is too long for AF_UNIX path",
                 socket_path.c_str());
     return std::nullopt;
   }
 
-  auto fd_opt = request_fd_from_publisher(socket_path, logger);
+  const auto fd_opt = request_fd_from_publisher(socket_path, logger);
   if (!fd_opt.has_value()) {
     return std::nullopt;
   }
 
-  const int fd = fd_opt.value();
-  CUmemGenericAllocationHandle allocation = 0;
-  void* os_handle = reinterpret_cast<void*>(static_cast<intptr_t>(fd));
-  CUresult cu_res = cuMemImportFromShareableHandle(
-      &allocation, os_handle, CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR);
-  ::close(fd);
+  if (!ensure_cuda_driver_initialised(logger)) {
+    ::close(fd_opt.value());
+    return std::nullopt;
+  }
+
+  ImportedBuffer imported;
+
+  void* os_handle =
+      reinterpret_cast<void*>(static_cast<intptr_t>(fd_opt.value()));
+  CUresult cu_res =
+      cuMemImportFromShareableHandle(&imported.vmm_allocation, os_handle,
+                                     CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR);
+  ::close(fd_opt.value());
   if (cu_res != CUDA_SUCCESS) {
     RCLCPP_WARN(logger, "cuMemImportFromShareableHandle failed: %s",
                 ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
@@ -233,7 +183,7 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   CUmemAllocationProp prop{};
   prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
   prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-  prop.location.id = static_cast<int>(device_id);
+  prop.location.id = static_cast<int>(msg.device_id);
   prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
   std::size_t granularity = 0;
   cu_res = cuMemGetAllocationGranularity(&granularity, &prop,
@@ -241,52 +191,61 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   if (cu_res != CUDA_SUCCESS) {
     RCLCPP_WARN(logger, "cuMemGetAllocationGranularity failed: %s",
                 ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
-    cuMemRelease(allocation);
+    cuMemRelease(imported.vmm_allocation);
     return std::nullopt;
   }
 
-  std::size_t allocation_size = align_up_size(byte_size, granularity);
-  if (allocation_size == 0) {
-    allocation_size = granularity;
+  imported.allocation_size =
+      align_up_size(static_cast<std::size_t>(msg.byte_size), granularity);
+  if (imported.allocation_size == 0) {
+    imported.allocation_size = granularity;
   }
 
-  CUdeviceptr address = 0;
-  cu_res = cuMemAddressReserve(&address, allocation_size, 0, 0, 0);
+  cu_res = cuMemAddressReserve(&imported.vmm_address, imported.allocation_size,
+                               0, 0, 0);
   if (cu_res != CUDA_SUCCESS) {
     RCLCPP_WARN(logger, "cuMemAddressReserve failed: %s",
                 ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
-    cuMemRelease(allocation);
+    cuMemRelease(imported.vmm_allocation);
     return std::nullopt;
   }
 
-  cu_res = cuMemMap(address, allocation_size, 0, allocation, 0);
+  cu_res = cuMemMap(imported.vmm_address, imported.allocation_size, 0,
+                    imported.vmm_allocation, 0);
   if (cu_res != CUDA_SUCCESS) {
     RCLCPP_WARN(logger, "cuMemMap failed: %s",
                 ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
-    cuMemAddressFree(address, allocation_size);
-    cuMemRelease(allocation);
+    cuMemAddressFree(imported.vmm_address, imported.allocation_size);
+    cuMemRelease(imported.vmm_allocation);
     return std::nullopt;
   }
 
   CUmemAccessDesc access_desc{};
   access_desc.location = prop.location;
   access_desc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-  cu_res = cuMemSetAccess(address, allocation_size, &access_desc, 1);
+  cu_res = cuMemSetAccess(imported.vmm_address, imported.allocation_size,
+                          &access_desc, 1);
   if (cu_res != CUDA_SUCCESS) {
     RCLCPP_WARN(logger, "cuMemSetAccess failed: %s",
                 ros2_cuda_ipc_core::cuda::cu_result_to_string(cu_res).c_str());
-    cuMemUnmap(address, allocation_size);
-    cuMemAddressFree(address, allocation_size);
-    cuMemRelease(allocation);
+    cuMemUnmap(imported.vmm_address, imported.allocation_size);
+    cuMemAddressFree(imported.vmm_address, imported.allocation_size);
+    cuMemRelease(imported.vmm_allocation);
     return std::nullopt;
   }
 
-  VmmOpenResult result;
-  result.dev_ptr = reinterpret_cast<void*>(address);
-  result.address = address;
-  result.allocation = allocation;
-  result.allocation_size = allocation_size;
-  return result;
+  auto err = cudaIpcOpenEventHandle(&imported.event, event_handle);
+  if (err != cudaSuccess) {
+    RCLCPP_WARN(logger, "cudaIpcOpenEventHandle failed: %s",
+                cudaGetErrorString(err));
+    cuMemUnmap(imported.vmm_address, imported.allocation_size);
+    cuMemAddressFree(imported.vmm_address, imported.allocation_size);
+    cuMemRelease(imported.vmm_allocation);
+    return std::nullopt;
+  }
+
+  imported.dev_ptr = reinterpret_cast<void*>(imported.vmm_address);
+  return imported;
 }
 
-}  // namespace ros2_cuda_ipc_core::detail
+}  // namespace ros2_cuda_ipc_core::backend
