@@ -19,7 +19,7 @@ GPU メモリや CUDA IPC とは疎結合で、(`shm_name`, `slot_id`, `generati
 参照カウントを保持するための最小限の状態（マッピング共有ポインタとスロットメタ情報）だけを格納する。
 
 Subscriber 側で生成する `BufferView` は、この `LeaseHandle` を `std::shared_ptr` で保持する。
-CUDA IPC ハンドルや VMM import の結果は TypeAdapter 側のプロセス内キャッシュで共有し、
+CUDA IPC ハンドルや VMM import の結果は `IpcHandleCache` で共有し、
 初回だけ `cudaIpcOpen*Handle` や VMM import を呼んで dev_ptr / event を取得する。以降は同じハンドルを
 利用するため、`BufferView` の破棄時にフレームごとの `cudaIpcClose*` を呼ぶ必要はない。
 
@@ -110,13 +110,13 @@ BufferCore{ shm_name, slot_id, generation, mem_handle, event_handle, byte_size, 
 受信した BufferCore を受け、LeaseHandle::acquire(shm_name, slot_id, generation) を呼ぶ。
    * 共有メモリへの接続に成功し、generation が一致したら、`LeaseHandle::acquire()` が refcnt を原子的に増やす。
      実装ではオーバーフローを検出しながら compare-exchange で取得する。
-   * TypeAdapter は取得した LeaseHandle を保持した状態で cudaIpcOpenMemHandle / cudaIpcOpenEventHandle
-     または VMM import を実行する。
+   * `BufferViewMapper` は取得した LeaseHandle を保持した状態で cudaIpcOpenMemHandle /
+     cudaIpcOpenEventHandle または VMM import を実行する。TypeAdapter API はその mapper を呼ぶ。
    * もし open/import が失敗したら無効 View を返す（例外は使わない）。取得済み LeaseHandle はスコープアウト時に
      破棄され、デストラクタにより refcnt が戻される。
 
 2. 利用（use）
-TypeAdapter が BufferView / ImageView / PointCloud2View を構築して返す。
+Mapper が BufferView / ImageView / PointCloud2View を構築して返す。
 `LeaseHandle` は View の内部で `std::shared_ptr` として保持され、利用者は必要に応じて
 `view.core.enqueue_ready_event(stream)` を呼び、カーネルを stream に投入。
 
@@ -221,9 +221,9 @@ private:
 
 ## Adapter との責務分担（位置づけ）
 
-* TypeAdapter（ROS→View） は、まず`LeaseHandle::acquire()`を試みる。
+* 受信側 mapper（ROS→View） は、まず`LeaseHandle::acquire()`を試みる。
   * 成功：Lease が有効になった時点で、必要なら CUDA IPC open や VMM import を行い、BufferView を構築する。
-    * IPC/VMM ハンドルは TypeAdapter 側のプロセス内キャッシュを参照し、`BufferView` の破棄時に
+    * IPC/VMM ハンドルは `IpcHandleCache` を参照し、`BufferView` の破棄時に
       `cudaIpcClose*` を呼ばない。
   * 失敗：無効 View を返してコールバック側で破棄（例外は使わない）。
 * View の RAII で `LeaseHandle` を共有し、`reset()` 時に LeaseHandle のデストラクタが refcnt を解放する。

@@ -29,9 +29,16 @@ add_library(${PROJECT_NAME}
   src/cuda/memory_backend_cuda_ipc.cpp
   src/cuda/memory_backend_vmm_fd.cpp
   src/buffer_view.cpp
+  src/buffer_view_mapper.cpp
   src/image_view.cpp
+  src/image_view_mapper.cpp
+  src/ipc_handle_cache.cpp
   src/lease_handle.cpp
+  src/detail/backend_importer.cpp
+  src/detail/cuda_ipc_importer.cpp
+  src/detail/vmm_fd_importer.cpp
   src/pointcloud2_view.cpp
+  src/pointcloud2_view_mapper.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
@@ -65,6 +72,15 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_lease_handle test/test_lease_handle.cpp)
   target_link_libraries(test_lease_handle ${PROJECT_NAME})
+  ament_add_gtest(test_buffer_view_mapper test/test_buffer_view_mapper.cpp)
+  target_link_libraries(test_buffer_view_mapper ${PROJECT_NAME})
+  ament_add_gtest(test_image_view_mapper test/test_image_view_mapper.cpp)
+  target_link_libraries(test_image_view_mapper ${PROJECT_NAME})
+  ament_add_gtest(test_ipc_handle_cache test/test_ipc_handle_cache.cpp)
+  target_link_libraries(test_ipc_handle_cache ${PROJECT_NAME})
+  ament_add_gtest(test_pointcloud2_view_mapper
+                  test/test_pointcloud2_view_mapper.cpp)
+  target_link_libraries(test_pointcloud2_view_mapper ${PROJECT_NAME})
   ament_add_gtest(test_type_adapters test/test_type_adapters.cpp)
   target_link_libraries(test_type_adapters ${PROJECT_NAME})
   ament_add_gtest(test_gpu_lease_pool test/test_gpu_lease_pool.cpp)
