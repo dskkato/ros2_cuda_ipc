@@ -350,9 +350,6 @@ struct PointCloud2View {
   };
   std::vector<Field> fields;
 
-  // よく使うフィールドのオフセットをキャッシュしておくと便利（任意）
-  int x_off=-1, y_off=-1, z_off=-1, intensity_off=-1, rgb_off=-1;
-
   // デバイス側POD（文字列を排除したメタ）
   struct DeviceField {
     uint32_t offset;

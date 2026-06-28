@@ -43,12 +43,6 @@ struct PointCloud2View {
   bool is_dense = true;
   std::vector<Field> fields;
 
-  int x_off = -1;
-  int y_off = -1;
-  int z_off = -1;
-  int intensity_off = -1;
-  int rgb_off = -1;
-
   PointCloud2View() = default;
   ~PointCloud2View() = default;
   PointCloud2View(const PointCloud2View&) = default;
