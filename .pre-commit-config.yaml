@@ -3,4 +3,3 @@ repos:
     rev: v22.1.5
     hooks:
       - id: clang-format
-exclude: 'type_adaptation/.*'
