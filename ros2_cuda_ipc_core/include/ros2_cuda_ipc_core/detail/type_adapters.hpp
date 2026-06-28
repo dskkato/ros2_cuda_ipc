@@ -23,8 +23,7 @@
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/posix_error.hpp"
 
-namespace ros2_cuda_ipc_core {
-namespace detail {
+namespace ros2_cuda_ipc_core::detail {
 
 struct IpcHandleKey {
   uint8_t backend = 0;
@@ -290,5 +289,4 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   return result;
 }
 
-}  // namespace detail
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::detail
