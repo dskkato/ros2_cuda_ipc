@@ -44,7 +44,6 @@ python3 doc/scripts/generate_bag_preview.py \
 
 - `ros2_cuda_ipc_msgs` — GPU バッファ共有のためのメッセージ定義
 - `ros2_cuda_ipc_core` — メモリープール、CUDA IPCユーティリティ、マッパの C++ 実装（CUDA 前提）
-- `sample_nodes` — メッセージ送受信を確認する簡単なサンプルノード
 - `ros2_cuda_ipc_test` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
 - `gpu_image_transport` — GPU画像転送用のimage_transport プラグイン
 - `julia_set` — Julia集合のGPU描画デモノード
@@ -97,64 +96,31 @@ ros2 launch ros2_cuda_ipc_test vmm.launch.py
 
 詳細は [ros2_cuda_ipc_test/README.md](ros2_cuda_ipc_test/README.md) を参照してください。
 
-### サンプルノード実行
+### Julia Set デモ実行
 
-GPU イメージ／ポイントクラウドの 2 系統のサンプルノードを用意しています。どちらも CUDA IPC を使って、Publisher が GPU メモリスロットを確保し、Subscriber がゼロコピー参照します。
+GPU 上で Julia 集合を描画し、`ros2_cuda_ipc_core` の `GpuLeasePool` と TypeAdapter を使って ROS 2 プロセス間で GPU 画像を共有するデモです。
 
 ```bash
-# イメージデモ（Publisher + Subscriber 2 ノード）
-ros2 launch sample_nodes gpu_image_demo.launch.py
-
-# ポイントクラウドデモ（Publisher + Subscriber 2 ノード）
-ros2 launch sample_nodes gpu_pointcloud_demo.launch.py
+ros2 launch julia_set julia_set_demo.launch.py
 ```
 
-デモ Launch ファイルでは代表的なパラメータを指定しています。Publisher 単体で起動する場合は `ros2 run` と `--ros-args` で上書きできます。
-
-主なパラメータ（GpuImagePublisher/GpuPointCloudPublisher 共通）
-- `publish_rate_hz`: Publish 周期（既定 イメージ 30 Hz / ポイントクラウド 10 Hz）
+主なパラメータ:
+- `memory_backend`: GPU メモリ共有方式（`cuda_ipc` または `vmm_fd`）
+- `publish_rate_hz`: Publish 周期（既定 30 Hz）
 - `slot_count`: 確保する GPU メモリスロット数（既定 4）
-- `pending_ttl_ms`: 未消費スロットを強制解放する猶予時間 [ms]。高フレームレートのカメラでは 80~120ms 程度に設定すると滞留を抑制できます。
-- `shm_name`: 共有メモリ領域の名前（用途別にデフォルトを用意）
+- `pending_ttl_ms`: 未消費スロットを強制解放する猶予時間 [ms]
+- `shm_name`: lease 管理用の共有メモリ名
 - `device_index`: 利用する CUDA デバイス（既定 0）
+- `width`, `height`, `max_iterations`, `zoom`: 描画パラメータ
 
-イメージ系の追加パラメータ
-- `width`, `height`, `channels`
-- `dtype`（`u8`,`u16`,`f32` など）
-- `encoding`（ROS 2 画像エンコーディング文字列）
-
-ポイントクラウド系の追加パラメータ
-- `width`, `height`
-- `is_dense`
-- `fill_value`（デモ用に擬似生成する値のベース）
-
-サンプル Subscriber は受信したハンドルを `ros2_cuda_ipc_core` のビュークラス（`ImageView` / `PointCloud2View`）経由でマップし、GPU メモリを直接参照します。
-
-実装上は `sample_nodes/src/gpu_image_publisher_helper.cpp` と `sample_nodes/src/gpu_pointcloud_publisher_helper.cpp` に共通化された処理があり、`pending_ttl` は `std::chrono::milliseconds` で扱われます。
-
-個別起動例:
-
-```bash
-ros2 run sample_nodes gpu_image_publisher \
-  --ros-args -p pending_ttl_ms:=100 -p width:=1280 -p height:=720
-
-ros2 run sample_nodes gpu_pointcloud_publisher \
-  --ros-args -p pending_ttl_ms:=250 -p publish_rate_hz:=15.0
-```
-
-Subscriber は `GpuImageSubscriber` / `GpuPointCloudSubscriber` をそれぞれ起動します。
-
-```bash
-ros2 run sample_nodes gpu_image_subscriber
-ros2 run sample_nodes gpu_pointcloud_subscriber
-```
+詳細は [julia_set/README.md](julia_set/README.md) を参照してください。
 
 ## コアコンポーネントとヘルパー
 
 - `ros2_cuda_ipc_core::ImageView` / `PointCloud2View`: CUDA IPC ハンドルを ROS 2 メッセージとして受け渡すための型アダプタ。`ros2_cuda_ipc_core/include/ros2_cuda_ipc_core` に実装があります。
 - `ros2_cuda_ipc_core::BufferView`: 任意バッファ向けの基盤ビュー。Publisher/Subscriber 間で共有メモリのメタデータを運びます。
 - `ros2_cuda_ipc_core::LeaseHandle`: Publisher 側でスロットの貸出状態を管理し、`pending_ttl` の経過で強制解放します。
-- `sample_nodes::GpuImagePublisherHelper` / `sample_nodes::GpuPointCloudPublisherHelper`: サンプル用のユーティリティで、スロット確保・イベント送信・ビュー生成をまとめています。
+- `ros2_cuda_ipc_core::cuda::GpuLeasePool`: Publisher 側の GPU メモリスロット、backend 切り替え、lease 更新をまとめる共通プールです。
 
 ---
 
@@ -163,7 +129,7 @@ ros2 run sample_nodes gpu_pointcloud_subscriber
 * 設計は [doc/design.md](doc/design.md) に従う
 * Issue / PR ベースで進める
 * コードスタイル: clang-format, ament_lint
-* CI: GitHub Actions (予定)
+* CI: GitHub Actions
 
 ---
 
@@ -190,15 +156,16 @@ GitHub Actions の `build` ワークフローは `ghcr.io/dskkato/ros2-cuda-ipc-
 
 `ros2_cuda_ipc_core` には gtest ベースの単体テストが含まれています。
 
-- `test_type_adapters.cpp`: CUDA IPC メッセージ型アダプタの変換確認
+- `test_type_adapters.cpp`: CUDA IPC/VMM-FD メッセージ型アダプタの変換確認
 - `test_lease_handle.cpp`: スロット貸出しと `pending_ttl` 回収の検証
+- `test_gpu_lease_pool.cpp`: GPU lease pool の slot 管理と backend 初期化の検証
 
 ビルドとテスト実行例:
 
 ```bash
 source /opt/ros/humble/setup.bash
-colcon build --packages-select ros2_cuda_ipc_core sample_nodes --cmake-args -DBUILD_TESTING=ON
-colcon test --packages-select ros2_cuda_ipc_core sample_nodes
+colcon build --packages-select ros2_cuda_ipc_core --cmake-args -DBUILD_TESTING=ON
+colcon test --packages-select ros2_cuda_ipc_core
 colcon test-result --verbose
 ```
 
@@ -242,18 +209,6 @@ ros2 launch julia_set julia_set_demo.launch.py memory_backend:=cuda_ipc
 
 # VMM + FD バックエンド（Jetson Orin 向け）
 ros2 launch julia_set julia_set_demo.launch.py memory_backend:=vmm_fd
-```
-
-#### サンプルノードでの指定例
-
-```bash
-# GpuImagePublisher で VMM + FD バックエンドを使用
-ros2 run sample_nodes gpu_image_publisher \
-  --ros-args -p memory_backend:=vmm_fd
-
-# GpuPointCloudPublisher で VMM + FD バックエンドを使用
-ros2 run sample_nodes gpu_pointcloud_publisher \
-  --ros-args -p memory_backend:=vmm_fd
 ```
 
 **注意事項:**
