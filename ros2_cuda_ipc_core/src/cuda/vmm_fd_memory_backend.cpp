@@ -107,7 +107,7 @@ class UnixFdServer {
     addr.sun_family = AF_UNIX;
     std::strncpy(addr.sun_path, path_.c_str(), sizeof(addr.sun_path) - 1);
     // bind(2): attach socket to filesystem path so subscribers can connect.
-    if (::bind(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+    if (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
       RCLCPP_ERROR(logger_, "bind(%s) failed: %s", path_.c_str(),
                    errno_to_string().c_str());
       ::close(sock);
@@ -186,16 +186,14 @@ class UnixFdServer {
    */
   void send_fd(int client) {
     char buf = 'F';
-    struct iovec iov {
-      &buf, 1
-    };
+    struct iovec iov{&buf, 1};
     alignas(struct cmsghdr) char cmsg_buf[CMSG_SPACE(sizeof(int))];
-    struct msghdr msg {};
+    struct msghdr msg{};
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
     msg.msg_control = cmsg_buf;
     msg.msg_controllen = sizeof(cmsg_buf);
-    cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
     if (!cmsg) {
       RCLCPP_WARN(logger_,
                   "sendmsg setup failed for %s: missing control message header",
@@ -275,7 +273,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
    *    the FD using a randomly generated UUID.
    */
   bool allocate(uint64_t frame_size_bytes, int device_index,
-                std::vector<GpuLeasePool::Slot> &slots,
+                std::vector<GpuLeasePool::Slot>& slots,
                 rclcpp::Logger logger) override {
     if (!ensure_driver(logger)) {
       return false;
@@ -299,7 +297,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
     }
 
     const uint64_t aligned_size = align_up(frame_size_bytes, granularity);
-    for (auto &slot : slots) {
+    for (auto& slot : slots) {
       auto state = std::make_shared<VmmSlotState>();
       state->allocation_size = aligned_size;
 
@@ -378,7 +376,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
         return false;
       }
 
-      slot.device_ptr = reinterpret_cast<void *>(state->address);
+      slot.device_ptr = reinterpret_cast<void*>(state->address);
       slot.backend = ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD;
       slot.backend_state = state;
       // Store UUID bytes into the ROS message payload so subscribers know which
@@ -400,10 +398,10 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
    * The per-slot VmmSlotState RAII cleanup tears down CUDA driver resources and
    * socket servers; here we simply drop pointers and reset bookkeeping fields.
    */
-  void destroy(std::vector<GpuLeasePool::Slot> &slots,
+  void destroy(std::vector<GpuLeasePool::Slot>& slots,
                rclcpp::Logger logger) noexcept override {
     (void)logger;
-    for (auto &slot : slots) {
+    for (auto& slot : slots) {
       slot.device_ptr = nullptr;
       if (slot.backend == ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD) {
         slot.backend_state.reset();
@@ -419,7 +417,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
    *
    * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
    */
-  bool ensure_driver(const rclcpp::Logger &logger) {
+  bool ensure_driver(const rclcpp::Logger& logger) {
     static std::once_flag once;
     static CUresult status = CUDA_SUCCESS;
     std::call_once(once, [&]() { status = cuInit(0); });

@@ -43,7 +43,7 @@ class GpuImageSubscriberNode : public rclcpp::Node {
   }
 
  private:
-  void on_image(const ros2_cuda_ipc_core::ImageView &view) {
+  void on_image(const ros2_cuda_ipc_core::ImageView& view) {
     if (!view.core.valid()) {
       RCLCPP_WARN(get_logger(), "Received invalid GPU image view");
       return;
@@ -86,12 +86,12 @@ class GpuImageSubscriberNode : public rclcpp::Node {
 
 }  // namespace sample_nodes
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
     auto node = std::make_shared<sample_nodes::GpuImageSubscriberNode>();
     rclcpp::spin(node);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     RCLCPP_FATAL(rclcpp::get_logger("gpu_image_subscriber"), "Exception: %s",
                  ex.what());
   }

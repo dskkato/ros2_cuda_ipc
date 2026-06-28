@@ -24,13 +24,13 @@ struct PointCloud2View {
   };
 
   struct DeviceView {
-    uint8_t *data;
+    uint8_t* data;
     int width;
     int height;
     size_t point_step;
     size_t row_step;
     bool is_dense;
-    const DeviceField *fields;
+    const DeviceField* fields;
     int num_fields;
   };
 
@@ -51,10 +51,10 @@ struct PointCloud2View {
 
   PointCloud2View() = default;
   ~PointCloud2View() = default;
-  PointCloud2View(const PointCloud2View &) = default;
-  PointCloud2View &operator=(const PointCloud2View &) = default;
-  PointCloud2View(PointCloud2View &&) noexcept = default;
-  PointCloud2View &operator=(PointCloud2View &&) noexcept = default;
+  PointCloud2View(const PointCloud2View&) = default;
+  PointCloud2View& operator=(const PointCloud2View&) = default;
+  PointCloud2View(PointCloud2View&&) noexcept = default;
+  PointCloud2View& operator=(PointCloud2View&&) noexcept = default;
 
   size_t num_points() const noexcept {
     return static_cast<size_t>(width) * height;
@@ -64,7 +64,7 @@ struct PointCloud2View {
   }
   bool valid() const noexcept { return core.valid() && point_step > 0; }
 
-  DeviceView as_device_view(const DeviceField *device_fields,
+  DeviceView as_device_view(const DeviceField* device_fields,
                             int n) const noexcept {
     return DeviceView{core.data<uint8_t>(),
                       static_cast<int>(width),

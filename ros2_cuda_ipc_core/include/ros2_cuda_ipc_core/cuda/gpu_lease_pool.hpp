@@ -30,7 +30,7 @@ class GpuLeasePool {
 
   struct Slot {
     uint32_t index = 0;
-    void *device_ptr = nullptr;
+    void* device_ptr = nullptr;
     cudaEvent_t event = nullptr;
     cudaIpcEventHandle_t event_handle{};
     uint32_t generation = 0;
@@ -44,10 +44,10 @@ class GpuLeasePool {
   explicit GpuLeasePool(Config config, rclcpp::Logger logger);
   ~GpuLeasePool();
 
-  GpuLeasePool(const GpuLeasePool &) = delete;
-  GpuLeasePool &operator=(const GpuLeasePool &) = delete;
-  GpuLeasePool(GpuLeasePool &&) = default;
-  GpuLeasePool &operator=(GpuLeasePool &&) = default;
+  GpuLeasePool(const GpuLeasePool&) = delete;
+  GpuLeasePool& operator=(const GpuLeasePool&) = delete;
+  GpuLeasePool(GpuLeasePool&&) = default;
+  GpuLeasePool& operator=(GpuLeasePool&&) = default;
 
   bool initialise(uint64_t frame_size_bytes, int device_index);
   void reset() noexcept;
@@ -55,9 +55,9 @@ class GpuLeasePool {
   bool is_initialised() const noexcept { return initialised_; }
   bool matches(uint64_t frame_size_bytes, int device_index) const noexcept;
 
-  std::optional<Slot *> acquire(std::size_t subscriber_count);
+  std::optional<Slot*> acquire(std::size_t subscriber_count);
   void reclaim_stale_pending();
-  bool cancel_pending(Slot &slot);
+  bool cancel_pending(Slot& slot);
 
   uint64_t frame_size_bytes() const noexcept { return frame_size_bytes_; }
   int device_index() const noexcept { return device_index_; }
@@ -66,8 +66,8 @@ class GpuLeasePool {
    public:
     virtual ~MemoryBackend() = default;
     virtual bool allocate(uint64_t frame_size_bytes, int device_index,
-                          std::vector<Slot> &slots, rclcpp::Logger logger) = 0;
-    virtual void destroy(std::vector<Slot> &slots,
+                          std::vector<Slot>& slots, rclcpp::Logger logger) = 0;
+    virtual void destroy(std::vector<Slot>& slots,
                          rclcpp::Logger logger) noexcept = 0;
   };
 

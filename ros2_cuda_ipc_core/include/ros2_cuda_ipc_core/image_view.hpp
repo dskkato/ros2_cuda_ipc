@@ -30,10 +30,10 @@ struct ImageView {
 
   ImageView() = default;
   ~ImageView() = default;
-  ImageView(const ImageView &) = default;
-  ImageView &operator=(const ImageView &) = default;
-  ImageView(ImageView &&) noexcept = default;
-  ImageView &operator=(ImageView &&) noexcept = default;
+  ImageView(const ImageView&) = default;
+  ImageView& operator=(const ImageView&) = default;
+  ImageView(ImageView&&) noexcept = default;
+  ImageView& operator=(ImageView&&) noexcept = default;
 
   uint32_t rows() const noexcept { return shape[0]; }
   uint32_t cols() const noexcept { return shape[1]; }
@@ -53,7 +53,7 @@ struct ImageView {
   }
 
   struct DeviceView {
-    uint8_t *data;
+    uint8_t* data;
     int height;
     int width;
     int channels;

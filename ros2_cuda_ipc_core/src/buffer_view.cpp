@@ -7,9 +7,9 @@ namespace ros2_cuda_ipc_core {
 
 BufferView::~BufferView() { reset(); }
 
-BufferView::BufferView(const BufferView &other) { *this = other; }
+BufferView::BufferView(const BufferView& other) { *this = other; }
 
-BufferView &BufferView::operator=(const BufferView &other) {
+BufferView& BufferView::operator=(const BufferView& other) {
   if (this == &other) {
     return *this;
   }
@@ -32,11 +32,11 @@ BufferView &BufferView::operator=(const BufferView &other) {
   return *this;
 }
 
-BufferView::BufferView(BufferView &&other) noexcept {
+BufferView::BufferView(BufferView&& other) noexcept {
   *this = std::move(other);
 }
 
-BufferView &BufferView::operator=(BufferView &&other) noexcept {
+BufferView& BufferView::operator=(BufferView&& other) noexcept {
   if (this == &other) {
     return *this;
   }
@@ -87,9 +87,9 @@ void BufferView::reset() noexcept {
 }
 
 void BufferView::set_ipc_handles(MemoryBackendKind backend,
-                                 const uint8_t *payload_bytes,
+                                 const uint8_t* payload_bytes,
                                  std::size_t payload_size,
-                                 const cudaIpcEventHandle_t &evt) noexcept {
+                                 const cudaIpcEventHandle_t& evt) noexcept {
   backend_ = backend;
   std::memset(mem_payload_.data(), 0, mem_payload_.size());
   if (payload_bytes != nullptr && payload_size > 0) {

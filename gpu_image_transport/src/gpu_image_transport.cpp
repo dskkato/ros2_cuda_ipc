@@ -23,7 +23,7 @@ class GpuImageTransportNode : public GpuImageTransportNodeBase {
   }
 
  private:
-  void publish_frame(const ros2_cuda_ipc_core::ImageView &view,
+  void publish_frame(const ros2_cuda_ipc_core::ImageView& view,
                      std::uint64_t available_bytes) override {
     const std::uint32_t height = view.rows();
     const std::uint64_t step_bytes = view.strideH();
@@ -72,7 +72,7 @@ class GpuImageTransportNode : public GpuImageTransportNodeBase {
     publisher_->publish(std::move(msg));
   }
 
-  std::string infer_encoding(const ros2_cuda_ipc_core::ImageView &view) const {
+  std::string infer_encoding(const ros2_cuda_ipc_core::ImageView& view) const {
     const auto channels = view.channels();
     const auto suffix = std::to_string(channels);
     using ros2_cuda_ipc_core::DType;
@@ -114,12 +114,12 @@ class GpuImageTransportNode : public GpuImageTransportNodeBase {
 
 }  // namespace gpu_image_transport
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
     auto node = std::make_shared<gpu_image_transport::GpuImageTransportNode>();
     rclcpp::spin(node);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     RCLCPP_FATAL(rclcpp::get_logger("gpu_image_transport"), "Exception: %s",
                  ex.what());
   }

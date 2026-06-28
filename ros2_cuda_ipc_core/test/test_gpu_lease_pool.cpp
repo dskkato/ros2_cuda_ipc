@@ -15,7 +15,7 @@
 
 namespace {
 
-std::string make_unique_shm_name(const std::string &prefix) {
+std::string make_unique_shm_name(const std::string& prefix) {
   static std::atomic<int> counter{0};
   std::ostringstream oss;
   oss << "/" << prefix << "_" << ::getpid() << "_" << counter.fetch_add(1);
@@ -55,7 +55,7 @@ TEST_F(GpuLeasePoolTest,
 
   auto slot_opt = pool.acquire(1);
   ASSERT_TRUE(slot_opt.has_value());
-  auto *slot = *slot_opt;
+  auto* slot = *slot_opt;
   ASSERT_NE(slot, nullptr);
   EXPECT_NE(slot->device_ptr, nullptr);
   EXPECT_NE(slot->event, nullptr);
@@ -80,7 +80,7 @@ TEST_F(GpuLeasePoolTest, AcquireWithoutSubscribersDoesNotSetPendingDeadline) {
 
   auto slot_opt = pool.acquire(0);
   ASSERT_TRUE(slot_opt.has_value());
-  auto *slot = *slot_opt;
+  auto* slot = *slot_opt;
   ASSERT_NE(slot, nullptr);
   EXPECT_EQ(slot->pending_deadline.time_since_epoch().count(), 0);
 
@@ -102,7 +102,7 @@ TEST_F(GpuLeasePoolTest, ReclaimStalePendingClearsLease) {
 
   auto slot_opt = pool.acquire(1);
   ASSERT_TRUE(slot_opt.has_value());
-  auto *slot = *slot_opt;
+  auto* slot = *slot_opt;
   ASSERT_NE(slot, nullptr);
 
   auto pending_before =
@@ -122,7 +122,7 @@ TEST_F(GpuLeasePoolTest, ReclaimStalePendingClearsLease) {
   ::shm_unlink(shm_name.c_str());
 }
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
   rclcpp::init(argc, argv);
   const int result = RUN_ALL_TESTS();

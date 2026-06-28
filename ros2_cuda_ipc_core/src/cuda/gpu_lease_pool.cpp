@@ -14,8 +14,8 @@ namespace ros2_cuda_ipc_core::cuda {
 namespace {
 using Clock = std::chrono::steady_clock;
 
-bool deadline_reached(const Clock::time_point &deadline,
-                      const Clock::time_point &now) {
+bool deadline_reached(const Clock::time_point& deadline,
+                      const Clock::time_point& now) {
   return deadline.time_since_epoch().count() != 0 && now >= deadline;
 }
 
@@ -82,7 +82,7 @@ bool GpuLeasePool::matches(uint64_t frame_size_bytes,
          device_index_ == device_index;
 }
 
-std::optional<GpuLeasePool::Slot *> GpuLeasePool::acquire(
+std::optional<GpuLeasePool::Slot*> GpuLeasePool::acquire(
     std::size_t subscriber_count) {
   if (!initialised_) {
     return std::nullopt;
@@ -98,7 +98,7 @@ std::optional<GpuLeasePool::Slot *> GpuLeasePool::acquire(
     return std::nullopt;
   }
 
-  Slot &slot = slots_[free_slot.value()];
+  Slot& slot = slots_[free_slot.value()];
 
   auto generation = LeaseHandle::bump_generation(
       config_.shm_name, slot.index, static_cast<uint32_t>(subscriber_count));
@@ -124,7 +124,7 @@ void GpuLeasePool::reclaim_stale_pending() {
 
   const auto now = Clock::now();
 
-  for (auto &slot : slots_) {
+  for (auto& slot : slots_) {
     if (!deadline_reached(slot.pending_deadline, now)) {
       continue;
     }
@@ -152,7 +152,7 @@ void GpuLeasePool::reclaim_stale_pending() {
   }
 }
 
-bool GpuLeasePool::cancel_pending(Slot &slot) {
+bool GpuLeasePool::cancel_pending(Slot& slot) {
   slot.pending_deadline = {};
   if (!initialised_) {
     return false;
@@ -178,7 +178,7 @@ bool GpuLeasePool::allocate_slots() {
     return false;
   }
 
-  for (auto &slot : slots_) {
+  for (auto& slot : slots_) {
     cudaError_t err = cudaEventCreateWithFlags(
         &slot.event, cudaEventDisableTiming | cudaEventInterprocess);
     if (err != cudaSuccess) {
@@ -203,7 +203,7 @@ void GpuLeasePool::destroy_slots() noexcept {
     cudaSetDevice(device_index_);
   }
 
-  for (auto &slot : slots_) {
+  for (auto& slot : slots_) {
     if (slot.event) {
       const cudaError_t event_err = cudaEventDestroy(slot.event);
       if (event_err != cudaSuccess) {

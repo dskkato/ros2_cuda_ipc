@@ -15,7 +15,7 @@ using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
 
 }  // namespace
 
-GpuPointCloudPublisherHelper::GpuPointCloudPublisherHelper(const Config &config)
+GpuPointCloudPublisherHelper::GpuPointCloudPublisherHelper(const Config& config)
     : config_(config) {
   if (config_.slot_count == 0) {
     throw std::runtime_error("slot_count must be greater than zero");
@@ -62,7 +62,7 @@ void GpuPointCloudPublisherHelper::initialise_shm() {
 void GpuPointCloudPublisherHelper::allocate_slots() {
   slots_.resize(config_.slot_count);
   for (std::size_t i = 0; i < slots_.size(); ++i) {
-    auto &slot = slots_[i];
+    auto& slot = slots_[i];
     slot.index = static_cast<uint32_t>(i);
 
     cudaError_t err = cudaMalloc(&slot.device_ptr, cloud_size_bytes_);
@@ -93,7 +93,7 @@ void GpuPointCloudPublisherHelper::allocate_slots() {
 }
 
 void GpuPointCloudPublisherHelper::destroy_slots() noexcept {
-  for (auto &slot : slots_) {
+  for (auto& slot : slots_) {
     if (slot.event) {
       cudaEventDestroy(slot.event);
       slot.event = nullptr;
@@ -135,7 +135,7 @@ GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
     return std::nullopt;
   }
 
-  auto &slot = slots_[free_slot.value()];
+  auto& slot = slots_[free_slot.value()];
 
   auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
       config_.shm_name, slot.index, subscriber_count);
@@ -178,7 +178,7 @@ GpuPointCloudPublisherHelper::produce(size_t subscriber_count, float value) {
   view.core.generation = slot.generation;
   view.core.shm_name = config_.shm_name;
   view.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
-                            reinterpret_cast<const uint8_t *>(&slot.mem_handle),
+                            reinterpret_cast<const uint8_t*>(&slot.mem_handle),
                             sizeof(slot.mem_handle), slot.event_handle);
   view.height = config_.height;
   view.width = config_.width;
@@ -198,7 +198,7 @@ void GpuPointCloudPublisherHelper::reclaim_stale_pending() {
   const auto now = std::chrono::steady_clock::now();
   auto logger = rclcpp::get_logger("GpuPointCloudPublisherHelper");
 
-  for (auto &slot : slots_) {
+  for (auto& slot : slots_) {
     if (!deadline_reached(slot.pending_deadline, now)) {
       continue;
     }

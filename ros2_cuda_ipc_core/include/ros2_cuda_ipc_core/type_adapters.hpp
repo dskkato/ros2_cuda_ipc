@@ -43,13 +43,13 @@ struct IpcHandleKey {
   MemoryHandlePayload mem{};
   std::array<uint8_t, sizeof(cudaIpcEventHandle_t)> evt{};
 
-  bool operator==(const IpcHandleKey &other) const noexcept {
+  bool operator==(const IpcHandleKey& other) const noexcept {
     return backend == other.backend && mem == other.mem && evt == other.evt;
   }
 };
 
 struct IpcHandleKeyHash {
-  std::size_t operator()(const IpcHandleKey &key) const noexcept {
+  std::size_t operator()(const IpcHandleKey& key) const noexcept {
     std::size_t hash = key.backend;
     for (uint8_t byte : key.mem) {
       hash = hash * 131U + byte;
@@ -62,14 +62,14 @@ struct IpcHandleKeyHash {
 };
 
 struct CachedIpcHandles {
-  void *dev_ptr = nullptr;
+  void* dev_ptr = nullptr;
   cudaEvent_t event = nullptr;
   CUdeviceptr vmm_address = 0;
   CUmemGenericAllocationHandle vmm_allocation = 0;
   std::size_t allocation_size = 0;
 };
 
-inline std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash> &
+inline std::unordered_map<IpcHandleKey, CachedIpcHandles, IpcHandleKeyHash>&
 ipc_handle_cache() {
   // Known limitation: cached IPC handles live for the subscriber process
   // lifetime. Subscribers cannot safely track publisher lifecycles, so
@@ -79,7 +79,7 @@ ipc_handle_cache() {
   return cache;
 }
 
-inline std::mutex &ipc_handle_cache_mutex() {
+inline std::mutex& ipc_handle_cache_mutex() {
   static std::mutex mutex;
   return mutex;
 }
@@ -95,7 +95,7 @@ inline std::size_t align_up_size(std::size_t value, std::size_t alignment) {
   return value + alignment - remainder;
 }
 
-inline bool ensure_cuda_driver_initialised(const rclcpp::Logger &logger) {
+inline bool ensure_cuda_driver_initialised(const rclcpp::Logger& logger) {
   static std::once_flag once;
   static CUresult init_status = CUDA_SUCCESS;
   std::call_once(once, [&]() { init_status = cuInit(0); });
@@ -113,7 +113,7 @@ struct VmmPayload {
 };
 
 inline std::optional<VmmPayload> parse_vmm_payload(
-    const MemoryHandlePayload &payload, const rclcpp::Logger &logger) {
+    const MemoryHandlePayload& payload, const rclcpp::Logger& logger) {
   const uint32_t length = load_u32_le(payload.data());
   if (length == 0 || length > ros2_cuda_ipc_core::kVmmUuidMaxLength ||
       length + 4 > payload.size()) {
@@ -124,7 +124,7 @@ inline std::optional<VmmPayload> parse_vmm_payload(
 
   // Validate UUID format
   uuid_t uuid;
-  const char *uuid_str = reinterpret_cast<const char *>(payload.data() + 4);
+  const char* uuid_str = reinterpret_cast<const char*>(payload.data() + 4);
   if (uuid_parse_range(uuid_str, uuid_str + length, uuid) != 0) {
     // do not print since it may not be null-terminated
     RCLCPP_WARN(logger, "Failed to parse UUID from VMM_FD payload");
@@ -136,7 +136,7 @@ inline std::optional<VmmPayload> parse_vmm_payload(
 }
 
 inline std::optional<int> request_fd_from_publisher(
-    const std::string &path, const rclcpp::Logger &logger) {
+    const std::string& path, const rclcpp::Logger& logger) {
   int sock = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (sock < 0) {
     if (errno == EINVAL || errno == EPROTOTYPE) {
@@ -160,7 +160,7 @@ inline std::optional<int> request_fd_from_publisher(
     return std::nullopt;
   }
   std::strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
-  if (::connect(sock, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) < 0) {
+  if (::connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
     RCLCPP_WARN(logger, "connect(%s) failed: %s", path.c_str(),
                 errno_to_string().c_str());
     ::close(sock);
@@ -168,11 +168,9 @@ inline std::optional<int> request_fd_from_publisher(
   }
 
   char buf = 0;
-  struct iovec iov {
-    &buf, 1
-  };
+  struct iovec iov{&buf, 1};
   alignas(struct cmsghdr) char cmsg_buf[CMSG_SPACE(sizeof(int))];
-  struct msghdr msg {};
+  struct msghdr msg{};
   msg.msg_iov = &iov;
   msg.msg_iovlen = 1;
   msg.msg_control = cmsg_buf;
@@ -185,7 +183,7 @@ inline std::optional<int> request_fd_from_publisher(
     return std::nullopt;
   }
 
-  cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
   if (!cmsg || cmsg->cmsg_level != SOL_SOCKET ||
       cmsg->cmsg_type != SCM_RIGHTS || cmsg->cmsg_len < CMSG_LEN(sizeof(int))) {
     RCLCPP_WARN(logger, "recvmsg on %s missing SCM_RIGHTS payload",
@@ -205,15 +203,15 @@ inline std::optional<int> request_fd_from_publisher(
 }
 
 struct VmmOpenResult {
-  void *dev_ptr = nullptr;
+  void* dev_ptr = nullptr;
   CUdeviceptr address = 0;
   CUmemGenericAllocationHandle allocation = 0;
   std::size_t allocation_size = 0;
 };
 
 inline std::optional<VmmOpenResult> open_vmm_allocation(
-    const MemoryHandlePayload &payload, uint32_t device_id,
-    std::size_t byte_size, const rclcpp::Logger &logger) {
+    const MemoryHandlePayload& payload, uint32_t device_id,
+    std::size_t byte_size, const rclcpp::Logger& logger) {
   auto meta = parse_vmm_payload(payload, logger);
   if (!meta.has_value()) {
     return std::nullopt;
@@ -233,7 +231,7 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   }
   const int fd = fd_opt.value();
   CUmemGenericAllocationHandle allocation = 0;
-  void *os_handle = reinterpret_cast<void *>(static_cast<intptr_t>(fd));
+  void* os_handle = reinterpret_cast<void*>(static_cast<intptr_t>(fd));
   CUresult cu_res = cuMemImportFromShareableHandle(
       &allocation, os_handle, CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR);
   ::close(fd);
@@ -295,7 +293,7 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
   }
 
   VmmOpenResult result;
-  result.dev_ptr = reinterpret_cast<void *>(address);
+  result.dev_ptr = reinterpret_cast<void*>(address);
   result.address = address;
   result.allocation = allocation;
   result.allocation_size = allocation_size;
@@ -305,21 +303,21 @@ inline std::optional<VmmOpenResult> open_vmm_allocation(
 }  // namespace detail
 
 inline cudaIpcMemHandle_t to_cuda_mem_handle(
-    const ros2_cuda_ipc_msgs::msg::BufferCore &msg) {
+    const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
   cudaIpcMemHandle_t handle{};
   std::memcpy(&handle, msg.mem_handle.data(), sizeof(handle));
   return handle;
 }
 
 inline cudaIpcEventHandle_t to_cuda_event_handle(
-    const ros2_cuda_ipc_msgs::msg::BufferCore &msg) {
+    const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
   cudaIpcEventHandle_t handle{};
   std::memcpy(&handle, msg.event_handle.data(), sizeof(handle));
   return handle;
 }
 
-inline void fill_buffer_core_message(const BufferView &view,
-                                     ros2_cuda_ipc_msgs::msg::BufferCore &msg) {
+inline void fill_buffer_core_message(const BufferView& view,
+                                     ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
   msg.shm_name = view.shm_name;
   msg.device_id = static_cast<uint32_t>(view.device_id);
   msg.slot_id = view.slot_id;
@@ -327,7 +325,7 @@ inline void fill_buffer_core_message(const BufferView &view,
   msg.byte_size = view.byte_size;
   msg.backend = ros2_cuda_ipc_core::to_backend_byte(view.backend());
   if (view.handles_ready()) {
-    const auto &payload = view.mem_payload();
+    const auto& payload = view.mem_payload();
     std::memcpy(msg.mem_handle.data(), payload.data(), payload.size());
     std::memcpy(msg.event_handle.data(), &view.event_handle(),
                 sizeof(cudaIpcEventHandle_t));
@@ -354,8 +352,8 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
   using custom_type = ros2_cuda_ipc_core::BufferView;
   using ros_message_type = ros2_cuda_ipc_msgs::msg::BufferCore;
 
-  static void convert_to_custom(const ros_message_type &msg,
-                                custom_type &view) {
+  static void convert_to_custom(const ros_message_type& msg,
+                                custom_type& view) {
     view.reset();
 
     const auto backend = ros2_cuda_ipc_core::backend_from_byte(
@@ -382,7 +380,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     key.mem = msg.mem_handle;
     std::memcpy(key.evt.data(), &event_handle, sizeof(event_handle));
 
-    void *dev_ptr = nullptr;
+    void* dev_ptr = nullptr;
     cudaEvent_t evt = nullptr;
 
     auto close_opened_event = [&evt]() {
@@ -395,7 +393,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     {
       std::lock_guard<std::mutex> lock(
           ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
-      auto &cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
+      auto& cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
       auto it = cache.find(key);
       if (it != cache.end()) {
         dev_ptr = it->second.dev_ptr;
@@ -432,7 +430,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
         {
           std::lock_guard<std::mutex> lock(
               ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
-          auto &cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
+          auto& cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
           auto [it, inserted] = cache.emplace(
               key, ros2_cuda_ipc_core::detail::CachedIpcHandles{dev_ptr, evt});
           if (!inserted) {
@@ -457,7 +455,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
         {
           std::lock_guard<std::mutex> lock(
               ros2_cuda_ipc_core::detail::ipc_handle_cache_mutex());
-          auto &cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
+          auto& cache = ros2_cuda_ipc_core::detail::ipc_handle_cache();
           auto [it, inserted] = cache.emplace(
               key, ros2_cuda_ipc_core::detail::CachedIpcHandles{
                        dev_ptr, evt, vmm_result->address,
@@ -489,8 +487,8 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
     view = std::move(opened);
   }
 
-  static void convert_to_ros_message(const custom_type &view,
-                                     ros_message_type &msg) {
+  static void convert_to_ros_message(const custom_type& view,
+                                     ros_message_type& msg) {
     fill_buffer_core_message(view, msg);
   }
 };
@@ -502,8 +500,8 @@ struct TypeAdapter<ros2_cuda_ipc_core::ImageView,
   using custom_type = ros2_cuda_ipc_core::ImageView;
   using ros_message_type = ros2_cuda_ipc_msgs::msg::GpuImage;
 
-  static void convert_to_custom(const ros_message_type &msg,
-                                custom_type &view) {
+  static void convert_to_custom(const ros_message_type& msg,
+                                custom_type& view) {
     ros2_cuda_ipc_core::BufferView core;
     TypeAdapter<
         ros2_cuda_ipc_core::BufferView,
@@ -525,8 +523,8 @@ struct TypeAdapter<ros2_cuda_ipc_core::ImageView,
     view = std::move(converted);
   }
 
-  static void convert_to_ros_message(const custom_type &view,
-                                     ros_message_type &msg) {
+  static void convert_to_ros_message(const custom_type& view,
+                                     ros_message_type& msg) {
     msg.dtype = static_cast<uint8_t>(view.dtype);
     for (size_t i = 0; i < view.shape.size(); ++i) {
       msg.shape[i] = view.shape[i];
@@ -548,8 +546,8 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
   using custom_type = ros2_cuda_ipc_core::PointCloud2View;
   using ros_message_type = ros2_cuda_ipc_msgs::msg::GpuPointCloud2;
 
-  static void convert_to_custom(const ros_message_type &msg,
-                                custom_type &view) {
+  static void convert_to_custom(const ros_message_type& msg,
+                                custom_type& view) {
     ros2_cuda_ipc_core::BufferView core;
     TypeAdapter<
         ros2_cuda_ipc_core::BufferView,
@@ -570,7 +568,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
     converted.row_step = msg.row_step;
     converted.is_dense = msg.is_dense;
     converted.fields.reserve(msg.fields.size());
-    for (const auto &field : msg.fields) {
+    for (const auto& field : msg.fields) {
       custom_type::Field f;
       f.name = field.name;
       f.offset = field.offset;
@@ -582,8 +580,8 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
     view = std::move(converted);
   }
 
-  static void convert_to_ros_message(const custom_type &view,
-                                     ros_message_type &msg) {
+  static void convert_to_ros_message(const custom_type& view,
+                                     ros_message_type& msg) {
     msg.header = view.header;
     msg.height = view.height;
     msg.width = view.width;
@@ -592,7 +590,7 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
     msg.is_dense = view.is_dense;
     msg.fields.clear();
     msg.fields.reserve(view.fields.size());
-    for (const auto &field : view.fields) {
+    for (const auto& field : view.fields) {
       sensor_msgs::msg::PointField f;
       f.name = field.name;
       f.offset = field.offset;

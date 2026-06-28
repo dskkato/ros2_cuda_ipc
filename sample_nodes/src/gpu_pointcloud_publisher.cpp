@@ -79,12 +79,12 @@ class GpuPointCloudPublisherNode : public rclcpp::Node {
 
 }  // namespace sample_nodes
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
     auto node = std::make_shared<sample_nodes::GpuPointCloudPublisherNode>();
     rclcpp::spin(node);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     RCLCPP_FATAL(rclcpp::get_logger("gpu_pointcloud_publisher"),
                  "Exception: %s", ex.what());
   }

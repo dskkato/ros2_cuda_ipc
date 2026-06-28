@@ -44,7 +44,7 @@ class GpuImageTransportCompressedNode : public GpuImageTransportNodeBase {
   }
 
  private:
-  void publish_frame(const ros2_cuda_ipc_core::ImageView &view,
+  void publish_frame(const ros2_cuda_ipc_core::ImageView& view,
                      std::uint64_t available_bytes) override {
     const std::uint32_t height = view.rows();
     const std::uint64_t step_bytes = view.strideH();
@@ -129,7 +129,7 @@ class GpuImageTransportCompressedNode : public GpuImageTransportNodeBase {
                       cv_type, host_buffer_data(), step_bytes);
 
     const std::string encoding_lower = to_lower(view.encoding);
-    const cv::Mat *source_view = &host_view;
+    const cv::Mat* source_view = &host_view;
     cv::Mat converted_view;
     if (encoding_lower == "rgb8" && channels == 3) {
       cv::cvtColor(host_view, converted_view, cv::COLOR_RGB2BGR);
@@ -154,13 +154,13 @@ class GpuImageTransportCompressedNode : public GpuImageTransportNodeBase {
   }
 
   std::string to_lower(std::string value) const {
-    for (char &ch : value) {
+    for (char& ch : value) {
       ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
     }
     return value;
   }
 
-  std::string select_extension(const std::string &format_lower) const {
+  std::string select_extension(const std::string& format_lower) const {
     if (format_lower == "jpeg" || format_lower == "jpg") {
       return ".jpg";
     }
@@ -173,7 +173,7 @@ class GpuImageTransportCompressedNode : public GpuImageTransportNodeBase {
     return std::string{};
   }
 
-  void configure_compression_params(const std::string &format_lower) {
+  void configure_compression_params(const std::string& format_lower) {
     compression_params_.clear();
     if (format_lower == "jpeg" || format_lower == "jpg") {
       const int quality = std::clamp(jpeg_quality_, 0, 100);
@@ -212,13 +212,13 @@ class GpuImageTransportCompressedNode : public GpuImageTransportNodeBase {
 
 }  // namespace gpu_image_transport
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
     auto node = std::make_shared<
         gpu_image_transport::GpuImageTransportCompressedNode>();
     rclcpp::spin(node);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     RCLCPP_FATAL(rclcpp::get_logger("gpu_image_transport_compressed"),
                  "Exception: %s", ex.what());
   }

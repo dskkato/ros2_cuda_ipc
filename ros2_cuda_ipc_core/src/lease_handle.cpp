@@ -33,8 +33,8 @@ struct ShmHeader {
 ///
 /// \param value Reference to a slot field inside shared memory.
 /// \return std::atomic<uint32_t>& alias to the given reference.
-inline std::atomic<uint32_t> &as_atomic(uint32_t &value) {
-  return reinterpret_cast<std::atomic<uint32_t> &>(value);
+inline std::atomic<uint32_t>& as_atomic(uint32_t& value) {
+  return reinterpret_cast<std::atomic<uint32_t>&>(value);
 }
 
 /// Lazily instantiate and return the logger used by LeaseHandle operations.
@@ -57,9 +57,9 @@ struct LeaseHandle::Mapping {
   std::string name;
   uint32_t capacity = 0;
   size_t mapped_size = 0;
-  void *addr = nullptr;
-  SlotMeta *slots = nullptr;
-  ShmHeader *header = nullptr;
+  void* addr = nullptr;
+  SlotMeta* slots = nullptr;
+  ShmHeader* header = nullptr;
   std::atomic<uint32_t> next_slot{0};
 
   ~Mapping() {
@@ -69,18 +69,18 @@ struct LeaseHandle::Mapping {
   }
 };
 
-LeaseHandle::LeaseHandle(std::shared_ptr<Mapping> mapping, SlotMeta *slot,
+LeaseHandle::LeaseHandle(std::shared_ptr<Mapping> mapping, SlotMeta* slot,
                          uint32_t slot_id, uint32_t generation)
     : mapping_(std::move(mapping)),
       slot_meta_(slot),
       slot_id_(slot_id),
       generation_(generation) {}
 
-LeaseHandle::LeaseHandle(LeaseHandle &&other) noexcept {
+LeaseHandle::LeaseHandle(LeaseHandle&& other) noexcept {
   *this = std::move(other);
 }
 
-LeaseHandle &LeaseHandle::operator=(LeaseHandle &&other) noexcept {
+LeaseHandle& LeaseHandle::operator=(LeaseHandle&& other) noexcept {
   if (this == &other) {
     return *this;
   }
@@ -101,12 +101,12 @@ LeaseHandle &LeaseHandle::operator=(LeaseHandle &&other) noexcept {
 
 LeaseHandle::~LeaseHandle() { release(); }
 
-std::mutex &LeaseHandle::registry_mutex() {
+std::mutex& LeaseHandle::registry_mutex() {
   static std::mutex mtx;
   return mtx;
 }
 
-std::unordered_map<std::string, std::shared_ptr<LeaseHandle::Mapping>> &
+std::unordered_map<std::string, std::shared_ptr<LeaseHandle::Mapping>>&
 LeaseHandle::registry() {
   static std::unordered_map<std::string, std::shared_ptr<Mapping>> map;
   return map;
@@ -117,7 +117,7 @@ void LeaseHandle::release() noexcept {
     return;
   }
 
-  auto &ref = as_atomic(slot_meta_->refcnt);
+  auto& ref = as_atomic(slot_meta_->refcnt);
   const uint32_t previous = ref.fetch_sub(1, std::memory_order_acq_rel);
   if (previous == 0) {
     RCLCPP_ERROR(lease_logger(), "lease:refcnt_underflow slot=%u", slot_id_);
@@ -130,7 +130,7 @@ void LeaseHandle::release() noexcept {
   mapping_.reset();
 }
 
-bool LeaseHandle::init(const std::string &shm_name, uint32_t capacity) {
+bool LeaseHandle::init(const std::string& shm_name, uint32_t capacity) {
   if (capacity == 0) {
     RCLCPP_ERROR(lease_logger(), "lease:init capacity must be >0");
     return false;
@@ -152,7 +152,7 @@ bool LeaseHandle::init(const std::string &shm_name, uint32_t capacity) {
     return false;
   }
 
-  void *addr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  void* addr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (addr == MAP_FAILED) {
     RCLCPP_ERROR(lease_logger(), "lease:init mmap failed name=%s errno=%d",
                  shm_name.c_str(), errno);
@@ -160,13 +160,13 @@ bool LeaseHandle::init(const std::string &shm_name, uint32_t capacity) {
     return false;
   }
 
-  auto *header = static_cast<ShmHeader *>(addr);
+  auto* header = static_cast<ShmHeader*>(addr);
   header->magic = kShmMagic;
   header->layout_version = kLayoutVersion;
   header->capacity = capacity;
   header->consumer_count = 0;
 
-  auto *slots = reinterpret_cast<SlotMeta *>(header + 1);
+  auto* slots = reinterpret_cast<SlotMeta*>(header + 1);
   for (uint32_t i = 0; i < capacity; ++i) {
     as_atomic(slots[i].generation).store(0u, std::memory_order_relaxed);
     as_atomic(slots[i].refcnt).store(0u, std::memory_order_relaxed);
@@ -186,9 +186,9 @@ bool LeaseHandle::init(const std::string &shm_name, uint32_t capacity) {
 }
 
 std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
-    const std::string &shm_name) {
+    const std::string& shm_name) {
   std::lock_guard<std::mutex> lock(registry_mutex());
-  auto &map = registry();
+  auto& map = registry();
   if (auto it = map.find(shm_name); it != map.end()) {
     return it->second;
   }
@@ -200,7 +200,7 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
     return nullptr;
   }
 
-  struct stat st {};
+  struct stat st{};
   if (fstat(fd, &st) != 0) {
     RCLCPP_WARN(lease_logger(), "lease:attach fstat failed name=%s errno=%d",
                 shm_name.c_str(), errno);
@@ -208,7 +208,7 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
     return nullptr;
   }
 
-  void *addr =
+  void* addr =
       mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (addr == MAP_FAILED) {
     RCLCPP_WARN(lease_logger(), "lease:attach mmap failed name=%s errno=%d",
@@ -219,7 +219,7 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
 
   close(fd);
 
-  auto header = static_cast<ShmHeader *>(addr);
+  auto header = static_cast<ShmHeader*>(addr);
   if (header->magic != kShmMagic || header->layout_version != kLayoutVersion) {
     RCLCPP_WARN(lease_logger(),
                 "lease:attach header mismatch name=%s magic=%u ver=%u",
@@ -234,14 +234,14 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
   mapping->mapped_size = st.st_size;
   mapping->addr = addr;
   mapping->header = header;
-  mapping->slots = reinterpret_cast<SlotMeta *>(header + 1);
+  mapping->slots = reinterpret_cast<SlotMeta*>(header + 1);
 
   map[shm_name] = mapping;
   return mapping;
 }
 
 std::optional<uint32_t> LeaseHandle::choose_empty_slot(
-    const std::string &shm_name) {
+    const std::string& shm_name) {
   auto mapping = attach(shm_name);
   if (!mapping || mapping->capacity == 0) {
     return std::nullopt;
@@ -255,8 +255,8 @@ std::optional<uint32_t> LeaseHandle::choose_empty_slot(
   // cached IPC handles become available for all of them.
   for (uint32_t offset = 0; offset < capacity; ++offset) {
     const uint32_t idx = (start_index + offset) % capacity;
-    auto &ref = as_atomic(mapping->slots[idx].refcnt);
-    auto &pending = as_atomic(mapping->slots[idx].pending);
+    auto& ref = as_atomic(mapping->slots[idx].refcnt);
+    auto& pending = as_atomic(mapping->slots[idx].pending);
     if (ref.load(std::memory_order_acquire) == 0 &&
         pending.load(std::memory_order_acquire) == 0) {
       const uint32_t next = (idx + 1) % capacity;
@@ -268,65 +268,65 @@ std::optional<uint32_t> LeaseHandle::choose_empty_slot(
 }
 
 std::optional<uint32_t> LeaseHandle::current_generation(
-    const std::string &shm_name, uint32_t slot_id) {
+    const std::string& shm_name, uint32_t slot_id) {
   auto mapping = attach(shm_name);
   if (!mapping || slot_id >= mapping->capacity) {
     return std::nullopt;
   }
-  auto &gen = as_atomic(mapping->slots[slot_id].generation);
+  auto& gen = as_atomic(mapping->slots[slot_id].generation);
   return gen.load(std::memory_order_acquire);
 }
 
 std::optional<uint32_t> LeaseHandle::current_refcount(
-    const std::string &shm_name, uint32_t slot_id) {
+    const std::string& shm_name, uint32_t slot_id) {
   auto mapping = attach(shm_name);
   if (!mapping || slot_id >= mapping->capacity) {
     return std::nullopt;
   }
-  auto &ref = as_atomic(mapping->slots[slot_id].refcnt);
+  auto& ref = as_atomic(mapping->slots[slot_id].refcnt);
   return ref.load(std::memory_order_acquire);
 }
 
 std::optional<uint32_t> LeaseHandle::current_pending(
-    const std::string &shm_name, uint32_t slot_id) {
+    const std::string& shm_name, uint32_t slot_id) {
   auto mapping = attach(shm_name);
   if (!mapping || slot_id >= mapping->capacity) {
     return std::nullopt;
   }
-  auto &pending = as_atomic(mapping->slots[slot_id].pending);
+  auto& pending = as_atomic(mapping->slots[slot_id].pending);
   return pending.load(std::memory_order_acquire);
 }
 
 std::optional<uint32_t> LeaseHandle::bump_generation(
-    const std::string &shm_name, uint32_t slot_id, uint32_t pending_count) {
+    const std::string& shm_name, uint32_t slot_id, uint32_t pending_count) {
   auto mapping = attach(shm_name);
   if (!mapping || slot_id >= mapping->capacity) {
     return std::nullopt;
   }
-  SlotMeta *slot = &mapping->slots[slot_id];
-  auto &gen = as_atomic(slot->generation);
+  SlotMeta* slot = &mapping->slots[slot_id];
+  auto& gen = as_atomic(slot->generation);
   const uint32_t next = gen.load(std::memory_order_relaxed) + 1;
   gen.store(next, std::memory_order_release);
-  auto &pending = as_atomic(slot->pending);
+  auto& pending = as_atomic(slot->pending);
   pending.store(pending_count, std::memory_order_release);
   return next;
 }
 
-bool LeaseHandle::force_clear_pending(const std::string &shm_name,
+bool LeaseHandle::force_clear_pending(const std::string& shm_name,
                                       uint32_t slot_id) {
   auto mapping = attach(shm_name);
   if (!mapping || slot_id >= mapping->capacity) {
     return false;
   }
 
-  SlotMeta *slot = &mapping->slots[slot_id];
-  auto &pending = as_atomic(slot->pending);
+  SlotMeta* slot = &mapping->slots[slot_id];
+  auto& pending = as_atomic(slot->pending);
   const uint32_t observed_pending = pending.load(std::memory_order_acquire);
   if (observed_pending == 0) {
     return true;
   }
 
-  auto &ref = as_atomic(slot->refcnt);
+  auto& ref = as_atomic(slot->refcnt);
   if (ref.load(std::memory_order_acquire) != 0) {
     return false;
   }
@@ -335,16 +335,16 @@ bool LeaseHandle::force_clear_pending(const std::string &shm_name,
   return true;
 }
 
-LeaseHandle LeaseHandle::acquire(const std::string &shm_name, uint32_t slot_id,
+LeaseHandle LeaseHandle::acquire(const std::string& shm_name, uint32_t slot_id,
                                  uint32_t generation) {
   auto mapping = attach(shm_name);
   if (!mapping || slot_id >= mapping->capacity) {
     return LeaseHandle{};
   }
-  SlotMeta *slot = &mapping->slots[slot_id];
-  auto &gen = as_atomic(slot->generation);
-  auto &ref = as_atomic(slot->refcnt);
-  auto &pending = as_atomic(slot->pending);
+  SlotMeta* slot = &mapping->slots[slot_id];
+  auto& gen = as_atomic(slot->generation);
+  auto& ref = as_atomic(slot->refcnt);
+  auto& pending = as_atomic(slot->pending);
 
   const uint32_t observed_gen = gen.load(std::memory_order_acquire);
   if (observed_gen != generation) {

@@ -13,7 +13,7 @@
 namespace ros2_cuda_ipc_core {
 
 struct BufferView {
-  void *dev_ptr = nullptr;
+  void* dev_ptr = nullptr;
   cudaEvent_t ready_evt = nullptr;
   int device_id = 0;
   uint64_t byte_size = 0;
@@ -24,14 +24,14 @@ struct BufferView {
 
   BufferView() = default;
   ~BufferView();
-  BufferView(const BufferView &other);
-  BufferView &operator=(const BufferView &other);
-  BufferView(BufferView &&other) noexcept;
-  BufferView &operator=(BufferView &&other) noexcept;
+  BufferView(const BufferView& other);
+  BufferView& operator=(const BufferView& other);
+  BufferView(BufferView&& other) noexcept;
+  BufferView& operator=(BufferView&& other) noexcept;
 
   template <class T = void>
-  T *data() const noexcept {
-    return static_cast<T *>(dev_ptr);
+  T* data() const noexcept {
+    return static_cast<T*>(dev_ptr);
   }
 
   bool valid() const noexcept { return dev_ptr != nullptr; }
@@ -40,13 +40,13 @@ struct BufferView {
 
   void reset() noexcept;
 
-  void set_ipc_handles(MemoryBackendKind backend, const uint8_t *payload_bytes,
+  void set_ipc_handles(MemoryBackendKind backend, const uint8_t* payload_bytes,
                        std::size_t payload_size,
-                       const cudaIpcEventHandle_t &evt) noexcept;
-  const MemoryHandlePayload &mem_payload() const noexcept {
+                       const cudaIpcEventHandle_t& evt) noexcept;
+  const MemoryHandlePayload& mem_payload() const noexcept {
     return mem_payload_;
   }
-  const cudaIpcEventHandle_t &event_handle() const noexcept {
+  const cudaIpcEventHandle_t& event_handle() const noexcept {
     return event_handle_;
   }
   MemoryBackendKind backend() const noexcept { return backend_; }

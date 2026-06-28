@@ -10,7 +10,7 @@
 
 namespace {
 
-std::string make_unique_shm_name(const std::string &prefix) {
+std::string make_unique_shm_name(const std::string& prefix) {
   static std::atomic<int> counter{0};
   std::ostringstream oss;
   oss << "/" << prefix << "_" << ::getpid() << "_" << counter.fetch_add(1);
