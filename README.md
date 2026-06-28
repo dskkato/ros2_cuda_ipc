@@ -160,17 +160,6 @@ GitHub Actions の `build` ワークフローは `ghcr.io/dskkato/ros2-cuda-ipc-
 
 `docker login ghcr.io` を事前に実行してから `--push` を付けてください。タグを明示的に変えたい場合は `--tag` オプションで `ghcr.io/dskkato/リポジトリ:タグ` のように *プレフィックスを含めた* フルリポジトリ名を渡してください（スクリプトはこの形式を期待します）。
 
-
-`ros2_cuda_ipc_core` には gtest ベースの単体テストが含まれています。
-
-- `test_buffer_view_mapper.cpp`: lease / backend / VMM-FD failure path と `fill_buffer_core_message()` の検証
-- `test_image_view_mapper.cpp`: `ImageViewMapper` と `fill_gpu_image_message()` の検証
-- `test_pointcloud2_view_mapper.cpp`: `PointCloud2ViewMapper` と `fill_gpu_pointcloud2_message()` の検証
-- `test_ipc_handle_cache.cpp`: process-wide cache の key と duplicate insert 処理の検証
-- `test_type_adapters.cpp`: thin TypeAdapter wrapper の委譲確認
-- `test_lease_handle.cpp`: スロット貸出しと `pending_ttl` 回収の検証
-- `test_gpu_lease_pool.cpp`: GPU lease pool の slot 管理と backend 初期化の検証
-
 ビルドとテスト実行例:
 
 ```bash
