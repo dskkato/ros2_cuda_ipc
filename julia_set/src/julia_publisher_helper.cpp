@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Daisuke Kato
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 //
