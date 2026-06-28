@@ -1,4 +1,4 @@
-#include "ros2_cuda_ipc_core/cuda/vmm_fd_memory_backend.hpp"
+#include "ros2_cuda_ipc_core/cuda/memory_backend_vmm_fd.hpp"
 
 #include <cuda.h>
 #include <fcntl.h>
