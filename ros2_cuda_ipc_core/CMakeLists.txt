@@ -24,10 +24,10 @@ if(NOT UUID_LIB)
 endif()
 
 add_library(${PROJECT_NAME}
-  src/cuda/cuda_ipc_memory_backend.cpp
-  src/cuda/gpu_lease_pool.cpp
-  src/cuda/vmm_fd_memory_backend.cpp
   src/cuda/cuda_util.cpp
+  src/cuda/gpu_lease_pool.cpp
+  src/cuda/memory_backend_cuda_ipc.cpp
+  src/cuda/memory_backend_vmm_fd.cpp
   src/buffer_view.cpp
   src/image_view.cpp
   src/lease_handle.cpp

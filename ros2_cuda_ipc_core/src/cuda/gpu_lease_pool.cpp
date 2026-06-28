@@ -3,9 +3,9 @@
 #include <memory>
 
 #include "rclcpp/logging.hpp"
-#include "ros2_cuda_ipc_core/cuda/cuda_ipc_memory_backend.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
-#include "ros2_cuda_ipc_core/cuda/vmm_fd_memory_backend.hpp"
+#include "ros2_cuda_ipc_core/cuda/memory_backend_cuda_ipc.hpp"
+#include "ros2_cuda_ipc_core/cuda/memory_backend_vmm_fd.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 

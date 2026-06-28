@@ -1,4 +1,4 @@
-#include "ros2_cuda_ipc_core/cuda/cuda_ipc_memory_backend.hpp"
+#include "ros2_cuda_ipc_core/cuda/memory_backend_cuda_ipc.hpp"
 
 #include <cuda_runtime_api.h>
 
