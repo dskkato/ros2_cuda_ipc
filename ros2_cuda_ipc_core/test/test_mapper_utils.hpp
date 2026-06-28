@@ -77,9 +77,15 @@ inline void seed_cache_for_message(
 inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(
     const std::string& prefix, uint8_t key_seed) {
   const std::string shm_name = make_unique_shm_name(prefix);
-  ASSERT_TRUE(LeaseHandle::init(shm_name, 1));
+  if (!LeaseHandle::init(shm_name, 1)) {
+    ADD_FAILURE() << "LeaseHandle::init failed for " << shm_name;
+    return ros2_cuda_ipc_msgs::msg::BufferCore{};
+  }
   auto generation = LeaseHandle::bump_generation(shm_name, 0, 1);
-  ASSERT_TRUE(generation.has_value());
+  if (!generation.has_value()) {
+    ADD_FAILURE() << "LeaseHandle::bump_generation failed for " << shm_name;
+    return ros2_cuda_ipc_msgs::msg::BufferCore{};
+  }
   auto msg = make_cached_buffer_core_message(shm_name, 0, generation.value(),
                                              key_seed);
   seed_cache_for_message(msg, static_cast<uintptr_t>(0x1000 + key_seed * 0x10));
