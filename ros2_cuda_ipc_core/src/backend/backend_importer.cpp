@@ -1,10 +1,10 @@
-#include "ros2_cuda_ipc_core/detail/backend_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/backend_importer.hpp"
 
-#include "ros2_cuda_ipc_core/detail/cuda_ipc_importer.hpp"
-#include "ros2_cuda_ipc_core/detail/vmm_fd_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/cuda_ipc_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_importer.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 
-namespace ros2_cuda_ipc_core::detail {
+namespace ros2_cuda_ipc_core::backend {
 
 void release_imported_buffer(const ImportedBuffer& imported) noexcept {
   if (imported.vmm_address != 0 && imported.allocation_size != 0) {
@@ -36,4 +36,4 @@ const BackendImporter& get_backend_importer(uint8_t backend) {
   return cuda_ipc_importer;
 }
 
-}  // namespace ros2_cuda_ipc_core::detail
+}  // namespace ros2_cuda_ipc_core::backend

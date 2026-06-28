@@ -1,4 +1,4 @@
-#include "ros2_cuda_ipc_core/detail/vmm_fd_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_importer.hpp"
 
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -17,7 +17,7 @@
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/posix_error.hpp"
 
-namespace ros2_cuda_ipc_core::detail {
+namespace ros2_cuda_ipc_core::backend {
 
 namespace {
 
@@ -248,4 +248,4 @@ std::optional<ImportedBuffer> VmmFdImporter::import(
   return imported;
 }
 
-}  // namespace ros2_cuda_ipc_core::detail
+}  // namespace ros2_cuda_ipc_core::backend

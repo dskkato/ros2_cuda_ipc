@@ -9,7 +9,7 @@
 #include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
-namespace ros2_cuda_ipc_core::detail {
+namespace ros2_cuda_ipc_core::backend {
 
 struct ImportedBuffer {
   void* dev_ptr = nullptr;
@@ -33,4 +33,4 @@ void release_imported_buffer(const ImportedBuffer& imported) noexcept;
 
 const BackendImporter& get_backend_importer(uint8_t backend);
 
-}  // namespace ros2_cuda_ipc_core::detail
+}  // namespace ros2_cuda_ipc_core::backend

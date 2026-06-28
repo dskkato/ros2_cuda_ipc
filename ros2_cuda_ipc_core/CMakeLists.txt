@@ -34,9 +34,9 @@ add_library(${PROJECT_NAME}
   src/image_view_mapper.cpp
   src/ipc_handle_cache.cpp
   src/lease_handle.cpp
-  src/detail/backend_importer.cpp
-  src/detail/cuda_ipc_importer.cpp
-  src/detail/vmm_fd_importer.cpp
+  src/backend/backend_importer.cpp
+  src/backend/cuda_ipc_importer.cpp
+  src/backend/vmm_fd_importer.cpp
   src/pointcloud2_view.cpp
   src/pointcloud2_view_mapper.cpp
 )

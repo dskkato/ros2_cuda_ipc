@@ -1,11 +1,11 @@
-#include "ros2_cuda_ipc_core/detail/cuda_ipc_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/cuda_ipc_importer.hpp"
 
 #include <cstring>
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 
-namespace ros2_cuda_ipc_core::detail {
+namespace ros2_cuda_ipc_core::backend {
 
 namespace {
 
@@ -44,4 +44,4 @@ std::optional<ImportedBuffer> CudaIpcImporter::import(
   return imported;
 }
 
-}  // namespace ros2_cuda_ipc_core::detail
+}  // namespace ros2_cuda_ipc_core::backend

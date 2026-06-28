@@ -23,7 +23,7 @@ IpcHandleCache& IpcHandleCache::instance() {
   return cache;
 }
 
-std::optional<detail::ImportedBuffer> IpcHandleCache::find(
+std::optional<backend::ImportedBuffer> IpcHandleCache::find(
     const IpcHandleKey& key) const {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = cache_.find(key);
@@ -33,8 +33,8 @@ std::optional<detail::ImportedBuffer> IpcHandleCache::find(
   return it->second;
 }
 
-detail::ImportedBuffer IpcHandleCache::insert_or_discard_duplicate(
-    const IpcHandleKey& key, detail::ImportedBuffer imported) {
+backend::ImportedBuffer IpcHandleCache::insert_or_discard_duplicate(
+    const IpcHandleKey& key, backend::ImportedBuffer imported) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto [it, inserted] = cache_.emplace(key, imported);
   if (!inserted) {

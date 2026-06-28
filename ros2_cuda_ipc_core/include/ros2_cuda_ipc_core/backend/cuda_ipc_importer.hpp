@@ -1,8 +1,8 @@
 #pragma once
 
-#include "ros2_cuda_ipc_core/detail/backend_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/backend_importer.hpp"
 
-namespace ros2_cuda_ipc_core::detail {
+namespace ros2_cuda_ipc_core::backend {
 
 class CudaIpcImporter final : public BackendImporter {
  public:
@@ -12,4 +12,4 @@ class CudaIpcImporter final : public BackendImporter {
       const rclcpp::Logger& logger) const override;
 };
 
-}  // namespace ros2_cuda_ipc_core::detail
+}  // namespace ros2_cuda_ipc_core::backend
