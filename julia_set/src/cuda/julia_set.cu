@@ -5,7 +5,7 @@
 namespace julia_set {
 namespace {
 
-__global__ void julia_kernel(uint8_t *data, uint32_t width, uint32_t height,
+__global__ void julia_kernel(uint8_t* data, uint32_t width, uint32_t height,
                              float zoom, float offset_x, float offset_y,
                              float c_real, float c_imag,
                              uint32_t max_iterations) {
@@ -39,7 +39,7 @@ __global__ void julia_kernel(uint8_t *data, uint32_t width, uint32_t height,
   data[idx] = static_cast<uint8_t>(t * 255.0f + 0.5f);
 }
 
-__global__ void colorize_kernel(const uint8_t *mono, uint8_t *rgb,
+__global__ void colorize_kernel(const uint8_t* mono, uint8_t* rgb,
                                 uint32_t width, uint32_t height,
                                 uint32_t channels) {
   const uint32_t x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -72,7 +72,7 @@ __global__ void colorize_kernel(const uint8_t *mono, uint8_t *rgb,
 
 }  // namespace
 
-cudaError_t launch_julia_kernel(uint8_t *data, uint32_t width, uint32_t height,
+cudaError_t launch_julia_kernel(uint8_t* data, uint32_t width, uint32_t height,
                                 float zoom, float offset_x, float offset_y,
                                 float c_real, float c_imag,
                                 uint32_t max_iterations, cudaStream_t stream) {
@@ -85,7 +85,7 @@ cudaError_t launch_julia_kernel(uint8_t *data, uint32_t width, uint32_t height,
   return cudaGetLastError();
 }
 
-cudaError_t launch_colorize_kernel(const uint8_t *mono, uint8_t *rgb,
+cudaError_t launch_colorize_kernel(const uint8_t* mono, uint8_t* rgb,
                                    uint32_t width, uint32_t height,
                                    uint32_t channels, cudaStream_t stream) {
   const dim3 block_dim(16, 16);

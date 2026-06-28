@@ -6,12 +6,12 @@ namespace ros2_cuda_ipc_core {
 
 class NvtxScopedRange {
  public:
-  explicit NvtxScopedRange(const char *name) : id_(nvtxRangeStartA(name)) {}
+  explicit NvtxScopedRange(const char* name) : id_(nvtxRangeStartA(name)) {}
 
-  NvtxScopedRange(const NvtxScopedRange &) = delete;
-  NvtxScopedRange &operator=(const NvtxScopedRange &) = delete;
-  NvtxScopedRange(NvtxScopedRange &&) = delete;
-  NvtxScopedRange &operator=(NvtxScopedRange &&) = delete;
+  NvtxScopedRange(const NvtxScopedRange&) = delete;
+  NvtxScopedRange& operator=(const NvtxScopedRange&) = delete;
+  NvtxScopedRange(NvtxScopedRange&&) = delete;
+  NvtxScopedRange& operator=(NvtxScopedRange&&) = delete;
 
   ~NvtxScopedRange() { nvtxRangeEnd(id_); }
 

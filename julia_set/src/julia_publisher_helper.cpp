@@ -50,8 +50,8 @@ uint32_t dtype_bytes(ros2_cuda_ipc_core::DType dtype) {
 
 }  // namespace
 
-JuliaPublisherHelper::JuliaPublisherHelper(const Config &config,
-                                           const rclcpp::Logger &logger)
+JuliaPublisherHelper::JuliaPublisherHelper(const Config& config,
+                                           const rclcpp::Logger& logger)
     : config_(config),
       logger_(logger),
       pool_({config_.shm_name, config_.slot_count, config_.pending_ttl,
@@ -119,7 +119,7 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
     return std::nullopt;
   }
 
-  auto *slot = *slot_ptr;
+  auto* slot = *slot_ptr;
 
   const float zoom = config_.zoom + 0.5f * std::sin(time_phase);
   const float offset_x = config_.offset_x + 0.2f * std::cos(time_phase * 0.5f);
@@ -132,7 +132,7 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
   cudaError_t err = cudaSuccess;
   {
     NvtxScopedRange launch_range("JuliaPublisherHelper::launch_julia_kernel");
-    err = launch_julia_kernel(static_cast<uint8_t *>(slot->device_ptr),
+    err = launch_julia_kernel(static_cast<uint8_t*>(slot->device_ptr),
                               config_.width, config_.height, zoom, offset_x,
                               offset_y, c_real, c_imag, config_.max_iterations,
                               stream_);

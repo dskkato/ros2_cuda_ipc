@@ -36,13 +36,13 @@ class JuliaPublisherHelper {
         ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
   };
 
-  JuliaPublisherHelper(const Config &config, const rclcpp::Logger &logger);
+  JuliaPublisherHelper(const Config& config, const rclcpp::Logger& logger);
   ~JuliaPublisherHelper();
 
-  JuliaPublisherHelper(const JuliaPublisherHelper &) = delete;
-  JuliaPublisherHelper &operator=(const JuliaPublisherHelper &) = delete;
-  JuliaPublisherHelper(JuliaPublisherHelper &&) = delete;
-  JuliaPublisherHelper &operator=(JuliaPublisherHelper &&) = delete;
+  JuliaPublisherHelper(const JuliaPublisherHelper&) = delete;
+  JuliaPublisherHelper& operator=(const JuliaPublisherHelper&) = delete;
+  JuliaPublisherHelper(JuliaPublisherHelper&&) = delete;
+  JuliaPublisherHelper& operator=(JuliaPublisherHelper&&) = delete;
 
   std::optional<ros2_cuda_ipc_core::ImageView> produce(
       std::size_t subscriber_count, float time_phase = 0.0f);

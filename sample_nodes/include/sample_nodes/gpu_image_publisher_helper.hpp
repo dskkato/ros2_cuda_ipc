@@ -26,13 +26,13 @@ class GpuImagePublisherHelper {
     std::chrono::milliseconds pending_ttl{300};
   };
 
-  explicit GpuImagePublisherHelper(const Config &config);
+  explicit GpuImagePublisherHelper(const Config& config);
   ~GpuImagePublisherHelper();
 
-  GpuImagePublisherHelper(const GpuImagePublisherHelper &) = delete;
-  GpuImagePublisherHelper &operator=(const GpuImagePublisherHelper &) = delete;
-  GpuImagePublisherHelper(GpuImagePublisherHelper &&) = delete;
-  GpuImagePublisherHelper &operator=(GpuImagePublisherHelper &&) = delete;
+  GpuImagePublisherHelper(const GpuImagePublisherHelper&) = delete;
+  GpuImagePublisherHelper& operator=(const GpuImagePublisherHelper&) = delete;
+  GpuImagePublisherHelper(GpuImagePublisherHelper&&) = delete;
+  GpuImagePublisherHelper& operator=(GpuImagePublisherHelper&&) = delete;
 
   std::optional<ros2_cuda_ipc_core::ImageView> produce(size_t subscriber_count,
                                                        uint8_t fill_value);
@@ -41,7 +41,7 @@ class GpuImagePublisherHelper {
  private:
   struct Slot {
     uint32_t index = 0;
-    void *device_ptr = nullptr;
+    void* device_ptr = nullptr;
     cudaEvent_t event = nullptr;
     cudaIpcMemHandle_t mem_handle{};
     cudaIpcEventHandle_t event_handle{};
@@ -59,8 +59,8 @@ class GpuImagePublisherHelper {
   void destroy_slots() noexcept;
   void reclaim_stale_pending();
   static bool deadline_reached(
-      const std::chrono::steady_clock::time_point &deadline,
-      const std::chrono::steady_clock::time_point &now) {
+      const std::chrono::steady_clock::time_point& deadline,
+      const std::chrono::steady_clock::time_point& now) {
     return deadline.time_since_epoch().count() != 0 && now >= deadline;
   }
 };

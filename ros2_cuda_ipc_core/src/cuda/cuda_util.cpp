@@ -7,8 +7,8 @@ std::string cuda_error_to_string(cudaError_t err) {
 }
 
 std::string cu_result_to_string(CUresult result) {
-  const char *name = nullptr;
-  const char *desc = nullptr;
+  const char* name = nullptr;
+  const char* desc = nullptr;
 
   // Attempt to retrieve human-readable error name and description.
   // Fall back to default strings if the CUDA calls fail or return null.

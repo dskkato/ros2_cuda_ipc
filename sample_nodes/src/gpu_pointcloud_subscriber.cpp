@@ -44,7 +44,7 @@ class GpuPointCloudSubscriberNode : public rclcpp::Node {
   }
 
  private:
-  void on_pointcloud(const ros2_cuda_ipc_core::PointCloud2View &view) {
+  void on_pointcloud(const ros2_cuda_ipc_core::PointCloud2View& view) {
     if (!view.core.valid()) {
       RCLCPP_WARN(get_logger(), "Received invalid GPU point cloud view");
       return;
@@ -91,12 +91,12 @@ class GpuPointCloudSubscriberNode : public rclcpp::Node {
 
 }  // namespace sample_nodes
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
     auto node = std::make_shared<sample_nodes::GpuPointCloudSubscriberNode>();
     rclcpp::spin(node);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     RCLCPP_FATAL(rclcpp::get_logger("gpu_pointcloud_subscriber"),
                  "Exception: %s", ex.what());
   }

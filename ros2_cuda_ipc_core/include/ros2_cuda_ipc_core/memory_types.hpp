@@ -52,7 +52,7 @@ inline std::string build_memory_socket_path(std::string_view uuid) {
 
 using MemoryHandlePayload = std::array<uint8_t, kMemoryHandleSize>;
 
-inline uint32_t load_u32_le(const uint8_t *data) {
+inline uint32_t load_u32_le(const uint8_t* data) {
   uint32_t value = 0;
   for (int i = 3; i >= 0; --i) {
     value = (value << 8) | data[i];
@@ -60,15 +60,15 @@ inline uint32_t load_u32_le(const uint8_t *data) {
   return value;
 }
 
-inline void store_u32_le(uint8_t *dest, uint32_t value) {
+inline void store_u32_le(uint8_t* dest, uint32_t value) {
   for (int i = 0; i < 4; ++i) {
     dest[i] = static_cast<uint8_t>(value & 0xFF);
     value >>= 8;
   }
 }
 
-inline bool encode_uuid_payload(const std::string &uuid,
-                                MemoryHandlePayload &payload) {
+inline bool encode_uuid_payload(const std::string& uuid,
+                                MemoryHandlePayload& payload) {
   if (uuid.size() > kVmmUuidMaxLength) {
     return false;
   }

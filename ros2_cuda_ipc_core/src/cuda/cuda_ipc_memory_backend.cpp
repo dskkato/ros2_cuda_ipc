@@ -16,10 +16,10 @@ namespace {
 class CudaIpcMemoryBackend : public GpuLeasePool::MemoryBackend {
  public:
   bool allocate(uint64_t frame_size_bytes, int device_index,
-                std::vector<GpuLeasePool::Slot> &slots,
+                std::vector<GpuLeasePool::Slot>& slots,
                 rclcpp::Logger logger) override {
     (void)device_index;
-    for (auto &slot : slots) {
+    for (auto& slot : slots) {
       cudaError_t err = cudaMalloc(&slot.device_ptr, frame_size_bytes);
       if (err != cudaSuccess) {
         RCLCPP_ERROR(logger, "cudaMalloc failed: %s",
@@ -43,9 +43,9 @@ class CudaIpcMemoryBackend : public GpuLeasePool::MemoryBackend {
     return true;
   }
 
-  void destroy(std::vector<GpuLeasePool::Slot> &slots,
+  void destroy(std::vector<GpuLeasePool::Slot>& slots,
                rclcpp::Logger logger) noexcept override {
-    for (auto &slot : slots) {
+    for (auto& slot : slots) {
       if (slot.device_ptr) {
         const cudaError_t free_err = cudaFree(slot.device_ptr);
         if (free_err != cudaSuccess) {

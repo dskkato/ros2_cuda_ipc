@@ -19,7 +19,7 @@
 
 namespace {
 
-std::string make_unique_shm_name(const std::string &prefix) {
+std::string make_unique_shm_name(const std::string& prefix) {
   static std::atomic<int> counter{0};
   std::ostringstream oss;
   oss << "/" << prefix << "_" << ::getpid() << "_" << counter.fetch_add(1);
@@ -31,7 +31,7 @@ class TypeAdapterTest : public ::testing::Test {
   static void SetUpTestSuite() {
     if (!rclcpp::ok()) {
       int argc = 0;
-      char **argv = nullptr;
+      char** argv = nullptr;
       rclcpp::init(argc, argv);
     }
   }
@@ -60,7 +60,7 @@ class TypeAdapterTest : public ::testing::Test {
 
 TEST_F(TypeAdapterTest, DISABLED_ConvertToCustomSuccess) {
   struct CudaAllocation {
-    void *ptr = nullptr;
+    void* ptr = nullptr;
     cudaEvent_t event = nullptr;
 
     ~CudaAllocation() {
@@ -171,7 +171,7 @@ TEST_F(TypeAdapterTest, ConvertToRosMessageCopiesMetadata) {
   cudaIpcEventHandle_t event_handle{};
   std::memset(&event_handle, 0x34, sizeof(event_handle));
   view.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
-                       reinterpret_cast<const uint8_t *>(&mem_handle),
+                       reinterpret_cast<const uint8_t*>(&mem_handle),
                        sizeof(mem_handle), event_handle);
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -296,7 +296,7 @@ TEST_F(TypeAdapterTest, DISABLED_ImageViewRoundTripTransfersHeaderAndLayout) {
   cudaIpcMemHandle_t dummy_mem{};
   cudaIpcEventHandle_t dummy_evt{};
   emit.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
-                            reinterpret_cast<const uint8_t *>(&dummy_mem),
+                            reinterpret_cast<const uint8_t*>(&dummy_mem),
                             sizeof(dummy_mem), dummy_evt);
 
   ros2_cuda_ipc_msgs::msg::GpuImage out_msg;
@@ -365,7 +365,7 @@ TEST_F(TypeAdapterTest, DISABLED_PointCloudViewRoundTripTransfersLayout) {
   cudaIpcMemHandle_t dummy_mem{};
   cudaIpcEventHandle_t dummy_evt{};
   emit.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
-                            reinterpret_cast<const uint8_t *>(&dummy_mem),
+                            reinterpret_cast<const uint8_t*>(&dummy_mem),
                             sizeof(dummy_mem), dummy_evt);
   emit.height = 1;
   emit.width = 10;

@@ -67,8 +67,8 @@ static int connect_socket(const char* path) {
 }
 
 static void recv_fd_and_header(int sock, int* out_fd, MsgHeader* out_hdr) {
-  struct msghdr msg {};
-  struct iovec iov {};
+  struct msghdr msg{};
+  struct iovec iov{};
   iov.iov_base = out_hdr;
   iov.iov_len = sizeof(*out_hdr);
   msg.msg_iov = &iov;

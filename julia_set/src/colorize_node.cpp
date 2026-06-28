@@ -105,7 +105,7 @@ class ColorizeNode : public rclcpp::Node {
   }
 
  private:
-  void on_image(const ros2_cuda_ipc_core::ImageView &view) {
+  void on_image(const ros2_cuda_ipc_core::ImageView& view) {
     NvtxScopedRange callback_range("ColorizeNode::on_image");
     auto logger = get_logger();
     if (!view.core.valid()) {
@@ -143,7 +143,7 @@ class ColorizeNode : public rclcpp::Node {
                            "No available GPU slots for colorized output");
       return;
     }
-    auto &slot = **slot_opt;
+    auto& slot = **slot_opt;
 
     const auto cancel_slot = [&]() { pool_.cancel_pending(slot); };
 
@@ -169,7 +169,7 @@ class ColorizeNode : public rclcpp::Node {
     {
       NvtxScopedRange launch_range("ColorizeNode::launch_colorize_kernel");
       err = launch_colorize_kernel(view.core.data<uint8_t>(),
-                                   static_cast<uint8_t *>(slot.device_ptr),
+                                   static_cast<uint8_t*>(slot.device_ptr),
                                    width_, height_, output_channels_, stream_);
     }
     if (err != cudaSuccess) {
@@ -194,7 +194,7 @@ class ColorizeNode : public rclcpp::Node {
     publisher_->publish(output);
   }
 
-  bool ensure_pool(const ros2_cuda_ipc_core::ImageView &view) {
+  bool ensure_pool(const ros2_cuda_ipc_core::ImageView& view) {
     const uint32_t width = view.cols();
     const uint32_t height = view.rows();
     const int device_id = view.core.device_id;
@@ -240,8 +240,8 @@ class ColorizeNode : public rclcpp::Node {
   }
 
   ros2_cuda_ipc_core::ImageView make_output_view(
-      const GpuLeasePool::Slot &slot,
-      const ros2_cuda_ipc_core::ImageView &input) const {
+      const GpuLeasePool::Slot& slot,
+      const ros2_cuda_ipc_core::ImageView& input) const {
     ros2_cuda_ipc_core::ImageView view;
     view.header = input.header;
     view.core.dev_ptr = slot.device_ptr;
@@ -282,12 +282,12 @@ class ColorizeNode : public rclcpp::Node {
 
 }  // namespace julia_set
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
     auto node = std::make_shared<julia_set::ColorizeNode>();
     rclcpp::spin(node);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     RCLCPP_FATAL(rclcpp::get_logger("colorize_node"), "Exception: %s",
                  ex.what());
   }

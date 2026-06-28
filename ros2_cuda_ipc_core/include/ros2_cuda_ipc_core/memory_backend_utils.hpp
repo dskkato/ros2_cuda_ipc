@@ -10,7 +10,7 @@
 namespace ros2_cuda_ipc_core {
 
 inline MemoryBackendKind parse_memory_backend(std::string name,
-                                              const rclcpp::Logger &logger) {
+                                              const rclcpp::Logger& logger) {
   std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
     return static_cast<char>(std::tolower(c));
   });

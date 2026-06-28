@@ -9,7 +9,7 @@
 namespace sample_nodes {
 namespace {
 
-ros2_cuda_ipc_core::DType parse_dtype(const std::string &name) {
+ros2_cuda_ipc_core::DType parse_dtype(const std::string& name) {
   if (name == "u8") {
     return ros2_cuda_ipc_core::DType::U8;
   }
@@ -113,12 +113,12 @@ class GpuImagePublisherNode : public rclcpp::Node {
 
 }  // namespace sample_nodes
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
     auto node = std::make_shared<sample_nodes::GpuImagePublisherNode>();
     rclcpp::spin(node);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     RCLCPP_FATAL(rclcpp::get_logger("gpu_image_publisher"), "Exception: %s",
                  ex.what());
   }

@@ -24,14 +24,14 @@ class GpuPointCloudPublisherHelper {
     std::chrono::milliseconds pending_ttl{300};
   };
 
-  explicit GpuPointCloudPublisherHelper(const Config &config);
+  explicit GpuPointCloudPublisherHelper(const Config& config);
   ~GpuPointCloudPublisherHelper();
 
-  GpuPointCloudPublisherHelper(const GpuPointCloudPublisherHelper &) = delete;
-  GpuPointCloudPublisherHelper &operator=(
-      const GpuPointCloudPublisherHelper &) = delete;
-  GpuPointCloudPublisherHelper(GpuPointCloudPublisherHelper &&) = delete;
-  GpuPointCloudPublisherHelper &operator=(GpuPointCloudPublisherHelper &&) =
+  GpuPointCloudPublisherHelper(const GpuPointCloudPublisherHelper&) = delete;
+  GpuPointCloudPublisherHelper& operator=(const GpuPointCloudPublisherHelper&) =
+      delete;
+  GpuPointCloudPublisherHelper(GpuPointCloudPublisherHelper&&) = delete;
+  GpuPointCloudPublisherHelper& operator=(GpuPointCloudPublisherHelper&&) =
       delete;
 
   std::optional<ros2_cuda_ipc_core::PointCloud2View> produce(
@@ -41,7 +41,7 @@ class GpuPointCloudPublisherHelper {
  private:
   struct Slot {
     uint32_t index = 0;
-    void *device_ptr = nullptr;
+    void* device_ptr = nullptr;
     cudaEvent_t event = nullptr;
     cudaIpcMemHandle_t mem_handle{};
     cudaIpcEventHandle_t event_handle{};
@@ -61,8 +61,8 @@ class GpuPointCloudPublisherHelper {
   void destroy_slots() noexcept;
   void reclaim_stale_pending();
   static bool deadline_reached(
-      const std::chrono::steady_clock::time_point &deadline,
-      const std::chrono::steady_clock::time_point &now) {
+      const std::chrono::steady_clock::time_point& deadline,
+      const std::chrono::steady_clock::time_point& now) {
     return deadline.time_since_epoch().count() != 0 && now >= deadline;
   }
 };

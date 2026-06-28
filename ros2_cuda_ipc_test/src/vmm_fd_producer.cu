@@ -84,8 +84,8 @@ static int accept_client(int server_fd) {
 static void send_fd_with_header(int sock, int fd_to_send,
                                 const MsgHeader& hdr) {
   // send header bytes + fd via SCM_RIGHTS
-  struct msghdr msg {};
-  struct iovec iov {};
+  struct msghdr msg{};
+  struct iovec iov{};
   iov.iov_base = (void*)&hdr;
   iov.iov_len = sizeof(hdr);
   msg.msg_iov = &iov;

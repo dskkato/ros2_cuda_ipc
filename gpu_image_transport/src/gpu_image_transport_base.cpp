@@ -8,7 +8,7 @@ namespace gpu_image_transport {
 using ros2_cuda_ipc_core::NvtxScopedRange;
 
 GpuImageTransportNodeBase::GpuImageTransportNodeBase(
-    const std::string &node_name, const rclcpp::NodeOptions &options)
+    const std::string& node_name, const rclcpp::NodeOptions& options)
     : rclcpp::Node(node_name, options),
       input_topic_(
           declare_parameter<std::string>("input_topic_name", "image_gpu")),
@@ -44,7 +44,7 @@ GpuImageTransportNodeBase::~GpuImageTransportNodeBase() {
 }
 
 void GpuImageTransportNodeBase::on_image(
-    const ros2_cuda_ipc_core::ImageView &view) {
+    const ros2_cuda_ipc_core::ImageView& view) {
   NvtxScopedRange callback_range("GpuImageTransportNodeBase::on_image");
   if (!view.core.valid()) {
     RCLCPP_WARN(get_logger(), "Received invalid GPU image view");
@@ -121,7 +121,7 @@ cudaError_t GpuImageTransportNodeBase::ensure_pinned_capacity(
   }
   release_pinned_host();
   const cudaError_t err =
-      cudaMallocHost(reinterpret_cast<void **>(&pinned_host_buffer_), bytes);
+      cudaMallocHost(reinterpret_cast<void**>(&pinned_host_buffer_), bytes);
   if (err == cudaSuccess) {
     pinned_host_capacity_ = bytes;
   }
@@ -141,7 +141,7 @@ void GpuImageTransportNodeBase::release_pinned_host() {
 }
 
 std::string GpuImageTransportNodeBase::cuda_error_to_string(cudaError_t err) {
-  const char *error_string = cudaGetErrorString(err);
+  const char* error_string = cudaGetErrorString(err);
   return error_string ? std::string(error_string) : std::string{};
 }
 

@@ -31,7 +31,7 @@ uint32_t dtype_bytes(ros2_cuda_ipc_core::DType dtype) {
 
 }  // namespace
 
-GpuImagePublisherHelper::GpuImagePublisherHelper(const Config &config)
+GpuImagePublisherHelper::GpuImagePublisherHelper(const Config& config)
     : config_(config) {
   if (config_.slot_count == 0) {
     throw std::runtime_error("slot_count must be greater than zero");
@@ -69,7 +69,7 @@ void GpuImagePublisherHelper::initialise_shm() {
 void GpuImagePublisherHelper::allocate_slots() {
   slots_.resize(config_.slot_count);
   for (std::size_t i = 0; i < slots_.size(); ++i) {
-    auto &slot = slots_[i];
+    auto& slot = slots_[i];
     slot.index = static_cast<uint32_t>(i);
 
     cudaError_t err = cudaMalloc(&slot.device_ptr, frame_size_bytes_);
@@ -100,7 +100,7 @@ void GpuImagePublisherHelper::allocate_slots() {
 }
 
 void GpuImagePublisherHelper::destroy_slots() noexcept {
-  for (auto &slot : slots_) {
+  for (auto& slot : slots_) {
     if (slot.event) {
       cudaEventDestroy(slot.event);
       slot.event = nullptr;
@@ -139,7 +139,7 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
     return std::nullopt;
   }
 
-  auto &slot = slots_[free_slot.value()];
+  auto& slot = slots_[free_slot.value()];
 
   auto gen = ros2_cuda_ipc_core::LeaseHandle::bump_generation(
       config_.shm_name, slot.index, subscriber_count);
@@ -192,7 +192,7 @@ std::optional<ros2_cuda_ipc_core::ImageView> GpuImagePublisherHelper::produce(
   view.core.generation = slot.generation;
   view.core.shm_name = config_.shm_name;
   view.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
-                            reinterpret_cast<const uint8_t *>(&slot.mem_handle),
+                            reinterpret_cast<const uint8_t*>(&slot.mem_handle),
                             sizeof(slot.mem_handle), slot.event_handle);
   view.dtype = config_.dtype;
   view.shape = {config_.height, config_.width, config_.channels};
@@ -217,7 +217,7 @@ void GpuImagePublisherHelper::reclaim_stale_pending() {
   const auto now = std::chrono::steady_clock::now();
   auto logger = rclcpp::get_logger("GpuImagePublisherHelper");
 
-  for (auto &slot : slots_) {
+  for (auto& slot : slots_) {
     if (!deadline_reached(slot.pending_deadline, now)) {
       continue;
     }

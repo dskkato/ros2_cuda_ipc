@@ -10,7 +10,7 @@ namespace ros2_cuda_ipc_core {
 inline std::string errno_to_string(int err) noexcept {
   char buffer[128];
 #if defined(__GLIBC__) && defined(_GNU_SOURCE)
-  char *msg = ::strerror_r(err, buffer, sizeof(buffer));
+  char* msg = ::strerror_r(err, buffer, sizeof(buffer));
   if (msg != nullptr) {
     return std::string(msg);
   }

@@ -15,7 +15,7 @@ namespace julia_set {
 using ros2_cuda_ipc_core::NvtxScopedRange;
 namespace {
 
-ros2_cuda_ipc_core::DType parse_dtype(const std::string &name) {
+ros2_cuda_ipc_core::DType parse_dtype(const std::string& name) {
   if (name == "u8") {
     return ros2_cuda_ipc_core::DType::U8;
   }
@@ -152,12 +152,12 @@ class JuliaSetPublisherNode : public rclcpp::Node {
 
 }  // namespace julia_set
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
     auto node = std::make_shared<julia_set::JuliaSetPublisherNode>();
     rclcpp::spin(node);
-  } catch (const std::exception &ex) {
+  } catch (const std::exception& ex) {
     RCLCPP_FATAL(rclcpp::get_logger("julia_set_publisher"), "Exception: %s",
                  ex.what());
   }
