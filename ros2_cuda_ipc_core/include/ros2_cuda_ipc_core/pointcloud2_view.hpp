@@ -34,7 +34,7 @@ struct PointCloud2View {
     int num_fields;
   };
 
-  std_msgs::msg::Header header;
+  std_msgs::msg::Header header{};
   BufferView core;
   uint32_t height = 1;
   uint32_t width = 0;
