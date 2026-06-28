@@ -4,12 +4,13 @@ namespace ros2_cuda_ipc_core {
 
 std::size_t IpcHandleKeyHash::operator()(
     const IpcHandleKey& key) const noexcept {
+  constexpr std::size_t PRIME{131};
   std::size_t hash = key.backend;
   for (uint8_t byte : key.mem) {
-    hash = hash * 131U + byte;
+    hash = hash * PRIME + byte;
   }
   for (uint8_t byte : key.event) {
-    hash = hash * 131U + byte;
+    hash = hash * PRIME + byte;
   }
   return hash;
 }
