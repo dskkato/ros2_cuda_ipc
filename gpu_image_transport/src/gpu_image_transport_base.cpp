@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Daisuke Kato
+// SPDX-License-Identifier: MIT
+
 #include "gpu_image_transport/gpu_image_transport_base.hpp"
 
 #include <functional>

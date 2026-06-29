@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Daisuke Kato
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <rclcpp/type_adapter.hpp>
