@@ -151,11 +151,11 @@ GitHub Actions の `build` ワークフローは `ghcr.io/dskkato/ros2-cuda-ipc-
 # Humble (既存の :latest を :humble にリタグする場合にも利用可能)
 ./scripts/build_container.sh --ros-distro humble --push
 
-# Iron
-./scripts/build_container.sh --ros-distro iron --push
-
 # Jazzy
 ./scripts/build_container.sh --ros-distro jazzy --push
+
+# Lyrical
+./scripts/build_container.sh --ros-distro lyrical --push
 ```
 
 `docker login ghcr.io` を事前に実行してから `--push` を付けてください。タグを明示的に変えたい場合は `--tag` オプションで `ghcr.io/dskkato/リポジトリ:タグ` のように *プレフィックスを含めた* フルリポジトリ名を渡してください（スクリプトはこの形式を期待します）。
