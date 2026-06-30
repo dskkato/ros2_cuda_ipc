@@ -47,15 +47,18 @@ target_include_directories(${PROJECT_NAME}
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(${PROJECT_NAME}
-  rclcpp
-  rcpputils
-  ros2_cuda_ipc_msgs
-  sensor_msgs
-  std_msgs
+target_link_libraries(${PROJECT_NAME}
+  PUBLIC
+    rclcpp::rclcpp
+    rcpputils::rcpputils
+    ${ros2_cuda_ipc_msgs_TARGETS}
+    ${sensor_msgs_TARGETS}
+    ${std_msgs_TARGETS}
+    CUDA::cudart
+    CUDA::cuda_driver
+  PRIVATE
+    ${UUID_LIB}
 )
-
-target_link_libraries(${PROJECT_NAME} CUDA::cudart CUDA::cuda_driver ${UUID_LIB})
 
 install(TARGETS ${PROJECT_NAME}
   EXPORT export_${PROJECT_NAME}
