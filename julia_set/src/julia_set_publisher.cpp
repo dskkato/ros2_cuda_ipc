@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 #include <chrono>
-#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -109,7 +108,7 @@ class JuliaSetPublisherNode : public rclcpp::Node {
     const auto period = std::chrono::duration<double>(1.0 / publish_rate_hz_);
     timer_ = create_wall_timer(
         std::chrono::duration_cast<std::chrono::milliseconds>(period),
-        std::bind(&JuliaSetPublisherNode::on_timer, this));
+        [this]() { on_timer(); });
 
     start_time_ = now();
 

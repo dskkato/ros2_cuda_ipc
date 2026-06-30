@@ -3,7 +3,6 @@
 
 #include "gpu_image_transport/gpu_image_transport_base.hpp"
 
-#include <functional>
 #include <stdexcept>
 
 namespace gpu_image_transport {
@@ -29,8 +28,7 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
 
   subscription_ = create_subscription<ros2_cuda_ipc_core::ImageView>(
       input_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
-      std::bind(&GpuImageTransportNodeBase::on_image, this,
-                std::placeholders::_1),
+      [this](const ros2_cuda_ipc_core::ImageView& view) { on_image(view); },
       subscription_options);
 }
 
