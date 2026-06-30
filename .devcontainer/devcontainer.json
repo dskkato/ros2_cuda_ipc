@@ -1,13 +1,13 @@
 {
   "name": "ros2-cuda-ipc",
-  "image": "ghcr.io/dskkato/ros2-cuda-ipc-dev:latest",
+  "image": "ghcr.io/dskkato/ros2-cuda-ipc-dev:lyrical",
   "runArgs": [
     "--gpus=all",
     "--env",
     "NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics"
   ],
   "containerEnv": {
-    "ROS_DISTRO": "humble",
+    "ROS_DISTRO": "lyrical",
     "NVIDIA_VISIBLE_DEVICES": "all"
   },
   "remoteEnv": {

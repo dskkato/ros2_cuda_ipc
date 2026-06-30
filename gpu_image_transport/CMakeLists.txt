@@ -28,13 +28,11 @@ target_include_directories(gpu_image_transport_base
 )
 
 target_link_libraries(gpu_image_transport_base
-  CUDA::cudart
-)
-
-ament_target_dependencies(gpu_image_transport_base
-  rclcpp
-  ros2_cuda_ipc_core
-  ros2_cuda_ipc_msgs
+  PUBLIC
+    rclcpp::rclcpp
+    ros2_cuda_ipc_core::ros2_cuda_ipc_core
+    ${ros2_cuda_ipc_msgs_TARGETS}
+    CUDA::cudart
 )
 
 add_executable(gpu_image_transport
@@ -43,13 +41,7 @@ add_executable(gpu_image_transport
 
 target_link_libraries(gpu_image_transport
   gpu_image_transport_base
-)
-
-ament_target_dependencies(gpu_image_transport
-  rclcpp
-  sensor_msgs
-  ros2_cuda_ipc_core
-  ros2_cuda_ipc_msgs
+  ${sensor_msgs_TARGETS}
 )
 
 add_executable(gpu_image_transport_compressed
@@ -64,14 +56,8 @@ target_include_directories(gpu_image_transport_compressed
 
 target_link_libraries(gpu_image_transport_compressed
   gpu_image_transport_base
+  ${sensor_msgs_TARGETS}
   ${OpenCV_LIBRARIES}
-)
-
-ament_target_dependencies(gpu_image_transport_compressed
-  rclcpp
-  sensor_msgs
-  ros2_cuda_ipc_core
-  ros2_cuda_ipc_msgs
 )
 
 install(TARGETS

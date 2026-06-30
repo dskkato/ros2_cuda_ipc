@@ -38,12 +38,10 @@ target_include_directories(julia_set_helpers
 )
 
 target_link_libraries(julia_set_helpers
-  CUDA::cudart
-)
-
-ament_target_dependencies(julia_set_helpers
-  rclcpp
-  ros2_cuda_ipc_core
+  PUBLIC
+    rclcpp::rclcpp
+    ros2_cuda_ipc_core::ros2_cuda_ipc_core
+    CUDA::cudart
 )
 
 # executables
@@ -54,24 +52,14 @@ add_executable(julia_set_publisher
 )
 target_link_libraries(julia_set_publisher
   julia_set_helpers
+  ${ros2_cuda_ipc_msgs_TARGETS}
 )
 
 ## Colorize Node
 add_executable(colorize_node src/colorize_node.cpp)
 target_link_libraries(colorize_node
   julia_set_helpers
-)
-
-ament_target_dependencies(julia_set_publisher
-  rclcpp
-  ros2_cuda_ipc_core
-  ros2_cuda_ipc_msgs
-)
-
-ament_target_dependencies(colorize_node
-  rclcpp
-  ros2_cuda_ipc_core
-  ros2_cuda_ipc_msgs
+  ${ros2_cuda_ipc_msgs_TARGETS}
 )
 
 install(TARGETS
