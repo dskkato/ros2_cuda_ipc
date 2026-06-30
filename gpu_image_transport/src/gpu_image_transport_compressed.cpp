@@ -47,7 +47,7 @@ class GpuImageTransportCompressedNode : public GpuImageTransportNodeBase {
   }
 
  private:
-  void publish_frame(const ros2_cuda_ipc_core::ImageView& view,
+  void publish_frame(const ros2_cuda_ipc_core::view::ImageView& view,
                      std::uint64_t available_bytes) override {
     const std::uint32_t height = view.rows();
     const std::uint64_t step_bytes = view.strideH();
@@ -85,7 +85,7 @@ class GpuImageTransportCompressedNode : public GpuImageTransportNodeBase {
       return;
     }
 
-    using ros2_cuda_ipc_core::DType;
+    using ros2_cuda_ipc_core::view::DType;
     if (view.dtype != DType::U8) {
       RCLCPP_WARN(
           get_logger(),

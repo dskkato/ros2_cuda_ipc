@@ -86,7 +86,7 @@ TEST_F(PointCloud2ViewMapperTest, CopiesLayoutWhenCoreIsValid) {
 
 TEST_F(PointCloud2ViewMapperTest,
        FillGpuPointCloud2MessageCopiesLayoutAndCore) {
-  ros2_cuda_ipc_core::PointCloud2View view;
+  ros2_cuda_ipc_core::view::PointCloud2View view;
   view.header.frame_id = "frame";
   view.core.device_id = 1;
   view.core.byte_size = 120;

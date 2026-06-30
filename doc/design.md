@@ -227,11 +227,13 @@ Mapper API を併設する。
 #### ImageView（BufferView + 最小限の画像メタデータ）
 
 ```cpp
-// image_view.hpp
+// view/image_view.hpp
 #pragma once
 #include <cstdint>
 #include <string>
-#include <ros2_cuda_ipc_core/buffer_view.hpp>
+#include <ros2_cuda_ipc_core/view/buffer_view.hpp>
+
+namespace ros2_cuda_ipc_core::view {
 
 // 画素型（必要十分な最小セット。用途に応じて拡張可）
 enum class DType : uint8_t {
@@ -318,6 +320,8 @@ struct ImageView {
     return core.byte_size >= needed;
   }
 };
+
+}  // namespace ros2_cuda_ipc_core::view
 ```
 
 **ポイント**
@@ -330,6 +334,8 @@ struct ImageView {
 #### 点群：PointCloud2View（BufferView + レイアウト情報）
 
 ```cpp
+namespace ros2_cuda_ipc_core::view {
+
 // PointCloud2View: sensor_msgs/PointCloud2 のレイアウトをGPU向けにそのまま保持
 struct PointCloud2View {
   BufferView core;
@@ -383,6 +389,8 @@ struct PointCloud2View {
     return core.enqueue_ready_event(s);
   }
 };
+
+}  // namespace ros2_cuda_ipc_core::view
 ```
 
 **ポイント**

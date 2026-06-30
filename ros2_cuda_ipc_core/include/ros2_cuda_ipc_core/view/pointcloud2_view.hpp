@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "ros2_cuda_ipc_core/buffer_view.hpp"
+#include "ros2_cuda_ipc_core/view/buffer_view.hpp"
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::view {
 
 struct PointCloud2View {
   struct Field {
@@ -74,4 +74,4 @@ struct PointCloud2View {
   }
 };
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::view

@@ -22,7 +22,7 @@ source install/setup.bash
 
 ### `julia_set_publisher`
 
-Publishes `ros2_cuda_ipc_core::ImageView` messages containing the Julia set
+Publishes `ros2_cuda_ipc_core::view::ImageView` messages containing the Julia set
 fractal. Key parameters:
 
 - `publish_rate_hz` (double, default `30.0`): Output frame rate.
@@ -57,7 +57,7 @@ Copies the GPU image to host memory and republishes it as a
 `sensor_msgs::msg::Image`. Parameters:
 
 - `input_topic_name` (string, default `image_gpu`): Topic carrying
-  `ros2_cuda_ipc_core::ImageView` messages.
+  `ros2_cuda_ipc_core::view::ImageView` messages.
 - `cpu_topic_name` (string, default `image`): Output topic name.
 
 ### `gpu_image_transport_compressed`
@@ -66,7 +66,7 @@ Publishes the CUDA image as a `sensor_msgs::msg::CompressedImage` using
 OpenCV for encoding. Parameters:
 
 - `input_topic_name` (string, default `image_gpu`): Topic carrying
-  `ros2_cuda_ipc_core::ImageView` messages.
+  `ros2_cuda_ipc_core::view::ImageView` messages.
 - `cpu_topic_name` (string, default `image`): Output topic name.
 - `compressed_format` (string, default `jpeg`): Encoding passed to
   `cv::imencode` (e.g. `jpeg`, `png`, `bmp`).

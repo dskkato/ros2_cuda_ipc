@@ -24,9 +24,9 @@ TEST_F(TypeAdapterTest, BufferViewAdapterDelegatesReceivePath) {
   auto msg = ros2_cuda_ipc_core::test::make_seeded_buffer_core_message(
       "adapter_buffer", 41);
 
-  ros2_cuda_ipc_core::BufferView view;
+  ros2_cuda_ipc_core::view::BufferView view;
   rclcpp::TypeAdapter<
-      ros2_cuda_ipc_core::BufferView,
+      ros2_cuda_ipc_core::view::BufferView,
       ros2_cuda_ipc_msgs::msg::BufferCore>::convert_to_custom(msg, view);
 
   EXPECT_TRUE(view.valid());
@@ -38,9 +38,9 @@ TEST_F(TypeAdapterTest, BufferViewAdapterDelegatesReceivePath) {
 }
 
 TEST_F(TypeAdapterTest, ImageViewAdapterDelegatesSendPath) {
-  ros2_cuda_ipc_core::ImageView view;
+  ros2_cuda_ipc_core::view::ImageView view;
   view.header.frame_id = "frame";
-  view.dtype = ros2_cuda_ipc_core::DType::U8;
+  view.dtype = ros2_cuda_ipc_core::view::DType::U8;
   view.shape = {4, 5, 3};
   view.strides = {15, 3, 1};
   view.encoding = "rgb8";
@@ -57,7 +57,7 @@ TEST_F(TypeAdapterTest, ImageViewAdapterDelegatesSendPath) {
 
   ros2_cuda_ipc_msgs::msg::GpuImage msg;
   rclcpp::TypeAdapter<
-      ros2_cuda_ipc_core::ImageView,
+      ros2_cuda_ipc_core::view::ImageView,
       ros2_cuda_ipc_msgs::msg::GpuImage>::convert_to_ros_message(view, msg);
 
   EXPECT_EQ(msg.header.frame_id, "frame");
@@ -85,9 +85,9 @@ TEST_F(TypeAdapterTest, PointCloud2AdapterDelegatesReceiveAndSendPath) {
   field_x.count = 1;
   msg.fields = {field_x};
 
-  ros2_cuda_ipc_core::PointCloud2View view;
+  ros2_cuda_ipc_core::view::PointCloud2View view;
   rclcpp::TypeAdapter<
-      ros2_cuda_ipc_core::PointCloud2View,
+      ros2_cuda_ipc_core::view::PointCloud2View,
       ros2_cuda_ipc_msgs::msg::GpuPointCloud2>::convert_to_custom(msg, view);
 
   ASSERT_TRUE(view.core.valid());
@@ -95,7 +95,7 @@ TEST_F(TypeAdapterTest, PointCloud2AdapterDelegatesReceiveAndSendPath) {
   EXPECT_EQ(view.fields.size(), 1u);
 
   ros2_cuda_ipc_msgs::msg::GpuPointCloud2 roundtrip;
-  rclcpp::TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
+  rclcpp::TypeAdapter<ros2_cuda_ipc_core::view::PointCloud2View,
                       ros2_cuda_ipc_msgs::msg::GpuPointCloud2>::
       convert_to_ros_message(view, roundtrip);
 
