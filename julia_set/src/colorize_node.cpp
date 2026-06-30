@@ -4,7 +4,6 @@
 #include <cuda_runtime_api.h>
 
 #include <chrono>
-#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -75,7 +74,7 @@ class ColorizeNode : public rclcpp::Node {
         rclcpp::IntraProcessSetting::Disable;
     subscription_ = create_subscription<ros2_cuda_ipc_core::ImageView>(
         input_topic_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
-        std::bind(&ColorizeNode::on_image, this, std::placeholders::_1),
+        [this](const ros2_cuda_ipc_core::ImageView& view) { on_image(view); },
         subscription_options);
 
     rclcpp::PublisherOptions publisher_options;
