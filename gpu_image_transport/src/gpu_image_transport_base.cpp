@@ -8,7 +8,7 @@
 
 namespace gpu_image_transport {
 
-using ros2_cuda_ipc_core::NvtxScopedRange;
+using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
 
 GpuImageTransportNodeBase::GpuImageTransportNodeBase(
     const std::string& node_name, const rclcpp::NodeOptions& options)

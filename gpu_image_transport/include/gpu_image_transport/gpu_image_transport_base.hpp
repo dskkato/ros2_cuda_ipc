@@ -11,8 +11,8 @@
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
+#include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/image_view.hpp"
-#include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
 namespace gpu_image_transport {
