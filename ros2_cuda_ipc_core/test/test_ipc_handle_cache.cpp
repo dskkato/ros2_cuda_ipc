@@ -32,11 +32,8 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseBackendPayloadAndEvent) {
 }
 
 TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
-  std::atomic<int> released{0};
   ros2_cuda_ipc_core::IpcHandleCache cache(
-      [&released](const ros2_cuda_ipc_core::backend::ImportedBuffer&) {
-        released.fetch_add(1);
-      });
+      [](const ros2_cuda_ipc_core::backend::ImportedBuffer&) {});
   ros2_cuda_ipc_core::IpcHandleKey key{};
   key.backend = 1;
   key.mem[0] = 11;
