@@ -28,11 +28,11 @@ add_library(${PROJECT_NAME}
   src/cuda/gpu_lease_pool.cpp
   src/cuda/memory_backend_cuda_ipc.cpp
   src/cuda/memory_backend_vmm_fd.cpp
-  src/buffer_view.cpp
-  src/image_view.cpp
+  src/view/buffer_view.cpp
+  src/view/image_view.cpp
+  src/view/pointcloud2_view.cpp
   src/ipc_handle_cache.cpp
   src/lease_handle.cpp
-  src/pointcloud2_view.cpp
   src/backend/backend_importer.cpp
   src/backend/cuda_ipc_importer.cpp
   src/backend/vmm_fd_importer.cpp

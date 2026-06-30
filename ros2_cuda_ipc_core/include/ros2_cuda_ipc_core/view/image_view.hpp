@@ -7,10 +7,10 @@
 #include <cstdint>
 #include <string>
 
-#include "ros2_cuda_ipc_core/buffer_view.hpp"
+#include "ros2_cuda_ipc_core/view/buffer_view.hpp"
 #include "std_msgs/msg/header.hpp"
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::view {
 
 enum class DType : uint8_t {
   U8 = 0,
@@ -80,4 +80,4 @@ struct ImageView {
   bool sanity_check() const noexcept;
 };
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::view

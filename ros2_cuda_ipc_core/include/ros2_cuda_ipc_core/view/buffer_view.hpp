@@ -13,7 +13,7 @@
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::view {
 
 struct BufferView {
   void* dev_ptr = nullptr;
@@ -62,4 +62,4 @@ struct BufferView {
   bool handles_ready_ = false;
 };
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::view

@@ -13,9 +13,9 @@
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
 #include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/image_view.hpp"
 #include "ros2_cuda_ipc_core/memory_backend_utils.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
+#include "ros2_cuda_ipc_core/view/image_view.hpp"
 
 namespace julia_set {
 
@@ -72,15 +72,17 @@ class ColorizeNode : public rclcpp::Node {
     rclcpp::SubscriptionOptions subscription_options;
     subscription_options.use_intra_process_comm =
         rclcpp::IntraProcessSetting::Disable;
-    subscription_ = create_subscription<ros2_cuda_ipc_core::ImageView>(
+    subscription_ = create_subscription<ros2_cuda_ipc_core::view::ImageView>(
         input_topic_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
-        [this](const ros2_cuda_ipc_core::ImageView& view) { on_image(view); },
+        [this](const ros2_cuda_ipc_core::view::ImageView& view) {
+          on_image(view);
+        },
         subscription_options);
 
     rclcpp::PublisherOptions publisher_options;
     publisher_options.use_intra_process_comm =
         rclcpp::IntraProcessSetting::Disable;
-    publisher_ = create_publisher<ros2_cuda_ipc_core::ImageView>(
+    publisher_ = create_publisher<ros2_cuda_ipc_core::view::ImageView>(
         output_topic_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
         publisher_options);
 
@@ -107,7 +109,7 @@ class ColorizeNode : public rclcpp::Node {
   }
 
  private:
-  void on_image(const ros2_cuda_ipc_core::ImageView& view) {
+  void on_image(const ros2_cuda_ipc_core::view::ImageView& view) {
     NvtxScopedRange callback_range("ColorizeNode::on_image");
     auto logger = get_logger();
     if (!view.core.valid()) {
@@ -192,11 +194,11 @@ class ColorizeNode : public rclcpp::Node {
       return;
     }
 
-    ros2_cuda_ipc_core::ImageView output = make_output_view(slot, view);
+    ros2_cuda_ipc_core::view::ImageView output = make_output_view(slot, view);
     publisher_->publish(output);
   }
 
-  bool ensure_pool(const ros2_cuda_ipc_core::ImageView& view) {
+  bool ensure_pool(const ros2_cuda_ipc_core::view::ImageView& view) {
     const uint32_t width = view.cols();
     const uint32_t height = view.rows();
     const int device_id = view.core.device_id;
@@ -241,10 +243,10 @@ class ColorizeNode : public rclcpp::Node {
     return true;
   }
 
-  ros2_cuda_ipc_core::ImageView make_output_view(
+  ros2_cuda_ipc_core::view::ImageView make_output_view(
       const GpuLeasePool::Slot& slot,
-      const ros2_cuda_ipc_core::ImageView& input) const {
-    ros2_cuda_ipc_core::ImageView view;
+      const ros2_cuda_ipc_core::view::ImageView& input) const {
+    ros2_cuda_ipc_core::view::ImageView view;
     view.header = input.header;
     view.core.dev_ptr = slot.device_ptr;
     view.core.ready_evt = slot.event;
@@ -255,7 +257,7 @@ class ColorizeNode : public rclcpp::Node {
     view.core.shm_name = output_shm_name_;
     view.core.set_ipc_handles(slot.backend, slot.mem_handle.data(),
                               slot.mem_handle.size(), slot.event_handle);
-    view.dtype = ros2_cuda_ipc_core::DType::U8;
+    view.dtype = ros2_cuda_ipc_core::view::DType::U8;
     view.shape = {height_, width_, output_channels_};
     view.strides = {static_cast<uint64_t>(width_) * output_channels_,
                     static_cast<uint64_t>(output_channels_), 1};
@@ -263,8 +265,9 @@ class ColorizeNode : public rclcpp::Node {
     return view;
   }
 
-  rclcpp::Subscription<ros2_cuda_ipc_core::ImageView>::SharedPtr subscription_;
-  rclcpp::Publisher<ros2_cuda_ipc_core::ImageView>::SharedPtr publisher_;
+  rclcpp::Subscription<ros2_cuda_ipc_core::view::ImageView>::SharedPtr
+      subscription_;
+  rclcpp::Publisher<ros2_cuda_ipc_core::view::ImageView>::SharedPtr publisher_;
   cudaStream_t stream_ = nullptr;
   uint64_t frame_size_bytes_ = 0;
   uint32_t width_ = 0;

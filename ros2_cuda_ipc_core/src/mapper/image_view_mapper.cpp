@@ -17,28 +17,28 @@ ImageViewMapper& default_image_view_mapper() {
 ImageViewMapper::ImageViewMapper(BufferViewMapper buffer_mapper)
     : buffer_mapper_(std::move(buffer_mapper)) {}
 
-ImageView ImageViewMapper::map(
+view::ImageView ImageViewMapper::map(
     const ros2_cuda_ipc_msgs::msg::GpuImage& msg) const {
-  BufferView core = buffer_mapper_.map(msg.core);
+  view::BufferView core = buffer_mapper_.map(msg.core);
   if (!core.valid()) {
-    return ImageView{};
+    return view::ImageView{};
   }
 
-  ImageView view;
-  view.core = std::move(core);
-  view.dtype = static_cast<DType>(msg.dtype);
-  view.shape = msg.shape;
-  view.strides = msg.strides;
-  view.encoding = msg.encoding;
-  view.header = msg.header;
-  return view;
+  view::ImageView mapped_view;
+  mapped_view.core = std::move(core);
+  mapped_view.dtype = static_cast<view::DType>(msg.dtype);
+  mapped_view.shape = msg.shape;
+  mapped_view.strides = msg.strides;
+  mapped_view.encoding = msg.encoding;
+  mapped_view.header = msg.header;
+  return mapped_view;
 }
 
-ImageView map_image_view(const ros2_cuda_ipc_msgs::msg::GpuImage& msg) {
+view::ImageView map_image_view(const ros2_cuda_ipc_msgs::msg::GpuImage& msg) {
   return default_image_view_mapper().map(msg);
 }
 
-void fill_gpu_image_message(const ImageView& view,
+void fill_gpu_image_message(const view::ImageView& view,
                             ros2_cuda_ipc_msgs::msg::GpuImage& msg) {
   msg.dtype = static_cast<uint8_t>(view.dtype);
   msg.shape = view.shape;

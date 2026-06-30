@@ -19,42 +19,43 @@ PointCloud2ViewMapper& default_pointcloud2_view_mapper() {
 PointCloud2ViewMapper::PointCloud2ViewMapper(BufferViewMapper buffer_mapper)
     : buffer_mapper_(std::move(buffer_mapper)) {}
 
-PointCloud2View PointCloud2ViewMapper::map(
+view::PointCloud2View PointCloud2ViewMapper::map(
     const ros2_cuda_ipc_msgs::msg::GpuPointCloud2& msg) const {
-  BufferView core = buffer_mapper_.map(msg.core);
+  view::BufferView core = buffer_mapper_.map(msg.core);
 
-  PointCloud2View view;
-  view.header = msg.header;
+  view::PointCloud2View mapped_view;
+  mapped_view.header = msg.header;
   if (!core.valid()) {
-    return view;
+    return mapped_view;
   }
 
-  view.core = std::move(core);
-  view.height = msg.height;
-  view.width = msg.width;
-  view.point_step = msg.point_step;
-  view.row_step = msg.row_step;
-  view.is_dense = msg.is_dense;
-  view.fields.reserve(msg.fields.size());
+  mapped_view.core = std::move(core);
+  mapped_view.height = msg.height;
+  mapped_view.width = msg.width;
+  mapped_view.point_step = msg.point_step;
+  mapped_view.row_step = msg.row_step;
+  mapped_view.is_dense = msg.is_dense;
+  mapped_view.fields.reserve(msg.fields.size());
   for (const auto& field : msg.fields) {
-    PointCloud2View::Field converted;
+    view::PointCloud2View::Field converted;
     converted.name = field.name;
     converted.offset = field.offset;
     converted.datatype = field.datatype;
     converted.count = field.count;
-    view.fields.emplace_back(std::move(converted));
+    mapped_view.fields.emplace_back(std::move(converted));
   }
 
-  return view;
+  return mapped_view;
 }
 
-PointCloud2View map_pointcloud2_view(
+view::PointCloud2View map_pointcloud2_view(
     const ros2_cuda_ipc_msgs::msg::GpuPointCloud2& msg) {
   return default_pointcloud2_view_mapper().map(msg);
 }
 
 void fill_gpu_pointcloud2_message(
-    const PointCloud2View& view, ros2_cuda_ipc_msgs::msg::GpuPointCloud2& msg) {
+    const view::PointCloud2View& view,
+    ros2_cuda_ipc_msgs::msg::GpuPointCloud2& msg) {
   msg.header = view.header;
   msg.height = view.height;
   msg.width = view.width;

@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/buffer_view.hpp"
+#include "ros2_cuda_ipc_core/view/buffer_view.hpp"
 
 #include <algorithm>
 #include <cstring>
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::view {
 
 BufferView::~BufferView() { reset(); }
 
@@ -104,4 +104,4 @@ void BufferView::set_ipc_handles(MemoryBackendKind backend,
   handles_ready_ = true;
 }
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::view

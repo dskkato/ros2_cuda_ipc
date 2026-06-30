@@ -17,27 +17,27 @@ namespace julia_set {
 using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
 namespace {
 
-ros2_cuda_ipc_core::DType parse_dtype(const std::string& name) {
+ros2_cuda_ipc_core::view::DType parse_dtype(const std::string& name) {
   if (name == "u8") {
-    return ros2_cuda_ipc_core::DType::U8;
+    return ros2_cuda_ipc_core::view::DType::U8;
   }
   if (name == "u16") {
-    return ros2_cuda_ipc_core::DType::U16;
+    return ros2_cuda_ipc_core::view::DType::U16;
   }
   if (name == "f32") {
-    return ros2_cuda_ipc_core::DType::F32;
+    return ros2_cuda_ipc_core::view::DType::F32;
   }
   if (name == "f64") {
-    return ros2_cuda_ipc_core::DType::F64;
+    return ros2_cuda_ipc_core::view::DType::F64;
   }
   if (name == "s16") {
-    return ros2_cuda_ipc_core::DType::S16;
+    return ros2_cuda_ipc_core::view::DType::S16;
   }
   if (name == "s32") {
-    return ros2_cuda_ipc_core::DType::S32;
+    return ros2_cuda_ipc_core::view::DType::S32;
   }
   if (name == "u32") {
-    return ros2_cuda_ipc_core::DType::U32;
+    return ros2_cuda_ipc_core::view::DType::U32;
   }
   throw std::runtime_error("Unsupported dtype: " + name);
 }
@@ -99,7 +99,7 @@ class JuliaSetPublisherNode : public rclcpp::Node {
 
     rclcpp::PublisherOptions options;
     options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-    publisher_ = create_publisher<ros2_cuda_ipc_core::ImageView>(
+    publisher_ = create_publisher<ros2_cuda_ipc_core::view::ImageView>(
         topic_name_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(), options);
 
     if (publish_rate_hz_ <= 0.0) {
@@ -141,7 +141,7 @@ class JuliaSetPublisherNode : public rclcpp::Node {
     publisher_->publish(*view);
   }
 
-  rclcpp::Publisher<ros2_cuda_ipc_core::ImageView>::SharedPtr publisher_;
+  rclcpp::Publisher<ros2_cuda_ipc_core::view::ImageView>::SharedPtr publisher_;
   std::unique_ptr<JuliaPublisherHelper> helper_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Time start_time_{};
