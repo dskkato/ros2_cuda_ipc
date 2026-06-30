@@ -25,12 +25,12 @@
 #include "julia_set/cuda/julia_kernel.hpp"
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
-#include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
+#include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
 
 namespace julia_set {
 
-using ros2_cuda_ipc_core::NvtxScopedRange;
 using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
+using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
 namespace {
 
 uint32_t dtype_bytes(ros2_cuda_ipc_core::DType dtype) {

@@ -5,7 +5,7 @@
 
 #include <nvtx3/nvToolsExt.h>
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::cuda {
 
 class NvtxScopedRange {
  public:
@@ -22,4 +22,4 @@ class NvtxScopedRange {
   nvtxRangeId_t id_{};
 };
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::cuda

@@ -9,13 +9,13 @@
 
 #include "julia_set/julia_publisher_helper.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/memory_backend_utils.hpp"
-#include "ros2_cuda_ipc_core/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/type_adapters.hpp"
 
 namespace julia_set {
 
-using ros2_cuda_ipc_core::NvtxScopedRange;
+using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
 namespace {
 
 ros2_cuda_ipc_core::DType parse_dtype(const std::string& name) {
