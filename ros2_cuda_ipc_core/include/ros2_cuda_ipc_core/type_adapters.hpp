@@ -16,10 +16,10 @@
 namespace rclcpp {
 
 template <>
-struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
+struct TypeAdapter<ros2_cuda_ipc_core::view::BufferView,
                    ros2_cuda_ipc_msgs::msg::BufferCore> {
   using is_specialized = std::true_type;
-  using custom_type = ros2_cuda_ipc_core::BufferView;
+  using custom_type = ros2_cuda_ipc_core::view::BufferView;
   using ros_message_type = ros2_cuda_ipc_msgs::msg::BufferCore;
 
   static void convert_to_custom(const ros_message_type& msg,
@@ -34,10 +34,10 @@ struct TypeAdapter<ros2_cuda_ipc_core::BufferView,
 };
 
 template <>
-struct TypeAdapter<ros2_cuda_ipc_core::ImageView,
+struct TypeAdapter<ros2_cuda_ipc_core::view::ImageView,
                    ros2_cuda_ipc_msgs::msg::GpuImage> {
   using is_specialized = std::true_type;
-  using custom_type = ros2_cuda_ipc_core::ImageView;
+  using custom_type = ros2_cuda_ipc_core::view::ImageView;
   using ros_message_type = ros2_cuda_ipc_msgs::msg::GpuImage;
 
   static void convert_to_custom(const ros_message_type& msg,
@@ -52,10 +52,10 @@ struct TypeAdapter<ros2_cuda_ipc_core::ImageView,
 };
 
 template <>
-struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
+struct TypeAdapter<ros2_cuda_ipc_core::view::PointCloud2View,
                    ros2_cuda_ipc_msgs::msg::GpuPointCloud2> {
   using is_specialized = std::true_type;
-  using custom_type = ros2_cuda_ipc_core::PointCloud2View;
+  using custom_type = ros2_cuda_ipc_core::view::PointCloud2View;
   using ros_message_type = ros2_cuda_ipc_msgs::msg::GpuPointCloud2;
 
   static void convert_to_custom(const ros_message_type& msg,
@@ -72,9 +72,9 @@ struct TypeAdapter<ros2_cuda_ipc_core::PointCloud2View,
 }  // namespace rclcpp
 
 RCLCPP_USING_CUSTOM_TYPE_AS_ROS_MESSAGE_TYPE(
-    ros2_cuda_ipc_core::BufferView, ros2_cuda_ipc_msgs::msg::BufferCore);
-RCLCPP_USING_CUSTOM_TYPE_AS_ROS_MESSAGE_TYPE(ros2_cuda_ipc_core::ImageView,
-                                             ros2_cuda_ipc_msgs::msg::GpuImage);
+    ros2_cuda_ipc_core::view::BufferView, ros2_cuda_ipc_msgs::msg::BufferCore);
 RCLCPP_USING_CUSTOM_TYPE_AS_ROS_MESSAGE_TYPE(
-    ros2_cuda_ipc_core::PointCloud2View,
+    ros2_cuda_ipc_core::view::ImageView, ros2_cuda_ipc_msgs::msg::GpuImage);
+RCLCPP_USING_CUSTOM_TYPE_AS_ROS_MESSAGE_TYPE(
+    ros2_cuda_ipc_core::view::PointCloud2View,
     ros2_cuda_ipc_msgs::msg::GpuPointCloud2);

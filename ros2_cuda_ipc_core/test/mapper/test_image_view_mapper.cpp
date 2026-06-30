@@ -26,7 +26,7 @@ TEST_F(ImageViewMapperTest, InvalidCoreReturnsDefaultImageView) {
 
   ros2_cuda_ipc_msgs::msg::GpuImage msg;
   msg.header.frame_id = "frame";
-  msg.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::DType::U8);
+  msg.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::view::DType::U8);
   msg.shape = {4, 5, 3};
   msg.strides = {15, 3, 1};
   msg.encoding = "rgb8";
@@ -51,7 +51,7 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
 
   ros2_cuda_ipc_msgs::msg::GpuImage msg;
   msg.header.frame_id = "camera_frame";
-  msg.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::DType::U16);
+  msg.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::view::DType::U16);
   msg.shape = {4, 5, 3};
   msg.strides = {30, 6, 2};
   msg.encoding = "mono16";
@@ -61,7 +61,7 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
   auto view = mapper.map(msg);
   ASSERT_TRUE(view.core.valid());
   EXPECT_EQ(view.header.frame_id, "camera_frame");
-  EXPECT_EQ(view.dtype, ros2_cuda_ipc_core::DType::U16);
+  EXPECT_EQ(view.dtype, ros2_cuda_ipc_core::view::DType::U16);
   EXPECT_EQ(view.shape[1], 5u);
   EXPECT_EQ(view.strides[0], 30u);
   EXPECT_EQ(view.encoding, "mono16");
@@ -71,9 +71,9 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
 }
 
 TEST_F(ImageViewMapperTest, FillGpuImageMessageCopiesMetadataAndCore) {
-  ros2_cuda_ipc_core::ImageView view;
+  ros2_cuda_ipc_core::view::ImageView view;
   view.header.frame_id = "frame";
-  view.dtype = ros2_cuda_ipc_core::DType::U8;
+  view.dtype = ros2_cuda_ipc_core::view::DType::U8;
   view.shape = {4, 5, 3};
   view.strides = {15, 3, 1};
   view.encoding = "rgb8";

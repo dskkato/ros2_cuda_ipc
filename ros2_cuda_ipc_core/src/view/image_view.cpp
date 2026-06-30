@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/image_view.hpp"
+#include "ros2_cuda_ipc_core/view/image_view.hpp"
 
-namespace ros2_cuda_ipc_core {
+namespace ros2_cuda_ipc_core::view {
 
 uint32_t ImageView::elem_size_bytes() const noexcept {
   switch (dtype) {
@@ -35,4 +35,4 @@ bool ImageView::sanity_check() const noexcept {
   return core.byte_size >= needed;
 }
 
-}  // namespace ros2_cuda_ipc_core
+}  // namespace ros2_cuda_ipc_core::view

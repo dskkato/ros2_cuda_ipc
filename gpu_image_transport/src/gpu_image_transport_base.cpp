@@ -26,9 +26,11 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
   subscription_options.use_intra_process_comm =
       rclcpp::IntraProcessSetting::Disable;
 
-  subscription_ = create_subscription<ros2_cuda_ipc_core::ImageView>(
+  subscription_ = create_subscription<ros2_cuda_ipc_core::view::ImageView>(
       input_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
-      [this](const ros2_cuda_ipc_core::ImageView& view) { on_image(view); },
+      [this](const ros2_cuda_ipc_core::view::ImageView& view) {
+        on_image(view);
+      },
       subscription_options);
 }
 
@@ -45,7 +47,7 @@ GpuImageTransportNodeBase::~GpuImageTransportNodeBase() {
 }
 
 void GpuImageTransportNodeBase::on_image(
-    const ros2_cuda_ipc_core::ImageView& view) {
+    const ros2_cuda_ipc_core::view::ImageView& view) {
   NvtxScopedRange callback_range("GpuImageTransportNodeBase::on_image");
   if (!view.core.valid()) {
     RCLCPP_WARN(get_logger(), "Received invalid GPU image view");

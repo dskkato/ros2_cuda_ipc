@@ -33,19 +33,19 @@ using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
 using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
 namespace {
 
-uint32_t dtype_bytes(ros2_cuda_ipc_core::DType dtype) {
+uint32_t dtype_bytes(ros2_cuda_ipc_core::view::DType dtype) {
   switch (dtype) {
-    case ros2_cuda_ipc_core::DType::U8:
+    case ros2_cuda_ipc_core::view::DType::U8:
       return 1;
-    case ros2_cuda_ipc_core::DType::U16:
-    case ros2_cuda_ipc_core::DType::F16:
-    case ros2_cuda_ipc_core::DType::S16:
+    case ros2_cuda_ipc_core::view::DType::U16:
+    case ros2_cuda_ipc_core::view::DType::F16:
+    case ros2_cuda_ipc_core::view::DType::S16:
       return 2;
-    case ros2_cuda_ipc_core::DType::F32:
-    case ros2_cuda_ipc_core::DType::S32:
-    case ros2_cuda_ipc_core::DType::U32:
+    case ros2_cuda_ipc_core::view::DType::F32:
+    case ros2_cuda_ipc_core::view::DType::S32:
+    case ros2_cuda_ipc_core::view::DType::U32:
       return 4;
-    case ros2_cuda_ipc_core::DType::F64:
+    case ros2_cuda_ipc_core::view::DType::F64:
       return 8;
   }
   return 1;
@@ -95,14 +95,14 @@ JuliaPublisherHelper::~JuliaPublisherHelper() {
   }
 }
 
-std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
-    std::size_t subscriber_count, float time_phase) {
+std::optional<ros2_cuda_ipc_core::view::ImageView>
+JuliaPublisherHelper::produce(std::size_t subscriber_count, float time_phase) {
   NvtxScopedRange produce_range("JuliaPublisherHelper::produce");
   if (!pool_.is_initialised()) {
     return std::nullopt;
   }
 
-  if (config_.dtype != ros2_cuda_ipc_core::DType::U8) {
+  if (config_.dtype != ros2_cuda_ipc_core::view::DType::U8) {
     RCLCPP_ERROR(logger_, "Unsupported dtype for Julia set rendering");
     return std::nullopt;
   }
@@ -156,7 +156,7 @@ std::optional<ros2_cuda_ipc_core::ImageView> JuliaPublisherHelper::produce(
     return std::nullopt;
   }
 
-  ros2_cuda_ipc_core::ImageView view;
+  ros2_cuda_ipc_core::view::ImageView view;
   view.core.dev_ptr = slot->device_ptr;
   view.core.ready_evt = slot->event;
   view.core.device_id = config_.device_index;

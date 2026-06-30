@@ -117,17 +117,17 @@ ros2 launch julia_set julia_set_demo.launch.py
 
 ## コアコンポーネントとヘルパー
 
-- `ros2_cuda_ipc_core::BufferView`: 任意バッファ向けの基盤ビューです。受信側では import 済み GPU resource と lease を保持します。
-- `ros2_cuda_ipc_core::ImageView` / `PointCloud2View`: `BufferView` に画像・点群メタデータを重ねた custom type です。
-- `ros2_cuda_ipc_core::BufferViewMapper` / `ImageViewMapper` / `PointCloud2ViewMapper`: `BufferCore` / `GpuImage` / `GpuPointCloud2` から View を構築する明示制御 API です。
-- `ros2_cuda_ipc_core/type_adapters.hpp`: `Publisher<ImageView>` / `Subscription<ImageView>` のように View を直接扱うための薄い TypeAdapter です。内部では mapper API を呼びます。
+- `ros2_cuda_ipc_core::view::BufferView`: 任意バッファ向けの基盤ビューです。受信側では import 済み GPU resource と lease を保持します。
+- `ros2_cuda_ipc_core::view::ImageView` / `ros2_cuda_ipc_core::view::PointCloud2View`: `BufferView` に画像・点群メタデータを重ねた custom type です。
+- `ros2_cuda_ipc_core::mapper::BufferViewMapper` / `ros2_cuda_ipc_core::mapper::ImageViewMapper` / `ros2_cuda_ipc_core::mapper::PointCloud2ViewMapper`: `BufferCore` / `GpuImage` / `GpuPointCloud2` から View を構築する明示制御 API です。
+- `ros2_cuda_ipc_core/type_adapters.hpp`: `Publisher<ros2_cuda_ipc_core::view::ImageView>` / `Subscription<ros2_cuda_ipc_core::view::ImageView>` のように View を直接扱うための薄い TypeAdapter です。内部では mapper API を呼びます。
 - `ros2_cuda_ipc_core::LeaseHandle`: Publisher 側でスロットの貸出状態を管理し、`pending_ttl` の経過で強制解放します。
 - `ros2_cuda_ipc_core::cuda::GpuLeasePool`: Publisher 側の GPU メモリスロット、backend 切り替え、lease 更新をまとめる共通プールです。
 
 受信側 API は 2 系統あります。
 
-- TypeAdapter API: `Subscription<ImageView>` / `Subscription<PointCloud2View>` をそのまま使う高レベル API
-- Mapper API: `Subscription<ros2_cuda_ipc_msgs::msg::GpuImage>` などで raw message を受け、`ImageViewMapper::map()` で明示的に resource import する API
+- TypeAdapter API: `Subscription<ros2_cuda_ipc_core::view::ImageView>` / `Subscription<ros2_cuda_ipc_core::view::PointCloud2View>` をそのまま使う高レベル API
+- Mapper API: `Subscription<ros2_cuda_ipc_msgs::msg::GpuImage>` などで raw message を受け、`ros2_cuda_ipc_core::mapper::ImageViewMapper::map()` で明示的に resource import する API
 
 ---
 

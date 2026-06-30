@@ -36,7 +36,7 @@ BufferViewMapper& default_buffer_view_mapper() {
 BufferViewMapper::BufferViewMapper(BufferViewMapperOptions options)
     : options_(std::move(options)) {}
 
-BufferView BufferViewMapper::map(
+view::BufferView BufferViewMapper::map(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) const {
   if (!is_supported_backend(static_cast<uint8_t>(msg.backend))) {
     RCLCPP_WARN(options_.logger, "Unsupported BufferCore.backend=%u",
@@ -75,7 +75,7 @@ BufferView BufferViewMapper::map(
         IpcHandleCache::instance().insert_or_discard_duplicate(key, *opened);
   }
 
-  BufferView view;
+  view::BufferView view;
   view.dev_ptr = imported.dev_ptr;
   view.ready_evt = imported.event;
   view.device_id = static_cast<int>(msg.device_id);
@@ -90,11 +90,12 @@ BufferView BufferViewMapper::map(
   return view;
 }
 
-BufferView map_buffer_view(const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
+view::BufferView map_buffer_view(
+    const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
   return default_buffer_view_mapper().map(msg);
 }
 
-void fill_buffer_core_message(const BufferView& view,
+void fill_buffer_core_message(const view::BufferView& view,
                               ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
   msg.shm_name = view.shm_name;
   msg.device_id = static_cast<uint32_t>(view.device_id);

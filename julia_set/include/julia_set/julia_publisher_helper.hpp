@@ -12,8 +12,8 @@
 
 #include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
-#include "ros2_cuda_ipc_core/image_view.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
+#include "ros2_cuda_ipc_core/view/image_view.hpp"
 
 namespace julia_set {
 
@@ -24,7 +24,7 @@ class JuliaPublisherHelper {
     uint32_t width = 1280;
     uint32_t height = 720;
     uint32_t channels = 1;
-    ros2_cuda_ipc_core::DType dtype = ros2_cuda_ipc_core::DType::U8;
+    ros2_cuda_ipc_core::view::DType dtype = ros2_cuda_ipc_core::view::DType::U8;
     std::string encoding = "mono8";
     std::size_t slot_count = 4;
     int device_index = 0;
@@ -47,7 +47,7 @@ class JuliaPublisherHelper {
   JuliaPublisherHelper(JuliaPublisherHelper&&) = delete;
   JuliaPublisherHelper& operator=(JuliaPublisherHelper&&) = delete;
 
-  std::optional<ros2_cuda_ipc_core::ImageView> produce(
+  std::optional<ros2_cuda_ipc_core::view::ImageView> produce(
       std::size_t subscriber_count, float time_phase = 0.0f);
 
   uint64_t frame_size_bytes() const noexcept { return frame_size_bytes_; }

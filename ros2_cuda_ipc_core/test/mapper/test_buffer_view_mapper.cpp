@@ -134,7 +134,7 @@ TEST_F(BufferViewMapperTest, MissingVmmSocketReturnsInvalidAndReleasesLease) {
 }
 
 TEST_F(BufferViewMapperTest, FillBufferCoreMessageCopiesCudaIpcHandles) {
-  ros2_cuda_ipc_core::BufferView view;
+  ros2_cuda_ipc_core::view::BufferView view;
   view.device_id = 2;
   view.byte_size = 64;
   view.slot_id = 5;
@@ -163,7 +163,7 @@ TEST_F(BufferViewMapperTest, FillBufferCoreMessageCopiesCudaIpcHandles) {
 }
 
 TEST_F(BufferViewMapperTest, FillBufferCoreMessagePreservesVmmPayload) {
-  ros2_cuda_ipc_core::BufferView view;
+  ros2_cuda_ipc_core::view::BufferView view;
   view.device_id = 3;
   view.byte_size = 128;
   view.slot_id = 7;
