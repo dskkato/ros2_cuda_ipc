@@ -33,20 +33,29 @@ class PreviewNode : public rclcpp::Node {
  public:
   PreviewNode()
       : rclcpp::Node("preview_node",
-                     rclcpp::NodeOptions().use_intra_process_comms(false)),
-        copy_every_n_(static_cast<std::size_t>(
-            declare_parameter<int>("copy_every_n", 1))),
-        log_every_n_(static_cast<std::size_t>(
-            declare_parameter<int>("log_every_n", 30))),
-        input_topic_name_(declare_parameter<std::string>("input_topic_name",
-                                                         "/fanout/image_gpu")),
-        output_topic_name_(declare_parameter<std::string>(
-            "output_topic_name", "/fanout/preview/image")) {
-    if (copy_every_n_ == 0) {
+                     rclcpp::NodeOptions().use_intra_process_comms(false)) {
+    const auto copy_every_n = declare_parameter<int>("copy_every_n", 1);
+    const auto log_every_n = declare_parameter<int>("log_every_n", 30);
+
+    input_topic_name_ =
+        declare_parameter<std::string>("input_topic_name", "/fanout/image_gpu");
+    output_topic_name_ = declare_parameter<std::string>(
+        "output_topic_name", "/fanout/preview/image");
+
+    if (copy_every_n > 0) {
+      copy_every_n_ = static_cast<std::size_t>(copy_every_n);
+    } else {
+      RCLCPP_WARN(get_logger(),
+                  "copy_every_n was zero or negative; defaulting to 1");
       copy_every_n_ = 1;
     }
-    if (log_every_n_ == 0) {
-      log_every_n_ = 1;
+
+    if (log_every_n > 0) {
+      log_every_n_ = static_cast<std::size_t>(log_every_n);
+    } else {
+      RCLCPP_WARN(get_logger(),
+                  "log_every_n was zero or negative; defaulting to 30");
+      log_every_n_ = 30;
     }
 
     rclcpp::PublisherOptions pub_options;
