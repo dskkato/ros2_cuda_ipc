@@ -2,29 +2,21 @@
 
 ROS 2 CUDA IPC Zero-Copy Transport
 
-## Julia Set デモ手順
+## Primary Demo
+
+`multi_process_image_fanout` is the main example for this repository. It
+publishes one GPU RGBA image and fans it out to three independent ROS 2
+subscriber processes through CUDA IPC.
 
 ```bash
-ros2 launch julia_set julia_set_demo.launch.py
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --packages-up-to multi_process_image_fanout
+source install/setup.bash
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.xml
 ```
 
-`rqt` を起動し、`Plugins` → `Visualization` → `Image View` を開いたあと、`Topic` を再読み込みして `/julia_set/image_cpu` を選択すると CPU イメージを確認できます。
-
-![julia_set_demo](doc/media/julia_readme.gif)
-
-<details> <summary>動画作成方法の説明</summary>
-
-▲ `rosbag2_2025_09_28-23_34_20` から `/julia_set/image_cpu` を抜粋し、約 3 秒に間引いてエンコードしています。
-
-再生成するときは、`doc/scripts/generate_bag_preview.py` を実行します。
-
-```bash
-python3 doc/scripts/generate_bag_preview.py \
-  rosbag2_YYYY_MM_DD-hh_mm_ss --output doc/media/julia_readme.mp4 \
-  --crf 28 --fps 10 --frame-stride 2
-```
-
-</details>
+See [examples/multi_process_image_fanout/README.md](examples/multi_process_image_fanout/README.md)
+and [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_image_fanout/doc/design.md).
 
 ## 概要
 
@@ -45,8 +37,9 @@ python3 doc/scripts/generate_bag_preview.py \
 - `ros2_cuda_ipc_msgs` — GPU バッファ共有のためのメッセージ定義
 - `ros2_cuda_ipc_core` — メモリープール、CUDA IPCユーティリティ、マッパの C++ 実装（CUDA 前提）
 - `ros2_cuda_ipc_test` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
-- `gpu_image_transport` — GPU画像転送用のimage_transport プラグイン
-- `julia_set` — Julia集合のGPU描画デモノード
+- `multi_process_image_fanout` — 複数プロセスへ GPU 画像をゼロコピー配信する主デモ
+- `examples/legacy/gpu_image_transport` — GPU画像転送用のimage_transport プラグイン
+- `examples/legacy/julia_set` — Julia集合のGPU描画デモノード
 
 ## 開発環境セットアップ
 
@@ -96,9 +89,11 @@ ros2 launch ros2_cuda_ipc_test vmm.launch.py
 
 詳細は [ros2_cuda_ipc_test/README.md](ros2_cuda_ipc_test/README.md) を参照してください。
 
-### Julia Set デモ実行
+### Legacy Julia Set デモ実行
 
 GPU 上で Julia 集合を描画し、`ros2_cuda_ipc_core` の `GpuLeasePool` と TypeAdapter API を使って ROS 2 プロセス間で GPU 画像を共有するデモです。
+このデモは `examples/legacy` に移動済みで、既定の colcon ビルド対象からは外しています。
+実行する場合は `examples/legacy/COLCON_IGNORE` を一時的に退避してから legacy package をビルドしてください。
 
 ```bash
 ros2 launch julia_set julia_set_demo.launch.py
@@ -113,7 +108,23 @@ ros2 launch julia_set julia_set_demo.launch.py
 - `device_index`: 利用する CUDA デバイス（既定 0）
 - `width`, `height`, `max_iterations`, `zoom`: 描画パラメータ
 
-詳細は [julia_set/README.md](julia_set/README.md) を参照してください。
+詳細は [examples/legacy/julia_set/README.md](examples/legacy/julia_set/README.md) を参照してください。
+
+## Multi-process Image Fanout デモ実行
+
+`multi_process_image_fanout` は、1 つの GPU 画像を複数の独立した ROS 2 プロセスへゼロコピーで配る主デモです。
+
+```bash
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.xml
+```
+
+主なノード:
+- `gpu_image_publisher`
+- `preview_node`
+- `encoder_like_node`
+- `inference_like_node`
+
+詳細は [examples/multi_process_image_fanout/README.md](examples/multi_process_image_fanout/README.md) と [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_image_fanout/doc/design.md) を参照してください。
 
 ## コアコンポーネントとヘルパー
 
