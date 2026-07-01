@@ -55,7 +55,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
 
     const auto period = std::chrono::duration<double>(1.0 / publish_rate_hz_);
     timer_ = create_wall_timer(
-        std::chrono::duration_cast<std::chrono::milliseconds>(period),
+        std::chrono::duration_cast<std::chrono::nanoseconds>(period),
         [this]() { on_timer(); });
 
     RCLCPP_INFO(

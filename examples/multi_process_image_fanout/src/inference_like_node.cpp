@@ -34,11 +34,14 @@ class InferenceLikeNode : public rclcpp::Node {
         input_topic_name_(declare_parameter<std::string>("input_topic_name",
                                                          "/fanout/image_gpu")),
         status_topic_name_(declare_parameter<std::string>(
-            "status_topic_name", "/fanout/inference_like/status")),
-        log_every_n_(static_cast<std::size_t>(
-            declare_parameter<int>("log_every_n", 30))) {
-    if (log_every_n_ == 0) {
-      log_every_n_ = 1;
+            "status_topic_name", "/fanout/inference_like/status")) {
+    const auto log_every_n = declare_parameter<int>("log_every_n", 30);
+    if (log_every_n > 0) {
+      log_every_n_ = static_cast<std::size_t>(log_every_n);
+    } else {
+      RCLCPP_WARN(get_logger(),
+                  "log_every_n was zero or negative; defaulting to 30");
+      log_every_n_ = 30;
     }
 
     rclcpp::PublisherOptions pub_options;
