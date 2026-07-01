@@ -56,7 +56,6 @@ target_link_libraries(${PROJECT_NAME}
     ${std_msgs_TARGETS}
     CUDA::cudart
     CUDA::cuda_driver
-  PRIVATE
     ${UUID_LIB}
 )
 
