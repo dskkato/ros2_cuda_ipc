@@ -46,6 +46,7 @@ python3 doc/scripts/generate_bag_preview.py \
 - `ros2_cuda_ipc_core` — メモリープール、CUDA IPCユーティリティ、マッパの C++ 実装（CUDA 前提）
 - `ros2_cuda_ipc_test` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
 - `gpu_image_transport` — GPU画像転送用のimage_transport プラグイン
+- `multi_process_image_fanout` — 複数プロセスへ GPU 画像をゼロコピー配信する主デモ
 - `julia_set` — Julia集合のGPU描画デモノード
 
 ## 開発環境セットアップ
@@ -114,6 +115,22 @@ ros2 launch julia_set julia_set_demo.launch.py
 - `width`, `height`, `max_iterations`, `zoom`: 描画パラメータ
 
 詳細は [julia_set/README.md](julia_set/README.md) を参照してください。
+
+## Multi-process Image Fanout デモ実行
+
+`multi_process_image_fanout` は、1 つの GPU 画像を複数の独立した ROS 2 プロセスへゼロコピーで配る主デモです。
+
+```bash
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.xml
+```
+
+主なノード:
+- `gpu_image_publisher`
+- `preview_node`
+- `encoder_like_node`
+- `inference_like_node`
+
+詳細は [examples/multi_process_image_fanout/README.md](examples/multi_process_image_fanout/README.md) と [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_image_fanout/doc/design.md) を参照してください。
 
 ## コアコンポーネントとヘルパー
 

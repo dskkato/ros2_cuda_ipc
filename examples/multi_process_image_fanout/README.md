@@ -9,9 +9,6 @@ Current scope in this step:
 * CUDA RGBA pattern kernel
 * `preview_node`
 * `encoder_like_node`
-
-Not implemented yet:
-
 * `inference_like_node`
 
 ### Build

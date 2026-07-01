@@ -41,4 +41,11 @@
         output="screen">
     <param name="input_topic_name" value="$(var image_topic)"/>
   </node>
+
+  <node pkg="multi_process_image_fanout"
+        exec="inference_like_node"
+        name="inference_like_node"
+        output="screen">
+    <param name="input_topic_name" value="$(var image_topic)"/>
+  </node>
 </launch>

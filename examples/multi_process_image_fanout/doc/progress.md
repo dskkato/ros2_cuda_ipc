@@ -40,16 +40,25 @@
   * publishes `std_msgs::msg::String` status
 * Added `encoder_like_node` to the package CMake target list and XML launch file.
 * Extended the CUDA smoke test to cover the new kernel entry points and host reference checks.
+* Implemented `inference_like_node`:
+  * subscribes to `ImageView`
+  * validates layout and dtype
+  * waits on the ready event
+  * lazily allocates a normalized grayscale buffer
+  * launches RGBA-to-normalized-gray and inference stats kernels
+  * copies back only `InferenceStats`
+  * publishes `std_msgs::msg::String` status
+* Added `inference_like_node` to the package CMake target list and XML launch file.
+* Updated the root `README.md` and the package README to include the new main demo path.
 
 ### Not Started
 
-* `inference_like_node`
-* root `README.md` update to make this demo the main example
+* None
 
 ### Notes
 
 * This step now covers the encoder path and the shared kernel helpers in addition to the original scaffolding work.
-* XML launch currently starts `gpu_image_publisher`, `preview_node`, and `encoder_like_node`.
+* XML launch currently starts `gpu_image_publisher`, `preview_node`, `encoder_like_node`, and `inference_like_node`.
 * `colcon build --packages-select multi_process_image_fanout --cmake-args -DBUILD_TESTING=ON` passed.
 * `colcon test --packages-select multi_process_image_fanout --event-handlers console_direct+` passed.
 * In the current environment, `test_kernels` is skipped when no CUDA device is available.
