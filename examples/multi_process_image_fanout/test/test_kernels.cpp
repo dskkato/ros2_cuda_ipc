@@ -131,6 +131,8 @@ TEST(KernelSmokeTest, ProducesExpectedOutputs) {
   ASSERT_EQ(cudaSuccess, launch_rgba_to_luma_downscale2_kernel(
                              device_rgba, device_luma, kWidth, kHeight,
                              kStrideBytes, stream));
+  ASSERT_EQ(cudaSuccess,
+            cudaMemsetAsync(device_checksum, 0, sizeof(uint64_t), stream));
   ASSERT_EQ(cudaSuccess, launch_checksum_u8_kernel(device_luma, luma_bytes,
                                                    device_checksum, stream));
   ASSERT_EQ(cudaSuccess, launch_rgba_to_normalized_gray_kernel(
