@@ -7,17 +7,17 @@ Current scope in this step:
 * package scaffold
 * `gpu_image_publisher`
 * CUDA RGBA pattern kernel
+* `preview_node`
+* `encoder_like_node`
 
 Not implemented yet:
 
-* `preview_node`
-* `encoder_like_node`
 * `inference_like_node`
 
 ### Build
 
 ```bash
-colcon build --packages-select multi_process_image_fanout
+colcon build --packages-up-to multi_process_image_fanout
 ```
 
 ### Run

@@ -1,20 +1,21 @@
 <launch>
-  <arg name="topic_name" default="/fanout/image_gpu"/>
+  <arg name="image_topic" default="/fanout/image_gpu"/>
+  <arg name="preview_topic" default="/fanout/preview/image"/>
   <arg name="publish_rate_hz" default="30.0"/>
   <arg name="width" default="1920"/>
   <arg name="height" default="1080"/>
+  <arg name="device_index" default="0"/>
+  <arg name="memory_backend" default="cuda_ipc"/>
   <arg name="frame_id" default="fanout_camera_frame"/>
   <arg name="slot_count" default="4"/>
   <arg name="pending_ttl_ms" default="300"/>
   <arg name="shm_name" default="/ros2_cuda_ipc_fanout"/>
-  <arg name="device_index" default="0"/>
-  <arg name="memory_backend" default="cuda_ipc"/>
 
   <node pkg="multi_process_image_fanout"
         exec="gpu_image_publisher"
         name="gpu_image_publisher"
         output="screen">
-    <param name="topic_name" value="$(var topic_name)"/>
+    <param name="topic_name" value="$(var image_topic)"/>
     <param name="publish_rate_hz" value="$(var publish_rate_hz)"/>
     <param name="width" value="$(var width)"/>
     <param name="height" value="$(var height)"/>
@@ -30,7 +31,14 @@
         exec="preview_node"
         name="preview_node"
         output="screen">
-    <param name="input_topic_name" value="$(var topic_name)"/>
-    <param name="output_topic_name" value="/fanout/preview/image"/>
+    <param name="input_topic_name" value="$(var image_topic)"/>
+    <param name="output_topic_name" value="$(var preview_topic)"/>
+  </node>
+
+  <node pkg="multi_process_image_fanout"
+        exec="encoder_like_node"
+        name="encoder_like_node"
+        output="screen">
+    <param name="input_topic_name" value="$(var image_topic)"/>
   </node>
 </launch>

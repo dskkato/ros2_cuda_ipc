@@ -67,10 +67,21 @@ target_link_libraries(preview_node
     ${ros2_cuda_ipc_msgs_TARGETS}
 )
 
+add_executable(encoder_like_node
+  src/encoder_like_node.cpp
+)
+
+target_link_libraries(encoder_like_node
+  PRIVATE
+    ${PROJECT_NAME}_helpers
+    ${ros2_cuda_ipc_msgs_TARGETS}
+)
+
 install(TARGETS
   ${PROJECT_NAME}_helpers
   gpu_image_publisher
   preview_node
+  encoder_like_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
