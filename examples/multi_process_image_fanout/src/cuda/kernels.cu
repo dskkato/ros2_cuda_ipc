@@ -255,6 +255,9 @@ cudaError_t launch_inference_stats_kernel(const float* input,
   host_init.max = 0.0f;
   host_init.checksum = 0;
 
+  static_assert(
+      sizeof(DeviceInferenceStats) == sizeof(InferenceStats),
+      "DeviceInferenceStats and InferenceStats must have the same size");
   cudaError_t err =
       cudaMemcpyAsync(device_stats, &host_init, sizeof(DeviceInferenceStats),
                       cudaMemcpyHostToDevice, stream);
