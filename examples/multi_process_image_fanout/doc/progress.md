@@ -20,10 +20,16 @@
   * `GpuLeasePool` setup
   * RGBA pattern kernel launch
   * `ImageView` population and publish path
+* Implemented `preview_node`:
+  * subscribes to `ImageView`
+  * validates layout and dtype
+  * waits on the ready event
+  * copies RGBA data to host with `cudaMemcpy2DAsync`
+  * republishes `sensor_msgs::msg::Image`
+* Added `preview_node` to the XML launch file and CMake targets.
 
 ### Not Started
 
-* `preview_node`
 * `encoder_like_node`
 * `inference_like_node`
 * root `README.md` update to make this demo the main example

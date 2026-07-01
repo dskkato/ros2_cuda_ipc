@@ -57,9 +57,20 @@ target_link_libraries(gpu_image_publisher
     ${ros2_cuda_ipc_msgs_TARGETS}
 )
 
+add_executable(preview_node
+  src/preview_node.cpp
+)
+
+target_link_libraries(preview_node
+  PRIVATE
+    ${PROJECT_NAME}_helpers
+    ${ros2_cuda_ipc_msgs_TARGETS}
+)
+
 install(TARGETS
   ${PROJECT_NAME}_helpers
   gpu_image_publisher
+  preview_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

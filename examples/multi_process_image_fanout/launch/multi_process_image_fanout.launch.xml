@@ -25,4 +25,12 @@
     <param name="device_index" value="$(var device_index)"/>
     <param name="memory_backend" value="$(var memory_backend)"/>
   </node>
+
+  <node pkg="multi_process_image_fanout"
+        exec="preview_node"
+        name="preview_node"
+        output="screen">
+    <param name="input_topic_name" value="$(var topic_name)"/>
+    <param name="output_topic_name" value="/fanout/preview/image"/>
+  </node>
 </launch>
