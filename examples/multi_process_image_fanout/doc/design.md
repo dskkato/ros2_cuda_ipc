@@ -22,7 +22,7 @@ gpu_image_publisher
   ├── preview_node
   ├── encoder_like_node
   └── inference_like_node
-````
+```
 
 Each node must run as a separate process from the XML launch file.
 
