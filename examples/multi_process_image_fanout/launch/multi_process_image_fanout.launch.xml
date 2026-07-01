@@ -1,0 +1,28 @@
+<launch>
+  <arg name="topic_name" default="/fanout/image_gpu"/>
+  <arg name="publish_rate_hz" default="30.0"/>
+  <arg name="width" default="1920"/>
+  <arg name="height" default="1080"/>
+  <arg name="frame_id" default="fanout_camera_frame"/>
+  <arg name="slot_count" default="4"/>
+  <arg name="pending_ttl_ms" default="300"/>
+  <arg name="shm_name" default="/ros2_cuda_ipc_fanout"/>
+  <arg name="device_index" default="0"/>
+  <arg name="memory_backend" default="cuda_ipc"/>
+
+  <node pkg="multi_process_image_fanout"
+        exec="gpu_image_publisher"
+        name="gpu_image_publisher"
+        output="screen">
+    <param name="topic_name" value="$(var topic_name)"/>
+    <param name="publish_rate_hz" value="$(var publish_rate_hz)"/>
+    <param name="width" value="$(var width)"/>
+    <param name="height" value="$(var height)"/>
+    <param name="frame_id" value="$(var frame_id)"/>
+    <param name="slot_count" value="$(var slot_count)"/>
+    <param name="pending_ttl_ms" value="$(var pending_ttl_ms)"/>
+    <param name="shm_name" value="$(var shm_name)"/>
+    <param name="device_index" value="$(var device_index)"/>
+    <param name="memory_backend" value="$(var memory_backend)"/>
+  </node>
+</launch>
