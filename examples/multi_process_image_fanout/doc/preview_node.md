@@ -1,7 +1,5 @@
 ## Node: preview_node
 
-See preview_node.md for detail.
-
 ### Purpose
 
 Consume the GPU image, wait on the CUDA ready event, copy the image to host
