@@ -729,6 +729,6 @@ change.
 
 -----
 
-Nsight Systems 側は、公式ドキュメントでも NVTX range を入れると CPU range とそこから起動された GPU work を Timeline View で追えると説明されているので、この要件はデモの解析性として入れておいてよいです。`nsys profile` のCLI形式も公式ユーザーガイドに載っています。:contentReference[oaicite:1]{index=1}
+Nsight Systems 側は、公式ドキュメントでも NVTX range を入れると CPU range とそこから起動された GPU work を Timeline View で追えると説明されているので、この要件はデモの解析性として入れておいてよいです。`nsys profile` のCLI形式も公式ユーザーガイドに載っています。
 
 [1]: https://github.com/dskkato/ros2_cuda_ipc "GitHub - dskkato/ros2_cuda_ipc: ROS 2/CUDA IPC support · GitHub"
