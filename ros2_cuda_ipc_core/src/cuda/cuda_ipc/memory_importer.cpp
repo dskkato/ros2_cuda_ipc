@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/backend/cuda_ipc_importer.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_ipc/memory_importer.hpp"
 
 #include <cstring>
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 
-namespace ros2_cuda_ipc_core::backend {
+namespace ros2_cuda_ipc_core::cuda::cuda_ipc {
 
 namespace {
 
@@ -21,11 +21,11 @@ cudaIpcMemHandle_t to_cuda_mem_handle(
 
 }  // namespace
 
-std::optional<ImportedBuffer> CudaIpcImporter::import(
+std::optional<ImportedMemory> MemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
     const cudaIpcEventHandle_t& event_handle,
     const rclcpp::Logger& logger) const {
-  ImportedBuffer imported;
+  ImportedMemory imported;
 
   auto err = cudaIpcOpenEventHandle(&imported.event, event_handle);
   if (err != cudaSuccess) {
@@ -47,4 +47,4 @@ std::optional<ImportedBuffer> CudaIpcImporter::import(
   return imported;
 }
 
-}  // namespace ros2_cuda_ipc_core::backend
+}  // namespace ros2_cuda_ipc_core::cuda::cuda_ipc

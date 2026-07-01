@@ -1,13 +1,12 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_importer.hpp"
+#include "ros2_cuda_ipc_core/cuda/vmm_fd/memory_importer.hpp"
 
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
-#include <uuid/uuid.h>
 
 #include <cerrno>
 #include <cstring>
@@ -17,10 +16,11 @@
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
+#include "ros2_cuda_ipc_core/cuda/vmm_fd/payload.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/posix_error.hpp"
 
-namespace ros2_cuda_ipc_core::backend {
+namespace ros2_cuda_ipc_core::cuda::vmm_fd {
 
 namespace {
 
@@ -48,30 +48,14 @@ bool ensure_cuda_driver_initialised(const rclcpp::Logger& logger) {
   return true;
 }
 
-struct VmmPayload {
-  std::string uuid;
-};
-
-std::optional<VmmPayload> parse_vmm_payload(const MemoryHandlePayload& payload,
-                                            const rclcpp::Logger& logger) {
-  const uint32_t length = load_u32_le(payload.data());
-  if (length == 0 || length > ros2_cuda_ipc_core::kVmmUuidMaxLength ||
-      length + 4 > payload.size()) {
-    RCLCPP_WARN(logger, "Received invalid VMM_FD payload length=%u (max=%zu)",
-                length, ros2_cuda_ipc_core::kVmmUuidMaxLength);
+std::optional<std::string> parse_vmm_payload(const MemoryHandlePayload& payload,
+                                             const rclcpp::Logger& logger) {
+  auto uuid = decode_uuid_payload(payload);
+  if (!uuid.has_value()) {
+    RCLCPP_WARN(logger, "Received invalid VMM_FD payload");
     return std::nullopt;
   }
-
-  uuid_t uuid;
-  const char* uuid_str = reinterpret_cast<const char*>(payload.data() + 4);
-  if (uuid_parse_range(uuid_str, uuid_str + length, uuid) != 0) {
-    RCLCPP_WARN(logger, "Failed to parse UUID from VMM_FD payload");
-    return std::nullopt;
-  }
-
-  VmmPayload result;
-  result.uuid.assign(uuid_str, length);
-  return result;
+  return uuid;
 }
 
 std::optional<int> request_fd_from_publisher(const std::string& path,
@@ -143,7 +127,7 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
 
 }  // namespace
 
-std::optional<ImportedBuffer> VmmFdImporter::import(
+std::optional<ImportedMemory> MemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
     const cudaIpcEventHandle_t& event_handle,
     const rclcpp::Logger& logger) const {
@@ -152,7 +136,7 @@ std::optional<ImportedBuffer> VmmFdImporter::import(
     return std::nullopt;
   }
 
-  const std::string socket_path = build_memory_socket_path(meta->uuid);
+  const std::string socket_path = build_socket_path(*meta);
   if (socket_path.size() >= sizeof(sockaddr_un::sun_path)) {
     RCLCPP_WARN(logger, "UUID %s is too long for AF_UNIX path",
                 socket_path.c_str());
@@ -169,7 +153,7 @@ std::optional<ImportedBuffer> VmmFdImporter::import(
     return std::nullopt;
   }
 
-  ImportedBuffer imported;
+  ImportedMemory imported;
 
   void* os_handle =
       reinterpret_cast<void*>(static_cast<intptr_t>(fd_opt.value()));
@@ -251,4 +235,4 @@ std::optional<ImportedBuffer> VmmFdImporter::import(
   return imported;
 }
 
-}  // namespace ros2_cuda_ipc_core::backend
+}  // namespace ros2_cuda_ipc_core::cuda::vmm_fd

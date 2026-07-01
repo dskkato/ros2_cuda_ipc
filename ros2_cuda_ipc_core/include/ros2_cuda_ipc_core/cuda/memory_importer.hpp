@@ -12,9 +12,9 @@
 #include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
-namespace ros2_cuda_ipc_core::backend {
+namespace ros2_cuda_ipc_core::cuda {
 
-struct ImportedBuffer {
+struct ImportedMemory {
   void* dev_ptr = nullptr;
   cudaEvent_t event = nullptr;
   CUdeviceptr vmm_address = 0;
@@ -22,18 +22,18 @@ struct ImportedBuffer {
   std::size_t allocation_size = 0;
 };
 
-class BackendImporter {
+class MemoryImporter {
  public:
-  virtual ~BackendImporter() = default;
+  virtual ~MemoryImporter() = default;
 
-  virtual std::optional<ImportedBuffer> import(
+  virtual std::optional<ImportedMemory> import(
       const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
       const cudaIpcEventHandle_t& event_handle,
       const rclcpp::Logger& logger) const = 0;
 };
 
-void release_imported_buffer(const ImportedBuffer& imported) noexcept;
+void release_imported_memory(const ImportedMemory& imported) noexcept;
 
-const BackendImporter& get_backend_importer(uint8_t backend);
+const MemoryImporter& get_memory_importer(uint8_t backend);
 
-}  // namespace ros2_cuda_ipc_core::backend
+}  // namespace ros2_cuda_ipc_core::cuda

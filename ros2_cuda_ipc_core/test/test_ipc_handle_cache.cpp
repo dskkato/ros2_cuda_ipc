@@ -33,17 +33,17 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseBackendPayloadAndEvent) {
 
 TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
   ros2_cuda_ipc_core::IpcHandleCache cache(
-      [](const ros2_cuda_ipc_core::backend::ImportedBuffer&) {});
+      [](const ros2_cuda_ipc_core::cuda::ImportedMemory&) {});
   ros2_cuda_ipc_core::IpcHandleKey key{};
   key.backend = 1;
   key.mem[0] = 11;
   key.event[0] = 13;
 
-  ros2_cuda_ipc_core::backend::ImportedBuffer first;
+  ros2_cuda_ipc_core::cuda::ImportedMemory first;
   first.dev_ptr = reinterpret_cast<void*>(0x1010);
   first.event = reinterpret_cast<cudaEvent_t>(0x2020);
 
-  ros2_cuda_ipc_core::backend::ImportedBuffer duplicate;
+  ros2_cuda_ipc_core::cuda::ImportedMemory duplicate;
   duplicate.dev_ptr = reinterpret_cast<void*>(0x3030);
   duplicate.event = reinterpret_cast<cudaEvent_t>(0x4040);
 
@@ -59,7 +59,7 @@ TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
 TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
   std::atomic<int> released{0};
   ros2_cuda_ipc_core::IpcHandleCache cache(
-      [&released](const ros2_cuda_ipc_core::backend::ImportedBuffer&) {
+      [&released](const ros2_cuda_ipc_core::cuda::ImportedMemory&) {
         released.fetch_add(1);
       });
   ros2_cuda_ipc_core::IpcHandleKey key{};
@@ -67,11 +67,11 @@ TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
   key.mem[0] = 17;
   key.event[0] = 19;
 
-  ros2_cuda_ipc_core::backend::ImportedBuffer first;
+  ros2_cuda_ipc_core::cuda::ImportedMemory first;
   first.dev_ptr = reinterpret_cast<void*>(0x5050);
   first.event = reinterpret_cast<cudaEvent_t>(0x6060);
 
-  ros2_cuda_ipc_core::backend::ImportedBuffer duplicate;
+  ros2_cuda_ipc_core::cuda::ImportedMemory duplicate;
   duplicate.dev_ptr = reinterpret_cast<void*>(0x7070);
   duplicate.event = reinterpret_cast<cudaEvent_t>(0x8080);
 

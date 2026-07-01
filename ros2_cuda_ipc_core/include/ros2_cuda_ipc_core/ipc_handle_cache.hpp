@@ -13,7 +13,7 @@
 #include <optional>
 #include <unordered_map>
 
-#include "ros2_cuda_ipc_core/backend/backend_importer.hpp"
+#include "ros2_cuda_ipc_core/cuda/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core {
@@ -34,24 +34,23 @@ struct IpcHandleKeyHash {
 
 class IpcHandleCache {
  public:
-  using ReleaseFn = std::function<void(const backend::ImportedBuffer&)>;
+  using ReleaseFn = std::function<void(const cuda::ImportedMemory&)>;
 
-  explicit IpcHandleCache(
-      ReleaseFn release_fn = backend::release_imported_buffer);
+  explicit IpcHandleCache(ReleaseFn release_fn = cuda::release_imported_memory);
 
   static IpcHandleCache& instance();
 
-  std::optional<backend::ImportedBuffer> find(const IpcHandleKey& key) const;
+  std::optional<cuda::ImportedMemory> find(const IpcHandleKey& key) const;
 
-  backend::ImportedBuffer insert_or_discard_duplicate(
-      const IpcHandleKey& key, backend::ImportedBuffer imported);
+  cuda::ImportedMemory insert_or_discard_duplicate(
+      const IpcHandleKey& key, cuda::ImportedMemory imported);
 
   std::size_t size() const;
 
  private:
   ReleaseFn release_fn_;
   mutable std::mutex mutex_;
-  std::unordered_map<IpcHandleKey, backend::ImportedBuffer, IpcHandleKeyHash>
+  std::unordered_map<IpcHandleKey, cuda::ImportedMemory, IpcHandleKeyHash>
       cache_;
 };
 

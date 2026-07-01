@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "../test_mapper_utils.hpp"
+#include "ros2_cuda_ipc_core/cuda/vmm_fd/payload.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/mapper/buffer_view_mapper.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
@@ -119,7 +120,7 @@ TEST_F(BufferViewMapperTest, MissingVmmSocketReturnsInvalidAndReleasesLease) {
   msg.byte_size = 64;
   msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD;
   msg.event_handle.fill(0);
-  ASSERT_TRUE(ros2_cuda_ipc_core::encode_uuid_payload(
+  ASSERT_TRUE(ros2_cuda_ipc_core::cuda::vmm_fd::encode_uuid_payload(
       "12345678-1234-5678-1234-567812345678", msg.mem_handle));
 
   BufferViewMapper mapper;
@@ -171,8 +172,8 @@ TEST_F(BufferViewMapperTest, FillBufferCoreMessagePreservesVmmPayload) {
   view.shm_name = "/vmm_buf_meta";
 
   ros2_cuda_ipc_core::MemoryHandlePayload payload{};
-  ASSERT_TRUE(
-      ros2_cuda_ipc_core::encode_uuid_payload("test-vmm-handle", payload));
+  ASSERT_TRUE(ros2_cuda_ipc_core::cuda::vmm_fd::encode_uuid_payload(
+      "12345678-1234-5678-1234-567812345678", payload));
 
   cudaIpcEventHandle_t event_handle{};
   view.set_ipc_handles(MemoryBackendKind::VMM_FD, payload.data(),

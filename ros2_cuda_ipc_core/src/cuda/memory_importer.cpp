@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/backend/backend_importer.hpp"
+#include "ros2_cuda_ipc_core/cuda/memory_importer.hpp"
 
-#include "ros2_cuda_ipc_core/backend/cuda_ipc_importer.hpp"
-#include "ros2_cuda_ipc_core/backend/vmm_fd_importer.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_ipc/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/cuda/vmm_fd/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 
-namespace ros2_cuda_ipc_core::backend {
+namespace ros2_cuda_ipc_core::cuda {
 
-void release_imported_buffer(const ImportedBuffer& imported) noexcept {
+void release_imported_memory(const ImportedMemory& imported) noexcept {
   if (imported.vmm_address != 0 && imported.allocation_size != 0) {
     cuMemUnmap(imported.vmm_address, imported.allocation_size);
     cuMemAddressFree(imported.vmm_address, imported.allocation_size);
@@ -25,9 +25,9 @@ void release_imported_buffer(const ImportedBuffer& imported) noexcept {
   }
 }
 
-const BackendImporter& get_backend_importer(uint8_t backend) {
-  static CudaIpcImporter cuda_ipc_importer;
-  static VmmFdImporter vmm_fd_importer;
+const MemoryImporter& get_memory_importer(uint8_t backend) {
+  static cuda_ipc::MemoryImporter cuda_ipc_importer;
+  static vmm_fd::MemoryImporter vmm_fd_importer;
 
   switch (backend_from_byte(backend)) {
     case MemoryBackendKind::CUDA_IPC:
@@ -39,4 +39,4 @@ const BackendImporter& get_backend_importer(uint8_t backend) {
   return cuda_ipc_importer;
 }
 
-}  // namespace ros2_cuda_ipc_core::backend
+}  // namespace ros2_cuda_ipc_core::cuda

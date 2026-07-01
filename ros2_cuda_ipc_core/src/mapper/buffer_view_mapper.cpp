@@ -6,7 +6,7 @@
 #include <cstring>
 #include <memory>
 
-#include "ros2_cuda_ipc_core/backend/backend_importer.hpp"
+#include "ros2_cuda_ipc_core/cuda/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 
@@ -60,13 +60,13 @@ view::BufferView BufferViewMapper::map(
   key.mem = msg.mem_handle;
   std::memcpy(key.event.data(), &event_handle, sizeof(event_handle));
 
-  backend::ImportedBuffer imported;
+  cuda::ImportedMemory imported;
   auto cached = IpcHandleCache::instance().find(key);
   if (cached.has_value()) {
     imported = *cached;
   } else {
     const auto& importer =
-        backend::get_backend_importer(static_cast<uint8_t>(msg.backend));
+        cuda::get_memory_importer(static_cast<uint8_t>(msg.backend));
     auto opened = importer.import(msg, event_handle, options_.logger);
     if (!opened.has_value()) {
       return {};
