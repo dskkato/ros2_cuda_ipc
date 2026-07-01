@@ -26,7 +26,7 @@ IpcHandleCache& IpcHandleCache::instance() {
   return cache;
 }
 
-std::optional<backend::ImportedBuffer> IpcHandleCache::find(
+std::optional<cuda::ImportedMemory> IpcHandleCache::find(
     const IpcHandleKey& key) const {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = cache_.find(key);
@@ -36,8 +36,8 @@ std::optional<backend::ImportedBuffer> IpcHandleCache::find(
   return it->second;
 }
 
-backend::ImportedBuffer IpcHandleCache::insert_or_discard_duplicate(
-    const IpcHandleKey& key, backend::ImportedBuffer imported) {
+cuda::ImportedMemory IpcHandleCache::insert_or_discard_duplicate(
+    const IpcHandleKey& key, cuda::ImportedMemory imported) {
   std::lock_guard<std::mutex> lock(mutex_);
   auto [it, inserted] = cache_.emplace(key, imported);
   if (!inserted) {

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/cuda/memory_backend_cuda_ipc.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_ipc/memory_backend.hpp"
 
 #include <cuda_runtime_api.h>
 
@@ -13,7 +13,7 @@
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 
-namespace ros2_cuda_ipc_core::cuda {
+namespace ros2_cuda_ipc_core::cuda::cuda_ipc {
 namespace {
 
 class CudaIpcMemoryBackend : public GpuLeasePool::MemoryBackend {
@@ -70,4 +70,4 @@ std::unique_ptr<GpuLeasePool::MemoryBackend> make_cuda_ipc_memory_backend() {
   return std::make_unique<CudaIpcMemoryBackend>();
 }
 
-}  // namespace ros2_cuda_ipc_core::cuda
+}  // namespace ros2_cuda_ipc_core::cuda::cuda_ipc

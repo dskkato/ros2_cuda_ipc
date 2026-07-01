@@ -26,16 +26,16 @@ endif()
 add_library(${PROJECT_NAME}
   src/cuda/cuda_util.cpp
   src/cuda/gpu_lease_pool.cpp
-  src/cuda/memory_backend_cuda_ipc.cpp
-  src/cuda/memory_backend_vmm_fd.cpp
+  src/cuda/memory_importer.cpp
+  src/cuda/cuda_ipc/memory_backend.cpp
+  src/cuda/cuda_ipc/memory_importer.cpp
+  src/cuda/vmm_fd/memory_backend.cpp
+  src/cuda/vmm_fd/memory_importer.cpp
   src/view/buffer_view.cpp
   src/view/image_view.cpp
   src/view/pointcloud2_view.cpp
   src/ipc_handle_cache.cpp
   src/lease_handle.cpp
-  src/backend/backend_importer.cpp
-  src/backend/cuda_ipc_importer.cpp
-  src/backend/vmm_fd_importer.cpp
   src/mapper/buffer_view_mapper.cpp
   src/mapper/image_view_mapper.cpp
   src/mapper/pointcloud2_view_mapper.cpp

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/cuda/memory_backend_vmm_fd.hpp"
+#include "ros2_cuda_ipc_core/cuda/vmm_fd/memory_backend.hpp"
 
 #include <cuda.h>
 #include <fcntl.h>
@@ -22,10 +22,11 @@
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
+#include "ros2_cuda_ipc_core/cuda/vmm_fd/payload.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/posix_error.hpp"
 
-namespace ros2_cuda_ipc_core::cuda {
+namespace ros2_cuda_ipc_core::cuda::vmm_fd {
 namespace {
 
 uint64_t align_up(uint64_t value, uint64_t alignment) {
@@ -370,7 +371,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
       uuid_unparse_lower(uuid_bytes, uuid_str);
       state->uuid = uuid_str;
 
-      const auto socket_path = build_memory_socket_path(state->uuid);
+      const auto socket_path = build_socket_path(state->uuid);
       auto child_logger = logger.get_child("FdServer");
       state->server = std::make_unique<UnixFdServer>(
           socket_path, state->shareable_fd, child_logger);
@@ -384,8 +385,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
       slot.backend_state = state;
       // Store UUID bytes into the ROS message payload so subscribers know which
       // socket to contact.
-      if (!ros2_cuda_ipc_core::encode_uuid_payload(state->uuid,
-                                                   slot.mem_handle)) {
+      if (!encode_uuid_payload(state->uuid, slot.mem_handle)) {
         RCLCPP_ERROR(logger, "Failed to encode UUID payload for slot %u",
                      slot.index);
         destroy(slots, logger);
@@ -439,4 +439,4 @@ std::unique_ptr<GpuLeasePool::MemoryBackend> make_vmm_fd_memory_backend() {
   return std::make_unique<VmmFdMemoryBackend>();
 }
 
-}  // namespace ros2_cuda_ipc_core::cuda
+}  // namespace ros2_cuda_ipc_core::cuda::vmm_fd

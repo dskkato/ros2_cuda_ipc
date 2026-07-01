@@ -6,9 +6,9 @@
 #include <memory>
 
 #include "rclcpp/logging.hpp"
+#include "ros2_cuda_ipc_core/cuda/cuda_ipc/memory_backend.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
-#include "ros2_cuda_ipc_core/cuda/memory_backend_cuda_ipc.hpp"
-#include "ros2_cuda_ipc_core/cuda/memory_backend_vmm_fd.hpp"
+#include "ros2_cuda_ipc_core/cuda/vmm_fd/memory_backend.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 
@@ -25,9 +25,9 @@ bool deadline_reached(const Clock::time_point& deadline,
 std::unique_ptr<GpuLeasePool::MemoryBackend> make_backend(
     ros2_cuda_ipc_core::MemoryBackendKind backend) {
   if (backend == ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD) {
-    return make_vmm_fd_memory_backend();
+    return vmm_fd::make_vmm_fd_memory_backend();
   }
-  return make_cuda_ipc_memory_backend();
+  return cuda_ipc::make_cuda_ipc_memory_backend();
 }
 
 }  // namespace
