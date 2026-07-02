@@ -141,15 +141,14 @@ class ColorizeNode : public rclcpp::Node {
 
     pool_.reclaim_stale_pending();
 
-    auto slot_opt = pool_.acquire(subscribers);
-    if (!slot_opt.has_value() || *slot_opt == nullptr) {
+    auto* slot = pool_.acquire(subscribers);
+    if (slot == nullptr) {
       RCLCPP_WARN_THROTTLE(logger, *get_clock(), 2000,
                            "No available GPU slots for colorized output");
       return;
     }
-    auto& slot = **slot_opt;
 
-    const auto cancel_slot = [&]() { pool_.cancel_pending(slot); };
+    const auto cancel_slot = [&]() { pool_.cancel_pending(*slot); };
 
     cudaError_t err = cudaSetDevice(device_index_);
     if (err != cudaSuccess) {

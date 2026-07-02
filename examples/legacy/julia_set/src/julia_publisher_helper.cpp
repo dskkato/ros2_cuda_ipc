@@ -116,13 +116,13 @@ JuliaPublisherHelper::produce(std::size_t subscriber_count, float time_phase) {
 
   pool_.reclaim_stale_pending();
 
-  auto slot_ptr = pool_.acquire(subscriber_count);
-  if (!slot_ptr.has_value() || *slot_ptr == nullptr) {
+  auto* slot_ptr = pool_.acquire(subscriber_count);
+  if (slot_ptr == nullptr) {
     RCLCPP_WARN(logger_, "No available GPU slots (all leases in use)");
     return std::nullopt;
   }
 
-  auto* slot = *slot_ptr;
+  auto* slot = slot_ptr;
 
   const float zoom = config_.zoom + 0.5f * std::sin(time_phase);
   const float offset_x = config_.offset_x + 0.2f * std::cos(time_phase * 0.5f);

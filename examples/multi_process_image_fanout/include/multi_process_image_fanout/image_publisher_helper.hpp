@@ -43,8 +43,6 @@ class ImagePublisherHelper {
   std::optional<ros2_cuda_ipc_core::view::ImageView> produce(
       std::size_t subscriber_count, uint64_t frame_index);
 
-  uint64_t frame_size_bytes() const noexcept { return frame_size_bytes_; }
-
  private:
   Config config_;
   rclcpp::Logger logger_;

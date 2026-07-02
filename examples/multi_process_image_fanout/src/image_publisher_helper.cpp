@@ -75,12 +75,11 @@ ImagePublisherHelper::produce(std::size_t subscriber_count,
   ros2_cuda_ipc_core::cuda::GpuLeasePool::Slot* slot = nullptr;
   {
     NvtxScopedRange acquire_range("ImagePublisherHelper::acquire_slot");
-    auto slot_ptr = pool_.acquire(subscriber_count);
-    if (!slot_ptr.has_value() || *slot_ptr == nullptr) {
+    slot = pool_.acquire(subscriber_count);
+    if (slot == nullptr) {
       RCLCPP_WARN(logger_, "No available GPU slots (all leases in use)");
       return std::nullopt;
     }
-    slot = *slot_ptr;
   }
 
   cudaError_t err = cudaSuccess;

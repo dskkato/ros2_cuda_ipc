@@ -8,7 +8,6 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -58,7 +57,7 @@ class GpuLeasePool {
   bool is_initialised() const noexcept { return initialised_; }
   bool matches(uint64_t frame_size_bytes, int device_index) const noexcept;
 
-  std::optional<Slot*> acquire(std::size_t subscriber_count);
+  Slot* acquire(std::size_t subscriber_count);
   void reclaim_stale_pending();
   bool cancel_pending(Slot& slot);
 

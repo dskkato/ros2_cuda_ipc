@@ -56,9 +56,7 @@ TEST_F(GpuLeasePoolTest,
   EXPECT_EQ(pool.frame_size_bytes(), 1024u);
   EXPECT_EQ(pool.device_index(), 0);
 
-  auto slot_opt = pool.acquire(1);
-  ASSERT_TRUE(slot_opt.has_value());
-  auto* slot = *slot_opt;
+  auto* slot = pool.acquire(1);
   ASSERT_NE(slot, nullptr);
   EXPECT_NE(slot->device_ptr, nullptr);
   EXPECT_NE(slot->event, nullptr);
@@ -81,9 +79,7 @@ TEST_F(GpuLeasePoolTest, AcquireWithoutSubscribersDoesNotSetPendingDeadline) {
 
   ASSERT_TRUE(pool.initialise(512, 0));
 
-  auto slot_opt = pool.acquire(0);
-  ASSERT_TRUE(slot_opt.has_value());
-  auto* slot = *slot_opt;
+  auto* slot = pool.acquire(0);
   ASSERT_NE(slot, nullptr);
   EXPECT_EQ(slot->pending_deadline.time_since_epoch().count(), 0);
 
@@ -103,9 +99,7 @@ TEST_F(GpuLeasePoolTest, ReclaimStalePendingClearsLease) {
 
   ASSERT_TRUE(pool.initialise(256, 0));
 
-  auto slot_opt = pool.acquire(1);
-  ASSERT_TRUE(slot_opt.has_value());
-  auto* slot = *slot_opt;
+  auto* slot = pool.acquire(1);
   ASSERT_NE(slot, nullptr);
 
   auto pending_before =
