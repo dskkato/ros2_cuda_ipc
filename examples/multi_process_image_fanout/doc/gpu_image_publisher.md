@@ -23,7 +23,6 @@ The publisher must:
 2. Allocate `slot_count` GPU buffers through the pool.
 3. Use one non-blocking CUDA stream.
 4. On each timer tick:
-
    * reclaim stale pending leases
    * acquire a slot using the current ROS subscription count
    * launch the image generation CUDA kernel into the acquired slot
@@ -34,21 +33,6 @@ The publisher must:
    the lease pool.
 6. Do not copy the generated image to host memory.
 7. Fill the `ImageView` fields correctly:
-
-   * `header.stamp`
-   * `header.frame_id`
-   * `core.dev_ptr`
-   * `core.ready_evt`
-   * `core.device_id`
-   * `core.byte_size`
-   * `core.slot_id`
-   * `core.generation`
-   * `core.shm_name`
-   * memory backend handles through `set_ipc_handles`
-   * `dtype`
-   * `shape`
-   * `strides`
-   * `encoding`
 
 ### Parameters
 
@@ -69,45 +53,6 @@ memory_backend:    cuda_ipc
 
 Support `memory_backend` values using the existing parser from
 `ros2_cuda_ipc_core`.
-
-### CUDA kernel
-
-Implement this fixed demo kernel:
-
-```cpp
-cudaError_t launch_generate_rgba_pattern_kernel(
-  uint8_t* output,
-  int width,
-  int height,
-  uint64_t stride_bytes,
-  uint64_t frame_index,
-  cudaStream_t stream);
-```
-
-Kernel behavior:
-
-```text
-for each pixel (x, y):
-
-  block_x = x / 32
-  block_y = y / 32
-
-  r = (x + frame_index) & 0xff
-  g = (y + 2 * frame_index) & 0xff
-  b = ((block_x ^ block_y) * 37 + 3 * frame_index) & 0xff
-  a = 255
-```
-
-Store RGBA in HWC order.
-
-Reasoning:
-
-* Visually recognizable.
-* Deterministic.
-* Animated.
-* No fractal-specific code.
-* No camera dependency.
-* Easy to test with a CPU reference implementation.
 
 ### NVTX ranges
 

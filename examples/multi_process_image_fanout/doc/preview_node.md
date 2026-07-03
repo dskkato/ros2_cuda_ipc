@@ -19,11 +19,6 @@ The preview node must:
 
 1. Subscribe to `ros2_cuda_ipc_core::view::ImageView`.
 2. Validate the view:
-
-   * `view.core.valid()`
-   * `view.sanity_check()`
-   * dtype is `U8`
-   * channels are `4`
 3. Set the CUDA device from `view.core.device_id`.
 4. Use one non-blocking CUDA stream.
 5. Wait on the input ready event with `view.enqueue_ready_event(stream_)`.
@@ -47,12 +42,6 @@ log_every_n:        30
 
 `copy_every_n` may be used to reduce CPU copy load. Default must be `1` so the
 demo works immediately with `rqt_image_view`.
-
-### Host copy policy
-
-The preview node is allowed to copy the full image to host memory.
-
-No other node is allowed to copy the full image to host memory.
 
 ### NVTX ranges
 

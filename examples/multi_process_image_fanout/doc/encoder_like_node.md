@@ -44,65 +44,6 @@ log_every_n:        30
 Only support `downscale=2` in the first implementation. If another value is
 provided, warn and use `2`.
 
-### CUDA kernels
-
-Implement:
-
-```cpp
-cudaError_t launch_rgba_to_luma_downscale2_kernel(
-  const uint8_t* input_rgba,
-  uint8_t* output_luma,
-  int input_width,
-  int input_height,
-  uint64_t input_stride_bytes,
-  cudaStream_t stream);
-```
-
-Output size:
-
-```text
-output_width  = input_width / 2
-output_height = input_height / 2
-```
-
-For each output pixel, average a 2x2 block of input pixels.
-
-Luma formula per input pixel:
-
-```text
-Y = (77 * R + 150 * G + 29 * B) >> 8
-```
-
-The output pixel is the integer average of the four Y values.
-
-Implement a checksum helper:
-
-```cpp
-cudaError_t launch_checksum_u8_kernel(
-  const uint8_t* input,
-  size_t element_count,
-  uint64_t* device_checksum,
-  cudaStream_t stream);
-```
-
-Checksum formula:
-
-```text
-checksum = sum(input[i] * ((i % 251) + 1))
-```
-
-The checksum may use block-level partial sums plus a final reduction, or a simple
-atomic implementation if that is easier. Prefer clear code over maximum
-performance.
-
-The host may copy back only:
-
-```text
-sizeof(uint64_t)
-```
-
-or a small partial-sum array.
-
 ### Status message
 
 Publish a `std_msgs::msg::String` with fields:

@@ -40,63 +40,6 @@ status_topic_name:  /fanout/inference_like/status
 log_every_n:        30
 ```
 
-### CUDA kernels
-
-Implement:
-
-```cpp
-cudaError_t launch_rgba_to_normalized_gray_kernel(
-  const uint8_t* input_rgba,
-  float* output_gray,
-  int width,
-  int height,
-  uint64_t input_stride_bytes,
-  cudaStream_t stream);
-```
-
-For each pixel:
-
-```text
-gray_u8 = (77 * R + 150 * G + 29 * B) >> 8
-gray_f32 = gray_u8 / 255.0f
-```
-
-Implement stats reduction:
-
-```cpp
-struct InferenceStats
-{
-  float mean;
-  float min;
-  float max;
-  uint64_t checksum;
-};
-
-cudaError_t launch_inference_stats_kernel(
-  const float* input,
-  size_t element_count,
-  InferenceStats* device_stats,
-  cudaStream_t stream);
-```
-
-Checksum formula:
-
-```text
-q = clamp(round(input[i] * 65535.0f), 0, 65535)
-checksum = sum(q * ((i % 251) + 1))
-```
-
-`mean`, `min`, `max`, and `checksum` must be computed from the normalized
-grayscale buffer.
-
-The host may copy back only:
-
-```text
-sizeof(InferenceStats)
-```
-
-or a small partial-stats array.
-
 ### Status message
 
 Publish a `std_msgs::msg::String` with fields:
