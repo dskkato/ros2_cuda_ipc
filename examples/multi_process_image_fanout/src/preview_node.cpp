@@ -93,6 +93,7 @@ class PreviewNode : public rclcpp::Node {
       return;
     }
 
+    // Validate the shared GPU image metadata before copying.
     if (!view.core.valid()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Skipping invalid GPU image");
@@ -110,6 +111,8 @@ class PreviewNode : public rclcpp::Node {
       return;
     }
 
+    // Prepare the one non-blocking stream on the source device described by the
+    // ImageView.
     if (ensure_stream(view.core.device_id) != cudaSuccess) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Failed to prepare CUDA stream for preview");
@@ -117,6 +120,8 @@ class PreviewNode : public rclcpp::Node {
     }
 
     sensor_msgs::msg::Image msg;
+    // Preserve ROS image metadata while defaulting empty encoding to rgba8 for
+    // immediate preview tools.
     msg.header = view.header;
     msg.height = view.rows();
     msg.width = view.cols();
@@ -143,6 +148,7 @@ class PreviewNode : public rclcpp::Node {
 
     cudaError_t err = cudaSuccess;
     {
+      // Wait for the publisher's ready event before copying.
       NvtxScopedRange wait_range("PreviewNode::wait_input_event");
       err = view.enqueue_ready_event(stream_);
     }
@@ -155,6 +161,8 @@ class PreviewNode : public rclcpp::Node {
     }
 
     {
+      // Perform the only full-frame device-to-host copy in this example, then
+      // synchronize this stream before publishing.
       NvtxScopedRange copy_range("PreviewNode::cudaMemcpy2DAsync_to_host");
       cudaEventRecord(copy_start, stream_);
       err =
@@ -188,6 +196,7 @@ class PreviewNode : public rclcpp::Node {
     cudaEventDestroy(copy_stop);
 
     {
+      // Publish the CPU sensor_msgs::Image preview.
       NvtxScopedRange publish_range("PreviewNode::publish_sensor_msgs_image");
       publisher_->publish(std::move(msg));
     }
@@ -198,6 +207,8 @@ class PreviewNode : public rclcpp::Node {
     }
   }
 
+  // Switch to the ImageView device and create/reuse the node's single
+  // non-blocking CUDA stream.
   cudaError_t ensure_stream(int device_id) {
     if (stream_ != nullptr && current_device_id_ == device_id) {
       return cudaSuccess;

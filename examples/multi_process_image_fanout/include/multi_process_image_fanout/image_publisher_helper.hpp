@@ -18,6 +18,10 @@
 
 namespace multi_process_image_fanout {
 
+// Owns the CUDA and lease-pool state required to publish GPU-only ImageView
+// frames. Keeping this logic outside the ROS node makes the example easier to
+// read: the node handles parameters, timers, and publishing, while this helper
+// shows the publisher-side ros2_cuda_ipc workflow in one place.
 class ImagePublisherHelper {
  public:
   struct Config {
@@ -40,6 +44,9 @@ class ImagePublisherHelper {
   ImagePublisherHelper(ImagePublisherHelper&&) = delete;
   ImagePublisherHelper& operator=(ImagePublisherHelper&&) = delete;
 
+  // Acquire a lease for the current subscriber count, generate one RGBA frame
+  // on the GPU, record its ready event, and return the ImageView metadata
+  // without copying image bytes to the host.
   std::optional<ros2_cuda_ipc_core::view::ImageView> produce(
       std::size_t subscriber_count, uint64_t frame_index);
 

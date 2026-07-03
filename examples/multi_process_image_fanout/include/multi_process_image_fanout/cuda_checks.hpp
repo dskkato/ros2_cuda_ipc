@@ -13,9 +13,7 @@
 
 namespace multi_process_image_fanout {
 
-inline std::string cuda_error_to_string(cudaError_t err) {
-  return ros2_cuda_ipc_core::cuda::cuda_error_to_string(err);
-}
+using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
 
 inline bool log_cuda_error(const rclcpp::Logger& logger, const char* operation,
                            cudaError_t err) {

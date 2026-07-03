@@ -38,6 +38,8 @@ ImagePublisherHelper::ImagePublisherHelper(const Config& config,
 
   throw_on_cuda_error(cudaSetDevice(config_.device_index), "cudaSetDevice");
 
+  // Size the lease pool buffers and create the single non-blocking CUDA stream
+  // used by the publisher-side kernel.
   frame_size_bytes_ =
       static_cast<uint64_t>(config_.width) * config_.height * kBytesPerPixel;
 
@@ -70,10 +72,12 @@ ImagePublisherHelper::produce(std::size_t subscriber_count,
     return std::nullopt;
   }
 
+  // Old pending leases are reclaimed before trying to reuse slots.
   pool_.reclaim_stale_pending();
 
   ros2_cuda_ipc_core::cuda::GpuLeasePool::Slot* slot = nullptr;
   {
+    // Expected consumers come from the ROS subscription count.
     NvtxScopedRange acquire_range("ImagePublisherHelper::acquire_slot");
     slot = pool_.acquire(subscriber_count);
     if (slot == nullptr) {
@@ -84,6 +88,7 @@ ImagePublisherHelper::produce(std::size_t subscriber_count,
 
   cudaError_t err = cudaSuccess;
   {
+    // Generate the frame directly in the leased GPU buffer.
     NvtxScopedRange kernel_range(
         "ImagePublisherHelper::generate_rgba_pattern_kernel");
     err = launch_generate_rgba_pattern_kernel(
@@ -98,6 +103,7 @@ ImagePublisherHelper::produce(std::size_t subscriber_count,
   }
 
   {
+    // Consumers wait on this event before reading the slot.
     NvtxScopedRange event_record_range("ImagePublisherHelper::cudaEventRecord");
     err = cudaEventRecord(slot->event, stream_);
   }
@@ -107,6 +113,8 @@ ImagePublisherHelper::produce(std::size_t subscriber_count,
     return std::nullopt;
   }
 
+  // Publishable metadata for the GPU buffer and IPC handles. The pixel payload
+  // stays on the device.
   ros2_cuda_ipc_core::view::ImageView view;
   view.core.dev_ptr = slot->device_ptr;
   view.core.ready_evt = slot->event;

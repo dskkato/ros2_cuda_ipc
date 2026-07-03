@@ -68,6 +68,8 @@ class GpuImagePublisherNode : public rclcpp::Node {
     NvtxScopedRange timer_range("GpuImagePublisherNode::on_timer");
 
     const std::size_t subscribers = publisher_->get_subscription_count();
+    // The helper implements the lease acquisition, GPU generation, ready event,
+    // and ImageView field population for this timer tick.
     auto view = helper_->produce(subscribers, frame_index_);
     if (!view.has_value()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
@@ -75,6 +77,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
       return;
     }
 
+    // The node adds ROS header context and publishes the GPU-only view.
     view->header.stamp = now();
     view->header.frame_id = frame_id_;
     publisher_->publish(*view);

@@ -72,6 +72,8 @@ class InferenceLikeNode : public rclcpp::Node {
 
     ++received_;
 
+    // Validate the shared GPU view and keep the full image and normalized
+    // tensor on the device.
     if (!view.core.valid()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Skipping invalid GPU image");
@@ -117,6 +119,8 @@ class InferenceLikeNode : public rclcpp::Node {
     }
 
     {
+      // Wait on the publisher's ready event before reading the shared input
+      // slot from this node's stream.
       NvtxScopedRange wait_range("InferenceLikeNode::wait_input_event");
       const cudaError_t err = view.enqueue_ready_event(stream_);
       if (err != cudaSuccess) {
@@ -138,6 +142,8 @@ class InferenceLikeNode : public rclcpp::Node {
     }
 
     {
+      // Run preprocessing and compact stat extraction on the GPU before copying
+      // the small result struct.
       NvtxScopedRange gray_range(
           "InferenceLikeNode::rgba_to_normalized_gray_kernel");
       err = launch_rgba_to_normalized_gray_kernel(
@@ -186,6 +192,7 @@ class InferenceLikeNode : public rclcpp::Node {
     }
 
     {
+      // Only the compact stats struct crosses back to host.
       NvtxScopedRange copy_range("InferenceLikeNode::copy_stats_to_host");
       err = cudaMemcpy(&host_stats_, device_stats_, sizeof(InferenceStats),
                        cudaMemcpyDeviceToHost);
@@ -217,6 +224,7 @@ class InferenceLikeNode : public rclcpp::Node {
     const std::string status_text = status_msg.data;
 
     {
+      // Publish the status derived from the GPU stats.
       NvtxScopedRange publish_range("InferenceLikeNode::publish_status");
       status_publisher_->publish(std::move(status_msg));
     }
@@ -227,6 +235,9 @@ class InferenceLikeNode : public rclcpp::Node {
     }
   }
 
+  // Select the ImageView device and create the one non-blocking stream used for
+  // event waits, preprocessing, and stats kernels. Device-local stat storage is
+  // recreated when the source device changes.
   bool ensure_cuda_state(int device_id) {
     if (stream_ != nullptr && current_device_id_ == device_id) {
       return true;
@@ -264,6 +275,8 @@ class InferenceLikeNode : public rclcpp::Node {
     return true;
   }
 
+  // Lazily allocate or resize the internal normalized gray tensor when input
+  // dimensions change. The tensor remains GPU-only.
   bool ensure_buffers(const ros2_cuda_ipc_core::view::ImageView& view) {
     const std::size_t required_count = static_cast<std::size_t>(view.rows()) *
                                        static_cast<std::size_t>(view.cols());

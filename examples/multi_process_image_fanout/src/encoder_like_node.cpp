@@ -79,6 +79,8 @@ class EncoderLikeNode : public rclcpp::Node {
 
     ++received_;
 
+    // Reject invalid layouts up front and never copy the full shared image or
+    // derived luma plane to host memory.
     if (!view.core.valid()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Skipping invalid GPU image");
@@ -134,6 +136,8 @@ class EncoderLikeNode : public rclcpp::Node {
     }
 
     {
+      // Order this node's stream after the publisher's ready event before any
+      // kernel reads the shared input slot.
       NvtxScopedRange wait_range("EncoderLikeNode::wait_input_event");
       err = view.enqueue_ready_event(stream_);
     }
@@ -155,6 +159,8 @@ class EncoderLikeNode : public rclcpp::Node {
     }
 
     {
+      // Convert to downscaled luma, then reduce it to a compact checksum
+      // entirely on the GPU.
       NvtxScopedRange kernel_range(
           "EncoderLikeNode::rgba_to_luma_downscale2_kernel");
       err = launch_rgba_to_luma_downscale2_kernel(
@@ -229,6 +235,7 @@ class EncoderLikeNode : public rclcpp::Node {
     const std::string status_text = status_msg.data;
 
     {
+      // Publish the status derived from the small host copy.
       NvtxScopedRange publish_range("EncoderLikeNode::publish_status");
       status_publisher_->publish(std::move(status_msg));
     }
@@ -239,6 +246,9 @@ class EncoderLikeNode : public rclcpp::Node {
     }
   }
 
+  // Move to the ImageView device and create the one non-blocking stream used by
+  // this node. Device-local scalar buffers are also allocated here because they
+  // are tied to the selected CUDA device.
   bool ensure_cuda_state(int device_id) {
     if (stream_ != nullptr && current_device_id_ == device_id) {
       return true;
@@ -276,6 +286,8 @@ class EncoderLikeNode : public rclcpp::Node {
     return true;
   }
 
+  // Lazily allocate or resize the internal luma output buffer when the incoming
+  // image dimensions change. The buffer remains on the GPU.
   bool ensure_buffers(const ros2_cuda_ipc_core::view::ImageView& view) {
     const uint32_t required_width = view.cols() / 2;
     const uint32_t required_height = view.rows() / 2;
