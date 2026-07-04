@@ -38,7 +38,7 @@ and [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_i
 - `ros2_cuda_ipc_core` — メモリープール、CUDA IPCユーティリティ、マッパの C++ 実装（CUDA 前提）
 - `examples/multi_process_image_fanout` — 複数プロセスへ GPU 画像をゼロコピー配信する主デモ
 - `utils/gpu_image_transport` — `ImageView` を CPU `sensor_msgs` へ変換する補助ノード群
-- `urils/ros2_cuda_ipc_test` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
+- `urils/cuda_ipc_poc` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
 
 ## 開発環境セットアップ
 
@@ -80,13 +80,13 @@ source install/setup.bash
 
 ```bash
 # CUDA IPC テスト（従来のcudaIpcGetMemHandle方式）
-ros2 launch ros2_cuda_ipc_test cuda_ipc.launch.py
+ros2 launch cuda_ipc_poc cuda_ipc.launch.py
 
 # VMM-FD テスト（Driver API Virtual Memory Management方式）
-ros2 launch ros2_cuda_ipc_test vmm.launch.py
+ros2 launch cuda_ipc_poc vmm.launch.py
 ```
 
-詳細は [utils/ros2_cuda_ipc_test/README.md](utils/ros2_cuda_ipc_test/README.md) を参照してください。
+詳細は [utils/cuda_ipc_poc/README.md](utils/cuda_ipc_poc/README.md) を参照してください。
 
 ## Multi-process Image Fanout デモ実行
 

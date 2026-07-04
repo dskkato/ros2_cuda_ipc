@@ -17,14 +17,14 @@ def generate_launch_description():
     
     # Start producer first
     producer = ExecuteProcess(
-        cmd=['ros2', 'run', 'ros2_cuda_ipc_test', 'cuda_ipc_producer', '0'],
+        cmd=['ros2', 'run', 'cuda_ipc_poc', 'cuda_ipc_producer', '0'],
         output='screen',
         name='cuda_ipc_producer'
     )
     
     # Consumer process
     consumer = ExecuteProcess(
-        cmd=['ros2', 'run', 'ros2_cuda_ipc_test', 'cuda_ipc_consumer'],
+        cmd=['ros2', 'run', 'cuda_ipc_poc', 'cuda_ipc_consumer'],
         output='screen',
         name='cuda_ipc_consumer'
     )

@@ -1,4 +1,4 @@
-# ros2_cuda_ipc_test
+# cuda_ipc_poc
 
 Test applications for different CUDA IPC (Inter-Process Communication) mechanisms.
 
@@ -18,14 +18,14 @@ These tests are intentionally kept as standalone applications with no ROS2 depen
 ```bash
 cd /path/to/workspace
 export CUDACXX=/usr/local/cuda/bin/nvcc  # Set CUDA compiler path
-colcon build --packages-select ros2_cuda_ipc_test
+colcon build --packages-select cuda_ipc_poc
 source install/setup.bash
 ```
 
 ### As Standalone CMake Project
 
 ```bash
-cd ros2_cuda_ipc_test
+cd utils/cuda_ipc_poc
 export CUDACXX=/usr/local/cuda/bin/nvcc  # Set CUDA compiler path if needed
 cmake -B build .
 cmake --build build -j
@@ -48,7 +48,7 @@ Run the standalone test script:
 
 Simply run the test script from the package directory:
 ```bash
-cd ros2_cuda_ipc_test
+cd utils/cuda_ipc_poc
 ./test_ipc.sh
 ```
 
@@ -75,19 +75,19 @@ source /opt/ros/humble/setup.bash
 source install/local_setup.bash
 
 # Terminal 1: Start producer
-ros2 run ros2_cuda_ipc_test cuda_ipc_producer 0
+ros2 run cuda_ipc_poc cuda_ipc_producer 0
 
 # Terminal 2: Start consumer
-ros2 run ros2_cuda_ipc_test cuda_ipc_consumer
+ros2 run cuda_ipc_poc cuda_ipc_consumer
 ```
 
 Or for VMM-FD test:
 ```bash
 # Terminal 1: Start producer
-ros2 run ros2_cuda_ipc_test vmm_fd_producer 0
+ros2 run cuda_ipc_poc vmm_fd_producer 0
 
 # Terminal 2: Start consumer
-ros2 run ros2_cuda_ipc_test vmm_fd_consumer
+ros2 run cuda_ipc_poc vmm_fd_consumer
 ```
 
 ### Using Launch Files
@@ -96,12 +96,12 @@ Test CUDA IPC:
 ```bash
 source /opt/ros/humble/setup.bash
 source install/local_setup.bash
-ros2 launch ros2_cuda_ipc_test cuda_ipc.launch.py
+ros2 launch cuda_ipc_poc cuda_ipc.launch.py
 ```
 
 Test VMM-FD:
 ```bash
-ros2 launch ros2_cuda_ipc_test vmm.launch.py
+ros2 launch cuda_ipc_poc vmm.launch.py
 ```
 
 ## Test Description

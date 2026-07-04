@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>ros2_cuda_ipc_test</name>
+  <name>cuda_ipc_poc</name>
   <version>0.1.0</version>
   <description>Test applications for CUDA IPC mechanisms (both cudaIpc and VMM-FD)</description>
   <maintainer email="dskkato@users.noreply.github.com">dskkato</maintainer>

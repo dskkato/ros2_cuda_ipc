@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.18)
 
-project(ros2_cuda_ipc_test LANGUAGES CXX CUDA)
+project(cuda_ipc_poc LANGUAGES CXX CUDA)
 
 # C++ standard
 set(CMAKE_CXX_STANDARD 17)
