@@ -45,7 +45,8 @@ export CUDACXX=/usr/local/cuda/bin/nvcc
 
 ```bash
 ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
-  resolution:=720p \
+  width:=1280 \
+  height:=720 \
   publish_rate_hz:=60.0 \
   memory_backend:=cuda_ipc \
   slot_count:=4 \
@@ -53,9 +54,6 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   shm_name:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```
-
-`resolution` accepts `480p`, `720p`, `1080p`, `4K`, `8K`, and `16K`. If you
-need a custom size, pass `width` and `height`.
 
 The memory backend can be selected at launch:
 

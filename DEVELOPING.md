@@ -105,7 +105,7 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
 ```
 
 This writes separate reports named
-`fanout-<arch>-<resolution>-<rate>-<label>-<node>`. Override
+`fanout-<arch>-<width>x<height>-<rate>-<label>-<node>`. Override
 `nsys_profile_flags` to change the default `--trace=osrt,nvtx,cuda` flags.
 
 Expected NVTX ranges include slot acquisition, producer kernel work, input
