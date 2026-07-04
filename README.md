@@ -12,7 +12,7 @@ subscriber processes through CUDA IPC.
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install --packages-up-to multi_process_image_fanout
 source install/setup.bash
-ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.xml
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py
 ```
 
 See [examples/multi_process_image_fanout/README.md](examples/multi_process_image_fanout/README.md)
@@ -39,7 +39,7 @@ and [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_i
 - `ros2_cuda_ipc_test` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
 - `multi_process_image_fanout` — 複数プロセスへ GPU 画像をゼロコピー配信する主デモ
 - `utils/gpu_image_transport` — `ImageView` を CPU `sensor_msgs` へ変換する補助ノード群
-- `examples/legacy/julia_set` — Julia集合のGPU描画デモノード
+- `examples/legacy/julia_set` — 旧 Julia集合デモ（既定のビルド対象外）
 
 ## 開発環境セットアップ
 
@@ -89,34 +89,23 @@ ros2 launch ros2_cuda_ipc_test vmm.launch.py
 
 詳細は [ros2_cuda_ipc_test/README.md](ros2_cuda_ipc_test/README.md) を参照してください。
 
-### Legacy Julia Set デモ実行
-
-GPU 上で Julia 集合を描画し、`ros2_cuda_ipc_core` の `GpuLeasePool` と TypeAdapter API を使って ROS 2 プロセス間で GPU 画像を共有するデモです。
-このデモは `examples/legacy` に移動済みで、既定の colcon ビルド対象からは外しています。
-実行する場合は `examples/legacy/COLCON_IGNORE` を一時的に退避してから legacy package をビルドしてください。
-
-```bash
-ros2 launch julia_set julia_set_demo.launch.py
-```
-
-主なパラメータ:
-- `memory_backend`: GPU メモリ共有方式（`cuda_ipc` または `vmm_fd`）
-- `publish_rate_hz`: Publish 周期（既定 30 Hz）
-- `slot_count`: 確保する GPU メモリスロット数（既定 4）
-- `pending_ttl_ms`: 未消費スロットを強制解放する猶予時間 [ms]
-- `shm_name`: lease 管理用の共有メモリ名
-- `device_index`: 利用する CUDA デバイス（既定 0）
-- `width`, `height`, `max_iterations`, `zoom`: 描画パラメータ
-
-詳細は [examples/legacy/julia_set/README.md](examples/legacy/julia_set/README.md) を参照してください。
-
 ## Multi-process Image Fanout デモ実行
 
 `multi_process_image_fanout` は、1 つの GPU 画像を複数の独立した ROS 2 プロセスへゼロコピーで配る主デモです。
 
 ```bash
-ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.xml
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py
 ```
+
+主なパラメータ:
+- `memory_backend`: GPU メモリ共有方式（`cuda_ipc` または `vmm_fd`）
+- `publish_rate_hz`: Publish 周期（既定 30 Hz）
+- `resolution`: 解像度プリセット（`480p`, `720p`, `1080p`, `4K`, `8K`, `16K`）
+- `width`, `height`: `resolution` がプリセット名でない場合の画像サイズ
+- `slot_count`: 確保する GPU メモリスロット数（既定 4）
+- `pending_ttl_ms`: 未消費スロットを強制解放する猶予時間 [ms]
+- `shm_name`: lease 管理用の共有メモリ名
+- `device_index`: 利用する CUDA デバイス（既定 0）
 
 主なノード:
 - `gpu_image_publisher`
@@ -212,14 +201,16 @@ Jetson Orin のような CUDA IPC のメモリ共有をサポートしていな�
 
 バックエンドは起動時に `memory_backend` パラメータで指定します。
 
-#### Julia Set デモでの指定例
+#### multi_process_image_fanout での指定例
 
 ```bash
 # CUDA IPC バックエンド（デフォルト）
-ros2 launch julia_set julia_set_demo.launch.py memory_backend:=cuda_ipc
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
+  memory_backend:=cuda_ipc
 
 # VMM + FD バックエンド（Jetson Orin 向け）
-ros2 launch julia_set julia_set_demo.launch.py memory_backend:=vmm_fd
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
+  memory_backend:=vmm_fd
 ```
 
 **注意事項:**
