@@ -21,6 +21,15 @@ namespace multi_process_image_fanout {
 namespace {
 
 constexpr uint32_t kChannels = 4;
+constexpr uint64_t kBytesPerPixel = 4;
+
+bool is_supported_rgba8_layout(
+    const ros2_cuda_ipc_core::view::ImageView& view) noexcept {
+  const uint64_t row_bytes =
+      static_cast<uint64_t>(view.cols()) * kBytesPerPixel;
+  return view.strideC() == 1 && view.strideW() == kBytesPerPixel &&
+         view.strideH() >= row_bytes;
+}
 
 }  // namespace
 
@@ -88,6 +97,12 @@ class InferenceLikeNode : public rclcpp::Node {
         view.channels() != kChannels) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Skipping image with unsupported dtype/channels");
+      return;
+    }
+    if (!is_supported_rgba8_layout(view)) {
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "Skipping image with unsupported RGBA8 stride layout");
       return;
     }
     if (view.rows() == 0 || view.cols() == 0) {
