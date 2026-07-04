@@ -36,10 +36,9 @@ and [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_i
 
 - `ros2_cuda_ipc_msgs` — GPU バッファ共有のためのメッセージ定義
 - `ros2_cuda_ipc_core` — メモリープール、CUDA IPCユーティリティ、マッパの C++ 実装（CUDA 前提）
-- `ros2_cuda_ipc_test` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
-- `multi_process_image_fanout` — 複数プロセスへ GPU 画像をゼロコピー配信する主デモ
+- `examples/multi_process_image_fanout` — 複数プロセスへ GPU 画像をゼロコピー配信する主デモ
 - `utils/gpu_image_transport` — `ImageView` を CPU `sensor_msgs` へ変換する補助ノード群
-- `examples/legacy/julia_set` — 旧 Julia集合デモ（既定のビルド対象外）
+- `urils/ros2_cuda_ipc_test` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
 
 ## 開発環境セットアップ
 
@@ -87,7 +86,7 @@ ros2 launch ros2_cuda_ipc_test cuda_ipc.launch.py
 ros2 launch ros2_cuda_ipc_test vmm.launch.py
 ```
 
-詳細は [ros2_cuda_ipc_test/README.md](ros2_cuda_ipc_test/README.md) を参照してください。
+詳細は [utils/ros2_cuda_ipc_test/README.md](utils/ros2_cuda_ipc_test/README.md) を参照してください。
 
 ## Multi-process Image Fanout デモ実行
 
