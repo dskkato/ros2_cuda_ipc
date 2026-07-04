@@ -8,14 +8,6 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-RESOLUTIONS = {
-    "16K": (15360, 8640),
-    "8K": (7680, 4320),
-    "4K": (3840, 2160),
-    "1080p": (1920, 1080),
-    "720p": (1280, 720),
-    "480p": (852, 480),
-}
 DEFAULT_NSYS_FLAGS = "--trace=osrt,nvtx,cuda"
 
 
@@ -30,7 +22,6 @@ def generate_launch_description() -> LaunchDescription:
             "inference_status_topic", default_value="/fanout/inference_like/status"
         ),
         DeclareLaunchArgument("publish_rate_hz", default_value="30.0"),
-        DeclareLaunchArgument("resolution", default_value="1080p"),
         DeclareLaunchArgument("width", default_value="1920"),
         DeclareLaunchArgument("height", default_value="1080"),
         DeclareLaunchArgument("device_index", default_value="0"),
@@ -74,11 +65,8 @@ def launch_setup(context) -> List[Node]:
     def as_float(name: str) -> float:
         return float(value(name))
 
-    resolution_key = value("resolution")
     width_value = as_int("width")
     height_value = as_int("height")
-    if resolution_key in RESOLUTIONS:
-        width_value, height_value = RESOLUTIONS[resolution_key]
 
     publish_rate = as_float("publish_rate_hz")
     slot_count = as_int("slot_count")
@@ -97,7 +85,7 @@ def launch_setup(context) -> List[Node]:
     profile_base = None
     if enable_nsys:
         profile_base = build_profile_name(
-            nsys_label, resolution_key, width_value, height_value, publish_rate
+            nsys_label, width_value, height_value, publish_rate
         )
 
     publisher = make_node(
@@ -198,21 +186,18 @@ def make_node(
 
 def build_profile_name(
     label: str,
-    resolution_key: str,
     width: int,
     height: int,
     publish_rate: float,
 ) -> str:
-    resolution_token = (
-        resolution_key if resolution_key in RESOLUTIONS else f"{width}x{height}"
-    )
+    size_token = f"{width}x{height}"
     rate_int = int(publish_rate)
     rate_token = (
         f"{rate_int}hz"
         if abs(publish_rate - rate_int) < 1e-6
         else f"{publish_rate:.1f}hz"
     )
-    base = f"fanout-{platform.machine()}-{resolution_token}-{rate_token}"
+    base = f"fanout-{platform.machine()}-{size_token}-{rate_token}"
     label = label.strip()
     if label:
         base = f"{base}-{label}"

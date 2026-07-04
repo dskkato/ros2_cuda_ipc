@@ -58,7 +58,8 @@ Optional overrides:
 
 ```bash
 ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
-  resolution:=720p \
+  width:=1280 \
+  height:=720 \
   publish_rate_hz:=60.0 \
   memory_backend:=cuda_ipc \
   slot_count:=4 \
@@ -75,10 +76,9 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   memory_backend:=vmm_fd
 ```
 
-`resolution` accepts `480p`, `720p`, `1080p`, `4K`, `8K`, and `16K`. If it is
-not one of those names, the launch file uses `width` and `height` directly.
-The `memory_backend`, `slot_count`, `pending_ttl_ms`, `shm_name`, and
-`device_index` arguments are publisher-side pseudo-camera parameters.
+The `width`, `height`, `memory_backend`, `slot_count`, `pending_ttl_ms`,
+`shm_name`, and `device_index` arguments are publisher-side pseudo-camera
+parameters.
 
 ## Visualize preview
 
@@ -122,7 +122,7 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
 ```
 
 This wraps each process with `nsys profile` and writes separate reports named
-`fanout-<arch>-<resolution>-<rate>-<label>-<node>`. Override
+`fanout-<arch>-<width>x<height>-<rate>-<label>-<node>`. Override
 `nsys_profile_flags` to change the default `--trace=osrt,nvtx,cuda` flags.
 Nsight Systems should show NVTX ranges for slot acquisition, producer kernel
 work, input event waits, preview image copy, encoder-like kernels, and
