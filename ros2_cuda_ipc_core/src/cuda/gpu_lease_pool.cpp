@@ -85,20 +85,19 @@ bool GpuLeasePool::matches(uint64_t frame_size_bytes,
          device_index_ == device_index;
 }
 
-std::optional<GpuLeasePool::Slot*> GpuLeasePool::acquire(
-    std::size_t subscriber_count) {
+GpuLeasePool::Slot* GpuLeasePool::acquire(std::size_t subscriber_count) {
   if (!initialised_) {
-    return std::nullopt;
+    return nullptr;
   }
 
   auto free_slot = LeaseHandle::choose_empty_slot(config_.shm_name);
   if (!free_slot.has_value()) {
-    return std::nullopt;
+    return nullptr;
   }
   if (free_slot.value() >= slots_.size()) {
     RCLCPP_ERROR(logger_, "LeaseHandle returned invalid slot index %u",
                  free_slot.value());
-    return std::nullopt;
+    return nullptr;
   }
 
   Slot& slot = slots_[free_slot.value()];
@@ -107,7 +106,7 @@ std::optional<GpuLeasePool::Slot*> GpuLeasePool::acquire(
       config_.shm_name, slot.index, static_cast<uint32_t>(subscriber_count));
   if (!generation.has_value()) {
     RCLCPP_WARN(logger_, "Failed to bump generation for slot %u", slot.index);
-    return std::nullopt;
+    return nullptr;
   }
   slot.generation = generation.value();
 
