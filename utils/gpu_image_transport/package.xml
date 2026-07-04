@@ -2,7 +2,7 @@
 <package format="3">
   <name>gpu_image_transport</name>
   <version>0.0.0</version>
-  <description>GPU to CPU image transport node for ros2_cuda_ipc samples.</description>
+  <description>Utility nodes that bridge ros2_cuda_ipc ImageView messages to CPU sensor_msgs image topics.</description>
   <maintainer email="dskkato@example.com">dskkato</maintainer>
   <license>MIT</license>
 

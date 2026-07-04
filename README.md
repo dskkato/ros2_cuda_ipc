@@ -38,7 +38,7 @@ and [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_i
 - `ros2_cuda_ipc_core` — メモリープール、CUDA IPCユーティリティ、マッパの C++ 実装（CUDA 前提）
 - `ros2_cuda_ipc_test` — CUDA IPC と VMM-FD の動作テストアプリケーション（ROS2非依存）
 - `multi_process_image_fanout` — 複数プロセスへ GPU 画像をゼロコピー配信する主デモ
-- `examples/legacy/gpu_image_transport` — GPU画像転送用のimage_transport プラグイン
+- `utils/gpu_image_transport` — `ImageView` を CPU `sensor_msgs` へ変換する補助ノード群
 - `examples/legacy/julia_set` — Julia集合のGPU描画デモノード
 
 ## 開発環境セットアップ
