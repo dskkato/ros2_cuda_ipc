@@ -51,17 +51,19 @@ Use `--packages-up-to` so workspace dependencies are built as needed.
 ## Launch
 
 ```bash
-ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.xml
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py
 ```
 
 Optional overrides:
 
 ```bash
-ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.xml \
-  width:=1280 \
-  height:=720 \
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
+  resolution:=720p \
   publish_rate_hz:=60.0 \
   memory_backend:=cuda_ipc \
+  slot_count:=4 \
+  pending_ttl_ms:=300 \
+  shm_name:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```
 
@@ -69,9 +71,14 @@ On environments where the core package supports VMM-FD sharing, for example
 Jetson Orin:
 
 ```bash
-ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.xml \
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   memory_backend:=vmm_fd
 ```
+
+`resolution` accepts `480p`, `720p`, `1080p`, `4K`, `8K`, and `16K`. If it is
+not one of those names, the launch file uses `width` and `height` directly.
+The `memory_backend`, `slot_count`, `pending_ttl_ms`, `shm_name`, and
+`device_index` arguments are publisher-side pseudo-camera parameters.
 
 ## Visualize preview
 
@@ -109,10 +116,14 @@ The CUDA kernel smoke test skips gracefully when no CUDA device is available.
 ## Profile
 
 ```bash
-nsys profile -t cuda,nvtx,osrt -o /tmp/ros2_cuda_ipc_fanout \
-  ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.xml
+ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
+  enable_nsys:=true \
+  nsys_profile_label:=run1
 ```
 
+This wraps each process with `nsys profile` and writes separate reports named
+`fanout-<arch>-<resolution>-<rate>-<label>-<node>`. Override
+`nsys_profile_flags` to change the default `--trace=osrt,nvtx,cuda` flags.
 Nsight Systems should show NVTX ranges for slot acquisition, producer kernel
 work, input event waits, preview image copy, encoder-like kernels, and
 inference-like kernels. A large device-to-host image copy should appear only in
