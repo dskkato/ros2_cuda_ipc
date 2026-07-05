@@ -101,7 +101,7 @@ ros2 launch cuda_ipc_poc cuda_ipc.launch.py
 
 Test VMM-FD:
 ```bash
-ros2 launch cuda_ipc_poc vmm.launch.py
+ros2 launch cuda_ipc_poc vmm_fd.launch.py
 ```
 
 ## Test Description
@@ -149,9 +149,12 @@ ros2 launch cuda_ipc_poc vmm.launch.py
 ## Architecture
 
 All test applications are pure CUDA code without ROS2 dependencies:
-- `src/cuda_ipc_producer.cu`: CUDA IPC producer (Runtime API)
-- `src/cuda_ipc_consumer.cu`: CUDA IPC consumer (Runtime API)
-- `src/vmm_fd_producer.cu`: VMM-FD producer (Driver API)
-- `src/vmm_fd_consumer.cu`: VMM-FD consumer (Driver API)
+- `src/cuda_ipc/cuda_ipc_producer.cu`: CUDA IPC producer (Runtime API)
+- `src/cuda_ipc/cuda_ipc_consumer.cu`: CUDA IPC consumer (Runtime API)
+- `src/vmm_fd/vmm_fd_producer.cu`: VMM-FD producer (Driver API)
+- `src/vmm_fd/vmm_fd_consumer.cu`: VMM-FD consumer (Driver API)
+- `include/cuda_ipc_poc/cuda_ipc/ipc_msg.hpp`: CUDA IPC message definition
+- `include/cuda_ipc_poc/vmm_fd/ipc_msg.hpp`: VMM-FD message definition
+- `include/cuda_ipc_poc/common/cuda_check.hpp`: CUDA/Driver API error-check helpers
 
 The CMakeLists.txt supports both ROS2 (with `ament_cmake`) and standalone builds, making these tests portable and reusable.

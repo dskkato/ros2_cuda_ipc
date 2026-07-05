@@ -15,40 +15,15 @@
 #include <cstdlib>
 #include <cstring>
 
-#define CU_CHECK(call)                                                  \
-  do {                                                                  \
-    CUresult _e = (call);                                               \
-    if (_e != CUDA_SUCCESS) {                                           \
-      const char* name = nullptr;                                       \
-      const char* str = nullptr;                                        \
-      cuGetErrorName(_e, &name);                                        \
-      cuGetErrorString(_e, &str);                                       \
-      fprintf(stderr, "[CU ERROR] %s:%d: %s: %s\n", __FILE__, __LINE__, \
-              name ? name : "?", str ? str : "?");                      \
-      exit(1);                                                          \
-    }                                                                   \
-  } while (0)
+#include "cuda_ipc_poc/cuda_check.hpp"
+#include "ipc_msg.hpp"
 
-#define CUDA_CHECK(call)                                                   \
-  do {                                                                     \
-    cudaError_t _e = (call);                                               \
-    if (_e != cudaSuccess) {                                               \
-      fprintf(stderr, "[CUDA ERROR] %s:%d: %s (%d)\n", __FILE__, __LINE__, \
-              cudaGetErrorString(_e), (int)_e);                            \
-      exit(1);                                                             \
-    }                                                                      \
-  } while (0)
+using cuda_ipc_poc::vmm_fd::IpcMsg;
 
 __global__ void fill_kernel(int* p, int n, int v) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < n) p[i] = v;
 }
-
-struct MsgHeader {
-  int dev;
-  size_t logical_bytes;
-  size_t alloc_bytes;
-};
 
 static int make_server_socket(const char* path) {
   int fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -84,8 +59,7 @@ static int accept_client(int server_fd) {
   return c;
 }
 
-static void send_fd_with_header(int sock, int fd_to_send,
-                                const MsgHeader& hdr) {
+static void send_fd_with_header(int sock, int fd_to_send, const IpcMsg& hdr) {
   // send header bytes + fd via SCM_RIGHTS
   struct msghdr msg{};
   struct iovec iov{};
@@ -209,7 +183,7 @@ int main(int argc, char** argv) {
   int cfd = accept_client(sfd);
   printf("[producer] consumer connected\n");
 
-  MsgHeader hdr{};
+  IpcMsg hdr{};
   hdr.dev = dev;
   hdr.logical_bytes = logical_bytes;
   hdr.alloc_bytes = alloc_bytes;

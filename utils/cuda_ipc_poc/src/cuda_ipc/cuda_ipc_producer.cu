@@ -12,26 +12,15 @@
 #include <cstdlib>
 #include <cstring>
 
-#define CUDA_CHECK(call)                                                   \
-  do {                                                                     \
-    cudaError_t _e = (call);                                               \
-    if (_e != cudaSuccess) {                                               \
-      fprintf(stderr, "[CUDA ERROR] %s:%d: %s (%d)\n", __FILE__, __LINE__, \
-              cudaGetErrorString(_e), (int)_e);                            \
-      exit(1);                                                             \
-    }                                                                      \
-  } while (0)
+#include "cuda_ipc_poc/cuda_check.hpp"
+#include "ipc_msg.hpp"
+
+using cuda_ipc_poc::cuda_ipc::IpcMsg;
 
 __global__ void fill_kernel(int* p, int n, int v) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < n) p[i] = v;
 }
-
-struct IpcMsg {
-  int dev;
-  size_t bytes;
-  cudaIpcMemHandle_t handle;
-};
 
 static void ensure_fifo(const char* path) {
   // recreate FIFO to avoid stale state
