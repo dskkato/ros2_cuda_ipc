@@ -154,6 +154,13 @@ int main() {
   printf("[consumer] mapped imported memory (dptr=0x%llx)\n",
          (unsigned long long)dptr);
 
+  cudaEvent_t ready_event = nullptr;
+  CUDA_CHECK(cudaIpcOpenEventHandle(&ready_event, hdr.event_handle));
+  printf("[consumer] cudaIpcOpenEventHandle OK\n");
+
+  CUDA_CHECK(cudaEventSynchronize(ready_event));
+  printf("[consumer] producer ready event synchronized\n");
+
   // Verify read
   int host_before[4] = {0, 0, 0, 0};
   CUDA_CHECK(cudaMemcpy(host_before, (void*)dptr, sizeof(host_before),
@@ -174,6 +181,7 @@ int main() {
          host_after[1], host_after[2], host_after[3]);
 
   // Cleanup mapping and handle
+  CUDA_CHECK(cudaEventDestroy(ready_event));
   CU_CHECK(cuMemUnmap(dptr, hdr.alloc_bytes));
   CU_CHECK(cuMemAddressFree(dptr, hdr.alloc_bytes));
   CU_CHECK(cuMemRelease(allocHandle));

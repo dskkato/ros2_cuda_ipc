@@ -6,8 +6,8 @@ Test applications for different CUDA IPC (Inter-Process Communication) mechanism
 
 This package contains standalone test programs that demonstrate and verify different CUDA memory sharing approaches:
 
-1. **CUDA IPC** (`cuda_ipc_producer.cu`, `cuda_ipc_consumer.cu`): Traditional CUDA IPC using `cudaIpcGetMemHandle`/`cudaIpcOpenMemHandle`
-2. **VMM-FD** (`vmm_fd_producer.cu`, `vmm_fd_consumer.cu`): Modern approach using CUDA Driver API Virtual Memory Management with POSIX file descriptor export
+1. **CUDA IPC** (`cuda_ipc_producer.cu`, `cuda_ipc_consumer.cu`): Traditional CUDA IPC using `cudaIpcGetMemHandle`/`cudaIpcOpenMemHandle` and `cudaIpcGetEventHandle`/`cudaIpcOpenEventHandle`
+2. **VMM-FD** (`vmm_fd_producer.cu`, `vmm_fd_consumer.cu`): Modern approach using CUDA Driver API Virtual Memory Management with POSIX file descriptor export and CUDA IPC event synchronization
 
 These tests are intentionally kept as standalone applications with no ROS2 dependencies in the source code, making them useful for debugging IPC issues independently of ROS2.
 
@@ -110,7 +110,8 @@ ros2 launch cuda_ipc_poc vmm_fd.launch.py
 
 - **Communication**: Named pipes (FIFOs) at `/tmp/cuda_ipc_handle.fifo` and `/tmp/cuda_ipc_done.fifo`
 - **Memory Allocation**: `cudaMalloc` (Runtime API)
-- **IPC Method**: `cudaIpcGetMemHandle` / `cudaIpcOpenMemHandle`
+- **IPC Method**: `cudaIpcGetMemHandle` / `cudaIpcOpenMemHandle` and `cudaIpcGetEventHandle` / `cudaIpcOpenEventHandle`
+- **Ready Synchronization**: Consumer waits on the producer's CUDA IPC event before reading the shared memory
 - **Expected Behavior**: 
   - Producer allocates memory, fills with value 123
   - Consumer opens the handle, reads data, adds 7 (result: 130)
@@ -121,6 +122,7 @@ ros2 launch cuda_ipc_poc vmm_fd.launch.py
 - **Communication**: Unix domain socket at `/tmp/cuda_fd_share.sock`
 - **Memory Allocation**: `cuMemCreate` + `cuMemAddressReserve` + `cuMemMap` (Driver API)
 - **IPC Method**: POSIX file descriptor via `SCM_RIGHTS`
+- **Ready Synchronization**: Consumer waits on the producer's CUDA IPC event before reading the imported memory
 - **Memory Alignment**: Uses `cuMemGetAllocationGranularity` for proper alignment
 - **Expected Behavior**:
   - Producer allocates memory with proper granularity, fills with value 123

@@ -163,11 +163,19 @@ int main(int argc, char** argv) {
   printf("[producer] cuMemMap + cuMemSetAccess OK (dptr=0x%llx)\n",
          (unsigned long long)dptr);
 
+  cudaEvent_t ready_event = nullptr;
+  CUDA_CHECK(cudaEventCreateWithFlags(
+      &ready_event, cudaEventDisableTiming | cudaEventInterprocess));
+
   // Fill via runtime kernel (same primary context)
   fill_kernel<<<(N + 255) / 256, 256>>>((int*)dptr, N, 123);
   CUDA_CHECK(cudaGetLastError());
-  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaEventRecord(ready_event, 0));
   printf("[producer] filled buffer with 123\n");
+
+  cudaIpcEventHandle_t event_h{};
+  CUDA_CHECK(cudaIpcGetEventHandle(&event_h, ready_event));
+  printf("[producer] cudaIpcGetEventHandle OK\n");
 
   // Export to POSIX FD
   int share_fd = -1;
@@ -187,8 +195,9 @@ int main(int argc, char** argv) {
   hdr.dev = dev;
   hdr.logical_bytes = logical_bytes;
   hdr.alloc_bytes = alloc_bytes;
+  hdr.event_handle = event_h;
   send_fd_with_header(cfd, share_fd, hdr);
-  printf("[producer] sent fd + header (bytes=%zu)\n", bytes);
+  printf("[producer] sent fd + event/header (bytes=%zu)\n", bytes);
 
   // Wait for done
   recv_done(cfd);
@@ -205,6 +214,7 @@ int main(int argc, char** argv) {
   close(sfd);
   close(share_fd);
 
+  CUDA_CHECK(cudaEventDestroy(ready_event));
   CU_CHECK(cuMemUnmap(dptr, alloc_bytes));
   CU_CHECK(cuMemAddressFree(dptr, alloc_bytes));
   CU_CHECK(cuMemRelease(allocHandle));

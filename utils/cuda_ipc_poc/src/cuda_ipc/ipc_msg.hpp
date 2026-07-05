@@ -13,6 +13,7 @@ struct IpcMsg {
   int dev;
   size_t bytes;
   cudaIpcMemHandle_t handle;
+  cudaIpcEventHandle_t event_handle;
 };
 
 }  // namespace cuda_ipc_poc::cuda_ipc
