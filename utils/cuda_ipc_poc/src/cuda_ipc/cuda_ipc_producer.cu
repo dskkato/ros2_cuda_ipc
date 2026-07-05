@@ -12,26 +12,15 @@
 #include <cstdlib>
 #include <cstring>
 
-#define CUDA_CHECK(call)                                                   \
-  do {                                                                     \
-    cudaError_t _e = (call);                                               \
-    if (_e != cudaSuccess) {                                               \
-      fprintf(stderr, "[CUDA ERROR] %s:%d: %s (%d)\n", __FILE__, __LINE__, \
-              cudaGetErrorString(_e), (int)_e);                            \
-      exit(1);                                                             \
-    }                                                                      \
-  } while (0)
+#include "cuda_ipc_poc/cuda_check.hpp"
+#include "ipc_msg.hpp"
+
+using cuda_ipc_poc::cuda_ipc::IpcMsg;
 
 __global__ void fill_kernel(int* p, int n, int v) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < n) p[i] = v;
 }
-
-struct IpcMsg {
-  int dev;
-  size_t bytes;
-  cudaIpcMemHandle_t handle;
-};
 
 static void ensure_fifo(const char* path) {
   // recreate FIFO to avoid stale state
@@ -65,25 +54,42 @@ int main(int argc, char** argv) {
   int* buf = nullptr;
   CUDA_CHECK(cudaMalloc(&buf, bytes));
 
+  cudaEvent_t ready_event = nullptr;
+  CUDA_CHECK(cudaEventCreateWithFlags(
+      &ready_event, cudaEventDisableTiming | cudaEventInterprocess));
+
   fill_kernel<<<(N + 255) / 256, 256>>>(buf, N, 123);
   CUDA_CHECK(cudaGetLastError());
-  CUDA_CHECK(cudaDeviceSynchronize());
+  CUDA_CHECK(cudaEventRecord(ready_event, 0));
 
   cudaIpcMemHandle_t h{};
   cudaError_t e = cudaIpcGetMemHandle(&h, (void*)buf);
   if (e != cudaSuccess) {
     fprintf(stderr, "[producer] cudaIpcGetMemHandle FAILED: %s (%d)\n",
             cudaGetErrorString(e), (int)e);
+    CUDA_CHECK(cudaEventDestroy(ready_event));
     CUDA_CHECK(cudaFree(buf));
     return 10;
   }
   printf("[producer] cudaIpcGetMemHandle OK\n");
+
+  cudaIpcEventHandle_t event_h{};
+  e = cudaIpcGetEventHandle(&event_h, ready_event);
+  if (e != cudaSuccess) {
+    fprintf(stderr, "[producer] cudaIpcGetEventHandle FAILED: %s (%d)\n",
+            cudaGetErrorString(e), (int)e);
+    CUDA_CHECK(cudaEventDestroy(ready_event));
+    CUDA_CHECK(cudaFree(buf));
+    return 11;
+  }
+  printf("[producer] cudaIpcGetEventHandle OK\n");
 
   // send handle
   IpcMsg msg{};
   msg.dev = dev;
   msg.bytes = bytes;
   msg.handle = h;
+  msg.event_handle = event_h;
 
   int fdw = open(fifo_handle, O_WRONLY);
   if (fdw < 0) {
@@ -98,7 +104,7 @@ int main(int argc, char** argv) {
     return 4;
   }
   close(fdw);
-  printf("[producer] sent IPC handle (%zu bytes)\n", sizeof(msg));
+  printf("[producer] sent IPC memory/event handles (%zu bytes)\n", sizeof(msg));
 
   // wait done signal
   int fdr = open(fifo_done, O_RDONLY);
@@ -122,6 +128,7 @@ int main(int argc, char** argv) {
   printf("[producer] buf first 4 ints after consumer: %d %d %d %d\n", host[0],
          host[1], host[2], host[3]);
 
+  CUDA_CHECK(cudaEventDestroy(ready_event));
   CUDA_CHECK(cudaFree(buf));
   printf("[producer] DONE\n");
   return 0;

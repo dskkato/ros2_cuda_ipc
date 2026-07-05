@@ -12,26 +12,15 @@
 #include <cstdlib>
 #include <cstring>
 
-#define CUDA_CHECK(call)                                                   \
-  do {                                                                     \
-    cudaError_t _e = (call);                                               \
-    if (_e != cudaSuccess) {                                               \
-      fprintf(stderr, "[CUDA ERROR] %s:%d: %s (%d)\n", __FILE__, __LINE__, \
-              cudaGetErrorString(_e), (int)_e);                            \
-      exit(1);                                                             \
-    }                                                                      \
-  } while (0)
+#include "cuda_ipc_poc/cuda_check.hpp"
+#include "ipc_msg.hpp"
+
+using cuda_ipc_poc::cuda_ipc::IpcMsg;
 
 __global__ void add_kernel(int* p, int n, int v) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < n) p[i] += v;
 }
-
-struct IpcMsg {
-  int dev;
-  size_t bytes;
-  cudaIpcMemHandle_t handle;
-};
 
 int main() {
   const char* fifo_handle = "/tmp/cuda_ipc_handle.fifo";
@@ -51,7 +40,7 @@ int main() {
     fprintf(stderr, "[consumer] read msg failed: got %zd\n", r);
     return 3;
   }
-  printf("[consumer] received IPC handle (dev=%d, bytes=%zu)\n", msg.dev,
+  printf("[consumer] received IPC handles (dev=%d, bytes=%zu)\n", msg.dev,
          msg.bytes);
 
   CUDA_CHECK(cudaSetDevice(msg.dev));
@@ -80,6 +69,26 @@ int main() {
   }
   printf("[consumer] cudaIpcOpenMemHandle OK (opened=%p)\n", opened);
 
+  cudaEvent_t ready_event = nullptr;
+  e = cudaIpcOpenEventHandle(&ready_event, msg.event_handle);
+  if (e != cudaSuccess) {
+    fprintf(stderr, "[consumer] cudaIpcOpenEventHandle FAILED: %s (%d)\n",
+            cudaGetErrorString(e), (int)e);
+    CUDA_CHECK(cudaIpcCloseMemHandle(opened));
+    // notify producer even on failure (optional)
+    int fdw_fail = open(fifo_done, O_WRONLY);
+    if (fdw_fail >= 0) {
+      char d = 'F';
+      write(fdw_fail, &d, 1);
+      close(fdw_fail);
+    }
+    return 11;
+  }
+  printf("[consumer] cudaIpcOpenEventHandle OK\n");
+
+  CUDA_CHECK(cudaEventSynchronize(ready_event));
+  printf("[consumer] producer ready event synchronized\n");
+
   // read first ints
   int host[4] = {0, 0, 0, 0};
   CUDA_CHECK(cudaMemcpy(host, opened, sizeof(host), cudaMemcpyDeviceToHost));
@@ -96,6 +105,7 @@ int main() {
   printf("[consumer] opened first 4 ints (after +7): %d %d %d %d\n", host[0],
          host[1], host[2], host[3]);
 
+  CUDA_CHECK(cudaEventDestroy(ready_event));
   CUDA_CHECK(cudaIpcCloseMemHandle(opened));
   printf("[consumer] cudaIpcCloseMemHandle OK\n");
 

@@ -15,40 +15,15 @@
 #include <cstdlib>
 #include <cstring>
 
-#define CU_CHECK(call)                                                  \
-  do {                                                                  \
-    CUresult _e = (call);                                               \
-    if (_e != CUDA_SUCCESS) {                                           \
-      const char* name = nullptr;                                       \
-      const char* str = nullptr;                                        \
-      cuGetErrorName(_e, &name);                                        \
-      cuGetErrorString(_e, &str);                                       \
-      fprintf(stderr, "[CU ERROR] %s:%d: %s: %s\n", __FILE__, __LINE__, \
-              name ? name : "?", str ? str : "?");                      \
-      exit(1);                                                          \
-    }                                                                   \
-  } while (0)
+#include "cuda_ipc_poc/cuda_check.hpp"
+#include "ipc_msg.hpp"
 
-#define CUDA_CHECK(call)                                                   \
-  do {                                                                     \
-    cudaError_t _e = (call);                                               \
-    if (_e != cudaSuccess) {                                               \
-      fprintf(stderr, "[CUDA ERROR] %s:%d: %s (%d)\n", __FILE__, __LINE__, \
-              cudaGetErrorString(_e), (int)_e);                            \
-      exit(1);                                                             \
-    }                                                                      \
-  } while (0)
+using cuda_ipc_poc::vmm_fd::IpcMsg;
 
 __global__ void add_kernel(int* p, int n, int v) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i < n) p[i] += v;
 }
-
-struct MsgHeader {
-  int dev;
-  size_t logical_bytes;  // 4096
-  size_t alloc_bytes;    // Example: 65536 allocated bytes
-};
 
 static int connect_socket(const char* path) {
   int fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -69,7 +44,7 @@ static int connect_socket(const char* path) {
   return fd;
 }
 
-static void recv_fd_and_header(int sock, int* out_fd, MsgHeader* out_hdr) {
+static void recv_fd_and_header(int sock, int* out_fd, IpcMsg* out_hdr) {
   struct msghdr msg{};
   struct iovec iov{};
   iov.iov_base = out_hdr;
@@ -121,7 +96,7 @@ int main() {
   printf("[consumer] connected to %s\n", sock_path);
 
   int recv_fd = -1;
-  MsgHeader hdr{};
+  IpcMsg hdr{};
   recv_fd_and_header(sock, &recv_fd, &hdr);
   printf("[consumer] received fd=%d dev=%d bytes=%zu\n", recv_fd, hdr.dev,
          hdr.alloc_bytes);
@@ -179,6 +154,13 @@ int main() {
   printf("[consumer] mapped imported memory (dptr=0x%llx)\n",
          (unsigned long long)dptr);
 
+  cudaEvent_t ready_event = nullptr;
+  CUDA_CHECK(cudaIpcOpenEventHandle(&ready_event, hdr.event_handle));
+  printf("[consumer] cudaIpcOpenEventHandle OK\n");
+
+  CUDA_CHECK(cudaEventSynchronize(ready_event));
+  printf("[consumer] producer ready event synchronized\n");
+
   // Verify read
   int host_before[4] = {0, 0, 0, 0};
   CUDA_CHECK(cudaMemcpy(host_before, (void*)dptr, sizeof(host_before),
@@ -199,6 +181,7 @@ int main() {
          host_after[1], host_after[2], host_after[3]);
 
   // Cleanup mapping and handle
+  CUDA_CHECK(cudaEventDestroy(ready_event));
   CU_CHECK(cuMemUnmap(dptr, hdr.alloc_bytes));
   CU_CHECK(cuMemAddressFree(dptr, hdr.alloc_bytes));
   CU_CHECK(cuMemRelease(allocHandle));
