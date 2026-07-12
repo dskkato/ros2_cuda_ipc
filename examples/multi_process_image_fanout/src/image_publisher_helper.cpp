@@ -99,6 +99,10 @@ ImagePublisherHelper::produce(std::size_t subscriber_count,
   if (err != cudaSuccess) {
     RCLCPP_ERROR(logger_, "launch_generate_rgba_pattern_kernel failed: %s",
                  ros2_cuda_ipc_core::cuda::cuda_error_to_string(err).c_str());
+    if (!pool_.cancel_pending(*slot)) {
+      RCLCPP_WARN(logger_, "Failed to cancel pending lease for slot %u",
+                  slot->index);
+    }
     return std::nullopt;
   }
 
@@ -110,21 +114,17 @@ ImagePublisherHelper::produce(std::size_t subscriber_count,
   if (err != cudaSuccess) {
     RCLCPP_ERROR(logger_, "cudaEventRecord failed for slot %u: %s", slot->index,
                  ros2_cuda_ipc_core::cuda::cuda_error_to_string(err).c_str());
+    if (!pool_.cancel_pending(*slot)) {
+      RCLCPP_WARN(logger_, "Failed to cancel pending lease for slot %u",
+                  slot->index);
+    }
     return std::nullopt;
   }
 
   // Publishable metadata for the GPU buffer and IPC handles. The pixel payload
   // stays on the device.
   ros2_cuda_ipc_core::view::ImageView view;
-  view.core.dev_ptr = slot->device_ptr;
-  view.core.ready_evt = slot->event;
-  view.core.device_id = config_.device_index;
-  view.core.byte_size = frame_size_bytes_;
-  view.core.slot_id = slot->index;
-  view.core.generation = slot->generation;
-  view.core.shm_name = config_.shm_name;
-  view.core.set_ipc_handles(slot->backend, slot->mem_handle.data(),
-                            slot->mem_handle.size(), slot->event_handle);
+  view.core = pool_.buffer_view_from(*slot);
   view.dtype = ros2_cuda_ipc_core::view::DType::U8;
   view.shape = {config_.height, config_.width, kDefaultChannels};
   view.strides = {config_.width * kBytesPerPixel, kDefaultChannels, 1};

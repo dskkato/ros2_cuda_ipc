@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -114,6 +115,35 @@ TEST_F(GpuLeasePoolTest, ReclaimStalePendingClearsLease) {
       ros2_cuda_ipc_core::LeaseHandle::current_pending(shm_name, slot->index);
   ASSERT_TRUE(pending_after.has_value());
   EXPECT_EQ(pending_after.value(), 0u);
+
+  pool.reset();
+  ::shm_unlink(shm_name.c_str());
+}
+
+TEST_F(GpuLeasePoolTest, BufferViewFromCopiesSlotMetadataAndIpcHandles) {
+  const std::string shm_name = make_unique_shm_name("gpu_buffer_view_from");
+  auto logger = rclcpp::get_logger("GpuLeasePoolTest");
+  GpuLeasePool pool({shm_name, 1, std::chrono::milliseconds(100)}, logger);
+
+  ASSERT_TRUE(pool.initialise(1024, 0));
+  auto* slot = pool.acquire(0);
+  ASSERT_NE(slot, nullptr);
+
+  const auto view = pool.buffer_view_from(*slot);
+  EXPECT_TRUE(view.valid());
+  EXPECT_EQ(view.dev_ptr, slot->device_ptr);
+  EXPECT_EQ(view.ready_evt, slot->event);
+  EXPECT_EQ(view.device_id, 0);
+  EXPECT_EQ(view.byte_size, 1024u);
+  EXPECT_EQ(view.slot_id, slot->index);
+  EXPECT_EQ(view.generation, slot->generation);
+  EXPECT_EQ(view.shm_name, shm_name);
+  EXPECT_EQ(view.backend(), slot->backend);
+  EXPECT_TRUE(view.handles_ready());
+  EXPECT_EQ(view.mem_payload(), slot->mem_handle);
+  EXPECT_EQ(std::memcmp(&view.event_handle(), &slot->event_handle,
+                        sizeof(cudaIpcEventHandle_t)),
+            0);
 
   pool.reset();
   ::shm_unlink(shm_name.c_str());
