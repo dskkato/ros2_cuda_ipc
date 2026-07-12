@@ -65,7 +65,7 @@ class GpuLeasePool {
   uint64_t frame_size_bytes() const noexcept { return frame_size_bytes_; }
   int device_index() const noexcept { return device_index_; }
 
-  view::BufferView buffer_view_from(const Slot& slot) const noexcept;
+  view::BufferView buffer_view_from(const Slot& slot) const;
 
   class MemoryBackend {
    public:
