@@ -114,7 +114,10 @@ ImagePublisherHelper::produce(std::size_t subscriber_count,
   if (err != cudaSuccess) {
     RCLCPP_ERROR(logger_, "cudaEventRecord failed for slot %u: %s", slot->index,
                  ros2_cuda_ipc_core::cuda::cuda_error_to_string(err).c_str());
-    pool_.cancel_pending(*slot);
+    if (!pool_.cancel_pending(*slot)) {
+      RCLCPP_WARN(logger_, "Failed to cancel pending lease for slot %u",
+                  slot->index);
+    }
     return std::nullopt;
   }
 
