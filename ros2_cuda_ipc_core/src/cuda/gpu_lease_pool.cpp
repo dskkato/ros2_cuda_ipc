@@ -167,6 +167,20 @@ bool GpuLeasePool::cancel_pending(Slot& slot) {
   return false;
 }
 
+view::BufferView GpuLeasePool::map_slot(const Slot& slot) const noexcept {
+  view::BufferView view;
+  view.dev_ptr = slot.device_ptr;
+  view.ready_evt = slot.event;
+  view.device_id = device_index_;
+  view.byte_size = frame_size_bytes_;
+  view.slot_id = slot.index;
+  view.generation = slot.generation;
+  view.shm_name = config_.shm_name;
+  view.set_ipc_handles(slot.backend, slot.mem_handle.data(),
+                       slot.mem_handle.size(), slot.event_handle);
+  return view;
+}
+
 bool GpuLeasePool::allocate_slots() {
   memory_backend_ = make_backend(config_.backend);
   if (!memory_backend_) {

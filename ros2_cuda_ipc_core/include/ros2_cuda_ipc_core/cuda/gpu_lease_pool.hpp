@@ -13,6 +13,7 @@
 
 #include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
+#include "ros2_cuda_ipc_core/view/buffer_view.hpp"
 
 namespace ros2_cuda_ipc_core::cuda {
 
@@ -63,6 +64,8 @@ class GpuLeasePool {
 
   uint64_t frame_size_bytes() const noexcept { return frame_size_bytes_; }
   int device_index() const noexcept { return device_index_; }
+
+  view::BufferView map_slot(const Slot& slot) const noexcept;
 
   class MemoryBackend {
    public:
