@@ -118,7 +118,7 @@ ImagePublisherHelper::produce(std::size_t subscriber_count,
   // Publishable metadata for the GPU buffer and IPC handles. The pixel payload
   // stays on the device.
   ros2_cuda_ipc_core::view::ImageView view;
-  view.core = pool_.map_slot(*slot);
+  view.core = pool_.buffer_view_from(*slot);
   view.dtype = ros2_cuda_ipc_core::view::DType::U8;
   view.shape = {config_.height, config_.width, kDefaultChannels};
   view.strides = {config_.width * kBytesPerPixel, kDefaultChannels, 1};

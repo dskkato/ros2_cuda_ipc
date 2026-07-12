@@ -167,7 +167,8 @@ bool GpuLeasePool::cancel_pending(Slot& slot) {
   return false;
 }
 
-view::BufferView GpuLeasePool::map_slot(const Slot& slot) const noexcept {
+view::BufferView GpuLeasePool::buffer_view_from(
+    const Slot& slot) const noexcept {
   view::BufferView view;
   view.dev_ptr = slot.device_ptr;
   view.ready_evt = slot.event;
