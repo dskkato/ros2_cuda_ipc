@@ -2,130 +2,265 @@
 
 ## 目的
 
-Publisher 側の `GpuLeasePool` は、GPU allocation、CUDA IPC event、backend 固有の
-状態、slot の lease lifecycle、そして publish 用 `BufferView` の組み立てを同時に
-扱っている。この方針ではこれらを独立した責務に分け、Publisher helper が slot の
-内部状態や backend 実装へ直接依存しない構造へ移行する。
+Publisher 側の `GpuLeasePool` は、現在、次の責務を一つの class に集約している。
 
-対象は Publisher 側のバッファ確保・再利用・publish 準備である。Subscriber 側の
-`BufferViewMapper`、`LeaseHandle` の acquire/release プロトコル、および ROS message
-の wire format はこの変更だけでは変更しない。
+- GPU allocation の確保と破棄
+- CUDA IPC event の作成と破棄
+- memory backend 固有 resource の所有
+- slot の lease lifecycle 管理
+- publish に使う slot の選択
+- generation と pending の更新
+- stale pending の回収
+- publish 失敗時の rollback
+- publish 用 metadata の生成
+- Publisher 内部用 `BufferView` の生成
 
-## 前提と判断
+これらは lifetime、更新頻度、依存先が異なる責務である。特に、長寿命な GPU resource の所有と、publish ごとに変化する slot lifecycle が同じ `Slot` に保持されているため、Publisher helper が pool 内部状態や backend 実装へ直接依存しやすい。
+
+本方針では、これらを次の単位に分割する。
+
+- `GpuBufferPool`: 長寿命な GPU resource の所有
+- `SlotController`: publish と lease に関する lifecycle state の管理
+- `PublishSlot`: 一回の publish に必要な capability
+- `GpuBufferController`: Publisher helper 向け facade
+- `BufferDescriptor`: ROS 非依存の publish metadata
+
+対象は Publisher 側のバッファ確保、再利用、publish 準備である。
+
+Subscriber 側の `BufferViewMapper`、`LeaseHandle` の acquire/release protocol、および既存 ROS message の wire format は、この refactoring だけでは変更しない。
+
+## 設計上の判断
 
 | 項目 | 方針 |
 | --- | --- |
-| slot の所有者 | `GpuBufferPool` が GPU allocation、ready event、backend 固有 resource を一括所有する。 |
-| lifecycle の所有者 | `SlotController` が `LeaseHandle` を用いた空き slot 選択、generation、pending、TTL、cancel を担当する。 |
-| publish 中の権限 | `PublishSlot` は acquire 成功後の一回の publish に必要な device pointer、event、descriptor を提供する。 |
-| 外部 API | `GpuBufferController` を Publisher helper 向け facade とし、内部 slot を露出しない。 |
-| ROS 依存 | resource/lifecycle/descriptor は ROS 非依存にする。ログは core 側で抽象化するか、呼び出し元から注入する。 |
-| CUDA 依存 | GPU memory と `cudaEvent_t`/`cudaIpcEventHandle_t` を扱うため CUDA 依存は残る。ここでいう ROS 非依存は CUDA 非依存を意味しない。 |
+| GPU resource の所有者 | `GpuBufferPool` が GPU allocation、ready event、backend 固有 resource を一括所有する。 |
+| slot lifecycle の所有者 | `SlotController` が shared lifetime state、generation、pending、TTL、cancel を管理する。 |
+| publish 中の capability | `PublishSlot` が一回の publish に必要な device pointer、ready event、slot/generation、descriptor を提供する。 |
+| Publisher helper 向け API | `GpuBufferController` を唯一の facade とし、内部 resource record や `LeaseHandle` を露出しない。 |
+| ROS 依存 | resource、lifecycle、reservation、descriptor は ROS 非依存にする。 |
+| CUDA 依存 | GPU allocation、`cudaEvent_t`、`cudaIpcEventHandle_t` を扱うため CUDA 依存は残る。 |
+| Publisher の View | 目標構成では Publisher は Subscriber 向け `BufferView` / `ImageView` を生成しない。 |
+| publish metadata | `BufferDescriptor` を ROS 非依存の値型とし、ROS message への変換は adapter 境界に置く。 |
 
-`BufferDescriptor` は ROS message ではなく、Publisher 側の publish metadata を表す
-値型とする。ROS の `BufferCore` への変換は adapter/mapper 境界に閉じ込める。
+ここでいう ROS 非依存は CUDA 非依存を意味しない。
+
+memory sharing backend は CUDA IPC と VMM + FD を切り替えられるが、ready event の process 間共有には、どちらの backend でも CUDA IPC event handle を用いる。
 
 ## 目標構成
 
 ```text
-ImagePublisherHelper / 他の Publisher helper
-                 |
-                 v
-       GpuBufferController  (facade)
-          |              |
-          v              v
-   GpuBufferPool     SlotController
-   resource owner    lifecycle state
-          \              /
-           \            /
+ImagePublisherHelper / other Publisher helpers
+                    |
+                    v
+          GpuBufferController
+              facade
+             /      \
+            v        v
+   GpuBufferPool   SlotController
+   resource owner  lifecycle owner
+            \        /
+             \      /
+              v    v
              PublishSlot
-          per-publish capability
-                 |
-                 v
-          BufferDescriptor
-                 |
-                 v
-      ROS adapter: BufferCore / BufferView
+        per-publish capability
+                    |
+                    v
+           BufferDescriptor
+                    |
+                    v
+      ROS adapter -> BufferCore
 ```
 
-### `GpuBufferPool`: resource ownership
+責務は次のように分かれる。
 
-`GpuBufferPool` は初期化済み slot の物理リソースだけを保持する。少なくとも以下を担う。
+```text
+GpuBufferPool
+  resource を所有する
 
-* 指定 device 上の slot ごとの GPU allocation の確保・破棄
-* `cudaEventDisableTiming | cudaEventInterprocess` の ready event の作成・破棄と IPC event handle の取得
-* `MemoryBackend` による CUDA IPC / VMM FD 固有 resource の生成・破棄
-* pool の構成（slot 数、byte size、device id、backend）と slot index から resource を引く操作
+SlotController
+  いつ、どの slot を publish に使えるかを決める
 
-pool は `LeaseHandle`、generation、pending、TTL、Subscriber 数を知らない。resource は
-初期化から reset まで不変とし、generation の更新だけで再 allocation や backend resource
-の作り直しを行わない。
+PublishSlot
+  一回の publish で許可された操作を提供する
 
-内部の resource record は公開しない。概念上は次の情報を持つ。
+GpuBufferController
+  resource と lifecycle を組み合わせて PublishSlot を返す
+
+BufferDescriptor
+  process 間に公開する metadata を表す
+```
+
+## `GpuBufferPool`: GPU resource ownership
+
+`GpuBufferPool` は、初期化から reset まで lifetime が続く GPU resource を所有する。
+
+ここでいう GPU buffer resource には、GPU allocation だけでなく、その slot への書き込み完了を示す ready event も含める。allocation と ready event は slot ごとに一対一であり、同じ初期化・破棄 lifetime を持つため、同じ pool が所有する。
+
+### 責務
+
+- 指定 device 上で slot ごとの GPU allocation を確保する
+- slot ごとに ready event を作成する
+- ready event の IPC handle を取得する
+- CUDA IPC / VMM + FD backend 固有 resource を生成する
+- allocation、event、backend resource を破棄する
+- pool の構成を保持する
+  - slot 数
+  - byte size
+  - device id
+  - memory backend
+- slot index から resource を引く
+
+`GpuBufferPool` は次の情報を知らない。
+
+- `LeaseHandle`
+- `refcnt`
+- `pending`
+- `generation`
+- pending deadline
+- Subscriber 数
+- ROS message
+- publish 成否
+
+resource は pool の初期化から reset まで不変とする。slot の generation が変わっても、GPU allocation、memory handle、ready event、event handle は再作成しない。
+
+### 内部 resource record
+
+resource record は非公開とする。概念上は次の情報を持つ。
 
 ```cpp
 struct GpuBufferResource {
-  void* device_ptr;
-  cudaEvent_t ready_event;
+  void* device_ptr = nullptr;
+  cudaEvent_t ready_event = nullptr;
+
   MemoryBackendKind backend;
   MemoryHandlePayload memory_handle;
-  cudaIpcEventHandle_t event_handle;
-  // backend 固有の所有状態（VMM allocation、FD server 等）
+  cudaIpcEventHandle_t event_handle{};
+
+  std::shared_ptr<BackendState> backend_state;
 };
 ```
 
-### `SlotController`: lifecycle state
+`BackendState` は VMM allocation や FD server など、backend 固有 resource の所有状態を保持する。
 
-`SlotController` は `shm_name` と slot 数を受け、`LeaseHandle` の Publisher 側 API を
-呼び出す。責務は以下に限定する。
+## `SlotController`: publish lifecycle state
 
-* `refcnt == 0 && pending == 0` の再利用可能 slot の round-robin 選択
-* 選択 slot の generation 更新と publish 時点の pending 設定
-* slot ごとの pending deadline の保持と stale pending の回収
-* kernel launch、event record、ROS publish の失敗時に pending を取り消す操作
+`SlotController` は、slot の GPU resource ではなく、publish と lease に関する lifecycle state を管理する。
 
-resource の有無を判定したり CUDA API を呼んだりしない。`reserve(subscriber_count)` は
-`slot` と `generation` を持つ予約結果を返し、予約の完了または取消しを一度だけ受け付ける。
-これにより「generation を進めたが publish できなかった」状態を、呼び出し側の任意の
-cleanup ではなく controller の状態遷移として扱える。
+### 責務
 
-### `PublishSlot`: per-publish capability
+- lease shared state の初期化と終了
+- `refcnt == 0 && pending == 0` の再利用可能 slot の選択
+- 選択 slot の generation 更新
+- publish 時点の pending 設定
+- slot ごとの pending deadline の管理
+- stale pending の回収
+- publish 準備失敗時の pending 取消し
+- reservation の commit/cancel 状態管理
 
-`PublishSlot` は `GpuBufferPool` の resource と `SlotController` の予約結果を結合した、
-短命・move-only の capability とする。公開する情報は次に限る。
+CUDA API は呼ばない。GPU allocation や memory handle の存在も知らない。
 
-* GPU 書き込み先の `device_ptr()`
-* 書き込み完了後に record する `ready_event()`
-* `slot()` と `generation()`
-* `descriptor()` による publish metadata の生成
+### reservation
 
-`PublishSlot` は自ら allocation を破棄せず、slot を再選択しない。失敗時の `cancel()` は
-対応する予約の pending を解除する。成功時には `commit()`（または `release()`）で予約を
-完了扱いにする。破棄時に未完了の reservation を自動 cancel するかは、既存 API との
-互換性を保つため初回実装前に明確化する。
+`reserve(expected_consumers)` は、slot と generation を持つ move-only な reservation を返す。
 
-推奨は **未 commit の `PublishSlot` をデストラクタで cancel する** 方針である。これにより
-kernel launch、event record、ROS publish のいずれで早期 return しても pending を残しにくい。
-ただし publish が成功した後は、Subscriber が pending を消費するまで残す必要があるため、
-ROS publish が受理された時点で必ず `commit()` を呼ぶ契約にする。
+```cpp
+class SlotReservation {
+ public:
+  SlotReservation(SlotReservation&&) noexcept;
+  SlotReservation& operator=(SlotReservation&&) noexcept;
 
-### `GpuBufferController`: Publisher 用 facade
+  SlotReservation(const SlotReservation&) = delete;
+  SlotReservation& operator=(const SlotReservation&) = delete;
 
-`GpuBufferController` は `GpuBufferPool` と `SlotController` を合成し、Publisher helper が
-使う唯一の core API とする。
+  ~SlotReservation();
 
-* `initialise(byte_size, device_id)` / `reset()` / `matches(...)`
-* `reclaim_stale_pending()`
-* `acquire_for_publish(subscriber_count) -> optional<PublishSlot>`
+  uint32_t slot() const noexcept;
+  uint32_t generation() const noexcept;
 
-facade は resource slot と lifecycle slot が同じ index を参照することを検証して
-`PublishSlot` を構築する。Publisher helper は `PublishSlot` から pointer/event/descriptor を
-得るだけであり、`GpuBufferPool::Slot` や `LeaseHandle` を参照しない。
+  void commit_publish();
+  void cancel();
+};
+```
 
-## ROS 非依存 descriptor
+`SlotReservation` は次の状態を持つ。
 
-次の値型を `ros2_cuda_ipc_core` の ROS 依存しないヘッダに置く。`MemoryHandlePayload` は
-既存の固定長 payload をそのまま再利用する。
+```text
+reserved
+  |
+  +-- commit_publish() --> committed
+  |
+  +-- cancel() ---------> cancelled
+  |
+  +-- destructor -------> cancelled
+```
+
+`commit_publish()` は shared lifetime state の pending を消費または解除しない。pending は `reserve()` 時点ですでに設定され、その後は Subscriber の lease acquire または TTL 回収によって減少する。
+
+`commit_publish()` は destructor による自動 cancel を無効化する process-local な状態遷移である。つまり、message を publish API へ引き渡したため、この reservation を Publisher 側で取り消さないことを確定する操作であり、Subscriber への配送完了を意味しない。
+
+未 commit の reservation は destructor で自動 cancel する。これにより、kernel launch、event record、message 構築、ROS publish API 呼び出し前後の early return で pending を残しにくくする。
+
+## `PublishSlot`: per-publish capability
+
+`PublishSlot` は、`GpuBufferPool` の resource と `SlotController` の `SlotReservation` を結合した、短命で move-only な capability とする。
+
+```text
+GpuBufferResource
+       +
+SlotReservation
+       =
+PublishSlot
+```
+
+公開する操作は次に限定する。
+
+- GPU 書き込み先の `device_ptr()`
+- 書き込み完了後に record する `ready_event()`
+- `slot()`
+- `generation()`
+- `descriptor()`
+- `commit_publish()`
+- `cancel()`
+
+`PublishSlot` は allocation を破棄せず、slot を再選択せず、resource record を外部へ公開しない。
+
+`PublishSlot` は `GpuBufferController` およびその内部 state より長生きしてはならない。この lifetime を raw pointer の暗黙契約だけにせず、shared state の所有、active reservation の検出、または helper の所有構造によって保証する。
+
+## `GpuBufferController`: Publisher helper 向け facade
+
+`GpuBufferController` は `GpuBufferPool` と `SlotController` を合成し、Publisher helper が利用する唯一の core API とする。
+
+### 責務
+
+- config validation
+- CUDA device の選択
+- `GpuBufferPool` と `SlotController` の transactional initialisation
+- 部分初期化失敗時の rollback
+- stale pending の回収
+- resource slot と lifecycle slot の index 対応の検証
+- `PublishSlot` の構築
+- reset 時の安全な破棄
+
+通常の publish 経路では、`acquire_for_publish()` が stale pending の回収を内部で行う。
+
+```text
+reclaim stale pending
+        |
+        v
+reserve lifecycle slot
+        |
+        v
+resolve GPU resource
+        |
+        v
+construct PublishSlot
+```
+
+`GpuBufferController::initialise()` は resource pool と lifecycle state の両方が成功した場合だけ initialised 状態になる。後段の初期化に失敗した場合は、前段で作成した resource をすべて rollback する。
+
+## `BufferDescriptor`: ROS 非依存 publish metadata
+
+`BufferDescriptor` は ROS message ではなく、Publisher が process 間に公開する buffer metadata を表す値型とする。
 
 ```cpp
 struct BufferDescriptor {
@@ -142,76 +277,180 @@ struct BufferDescriptor {
 };
 ```
 
-`PublishSlot::descriptor()` は `GpuBufferPool` の不変 resource 情報と `SlotController` の
-予約 generation をコピーして返す。descriptor は device pointer や `cudaEvent_t` を含めない。
-これらは Publisher プロセス内の書き込み用 capability であり、プロセス間に配布する情報ではないためである。
+`BufferDescriptor` は device pointer、`cudaEvent_t`、`LeaseHandle`、Publisher 内部 resource pointer、ROS header、画像・点群固有 metadata を含めない。
 
-ROS 境界には次の変換を追加する。
+`PublishSlot::descriptor()` は resource の不変情報と reservation の generation を snapshot としてコピーして返す。一度生成した descriptor は、その後 `PublishSlot` が commit または cancel されても値が変化しない。
+
+## ROS 境界
+
+初回実装で必要な変換は Publisher 向けの一方向だけとする。
 
 ```text
-BufferDescriptor <-> ros2_cuda_ipc_msgs::msg::BufferCore
-BufferDescriptor + local ready_event/device_ptr -> view::BufferView
+BufferDescriptor
+      |
+      v
+ros2_cuda_ipc_msgs::msg::BufferCore
 ```
 
-後者は Publisher 内で既存の `ImageView` を作る場合だけに必要である。可能であれば
-Publisher helper は `ImageView` を経由せず、`BufferDescriptor` と画像 layout から ROS message
-を直接構築する。これにより Publisher が Subscriber 向け RAII view を生成する現在のねじれを解消する。
+ROS message field の `slot_id` と descriptor の `slot` の対応は、この変換層だけに閉じ込める。
+
+逆方向の `BufferCore -> BufferDescriptor` は、Subscriber 側の責務分離に実際に必要であることを確認してから追加する。
+
+目標構成では Publisher helper は `BufferView` や `ImageView` を生成しない。
+
+```text
+PublishSlot
+    |
+    v
+BufferDescriptor
+    |
+    v
+BufferCore
+    |
+    + image metadata
+    v
+GpuImage
+```
+
+既存 helper を段階移行するために一時的な `BufferView` 生成経路が必要な場合は compatibility layer として限定し、最終構成には残さない。
 
 ## Publisher の処理フロー
 
 ```text
-reclaim stale pending
+acquire_for_publish(expected_consumers)
+        |
+        | empty: skip publish
+        v
+PublishSlot
+  - device pointer
+  - ready event
+  - slot
+  - generation
         |
         v
-acquire_for_publish(subscriber_count)
-        |  (空きなし: publish を見送る)
+enqueue GPU write
+        |
+        | failure: automatic cancel
         v
-PublishSlot { pointer, ready event, slot/generation }
+cudaEventRecord(ready_event)
+        |
+        | failure: automatic cancel
+        v
+create BufferDescriptor
         |
         v
-GPU kernel writes pointer -> cudaEventRecord(ready event)
-        |  (失敗: PublishSlot::cancel / destructor)
+convert descriptor to ROS message
+        |
+        | failure: automatic cancel
         v
-descriptor を ROS message に変換して publish
-        |  (失敗: PublishSlot::cancel / destructor)
+call ROS publish API
+        |
+        | exception/local failure: automatic cancel
         v
-PublishSlot::commit
+commit_publish()
 ```
 
-`subscriber_count == 0` の場合も generation は更新するが pending は 0 とする、という現行挙動を維持する。
-TTL 回収は `pending > 0 && refcnt == 0` の slot にだけ適用する。`commit()` は pending を消費・解除しない。
-それは Subscriber の初回 acquire、または TTL による回収の責務である。
+`commit_publish()` は ROS middleware による配送完了を表さない。ROS publish API の呼び出しが例外なく完了し、Publisher 側で reservation を取り消さないと判断した時点で呼ぶ。
+
+## `subscriber_count == 0` の扱い
+
+現行挙動を維持する。
+
+- generation は更新する
+- pending は 0 とする
+- publish 後も slot は即時に再利用可能である
+
+後から古い message を受信した Subscriber は、generation 不一致により lease acquire に失敗する。
+
+## stale pending の回収
+
+TTL 回収は、次の条件を満たす slot にだけ適用する。
+
+```text
+pending > 0
+refcnt == 0
+deadline expired
+```
+
+`refcnt > 0` の slot は回収しない。TTL 回収は利用中の Subscriber から slot を取り上げる操作ではなく、lease acquire に至らなかった stale pending を回収する操作である。
 
 ## 移行手順
 
-1. `BufferDescriptor` と `BufferCore` 変換関数を追加し、変換の単体テストを追加する。ROS message の field 名
-   （`slot_id`）と descriptor の field 名（`slot`）の対応をこの層だけに閉じ込める。
-2. 現行 `GpuLeasePool::Slot` を resource 専用の非公開 record に置き換え、`GpuBufferPool` と
-   `MemoryBackend` の allocation/destroy API を移す。CUDA IPC と VMM FD の両 backend について
-   allocation と cleanup の既存テストを維持する。
-3. `SlotController` を導入し、`acquire`、`reclaim_stale_pending`、`cancel_pending` の lease 操作を移す。
-   generation/pending/TTL の既存テストを controller のテストに移植する。
-4. `PublishSlot` を導入し、resource と reservation を結合する。失敗経路、二重 cancel、commit 後の破棄、
-   例外または early return 時の pending cleanup をテストする。
-5. `GpuBufferController` を導入して facade 経由で上記を組み立てる。既存 `GpuLeasePool` はこの段階で
-   廃止するか、短期間の互換 wrapper に縮小する。
-6. `ImagePublisherHelper` を facade API に移行する。kernel は `publish_slot.device_ptr()`、event record は
-   `publish_slot.ready_event()`、message 作成は `publish_slot.descriptor()` を使う。
-7. `GpuLeasePool` と `buffer_view_from()` への参照を削除し、公開ヘッダ、CMake、開発資料、テスト名を更新する。
+1. 現行 `GpuLeasePool::Slot` を resource state と lifecycle state に分ける。
+2. `BufferDescriptor` と `BufferDescriptor -> BufferCore` 変換を追加する。
+3. lease shared state、generation、pending、TTL、cancel を `SlotController` へ抽出する。
+4. allocation、event、backend state を `GpuBufferPool` へ抽出する。
+5. move-only な `SlotReservation` を導入し、destructor auto-cancel と `commit_publish()` を実装する。
+6. `PublishSlot` と `GpuBufferController` を導入する。
+7. `ImagePublisherHelper` を facade API へ移行する。
+8. `GpuLeasePool`、`buffer_view_from()`、Publisher 側の `BufferView` 生成経路を削除する。
 
-各段階で public API の追加と呼び出し側の移行を分離し、CUDA IPC と VMM FD の両 backend を同じテスト観点で
-確認する。複数段階にまたがって `GpuLeasePool` と新 facade を同じ SHM 名で併用してはならない。
+複数段階にまたがって、旧 `GpuLeasePool` と新 `GpuBufferController` を同じ SHM 名で同時に利用してはならない。
 
-## テスト観点と完了条件
+## テスト観点
 
 | 観点 | 確認内容 |
 | --- | --- |
-| resource ownership | initialise/reset の繰り返しで event と backend resource を一度だけ作成・破棄する。 |
-| slot lifecycle | 空き slot 選択、generation 更新、pending 設定、TTL 回収が現行と同じ lease 条件を満たす。 |
-| failure safety | kernel、event record、ROS publish の各失敗で pending が残らず、commit 後には cancel されない。 |
-| descriptor | backend payload、event handle、SHM 名、slot/generation、device id、byte size が `BufferCore` と完全に往復する。 |
-| encapsulation | Publisher helper が pool 内部 slot、`LeaseHandle`、backend state に直接アクセスしない。 |
-| backend parity | CUDA IPC と VMM FD が同一の facade/`PublishSlot` API で publish metadata を生成できる。 |
+| resource ownership | initialise/reset の繰り返しで allocation、event、backend resource を一度だけ作成・破棄する。 |
+| transactional initialise | resource または lifecycle の途中失敗で、作成済み state がすべて rollback される。 |
+| slot lifecycle | free slot 選択、generation 更新、pending 設定、TTL 回収が現行条件を維持する。 |
+| reservation transition | reserved→committed、reserved→cancelled、destructor cancel が正しく動作する。 |
+| invalid transition | 二重 commit、二重 cancel、commit 後 cancel、cancel 後 commit を検出する。 |
+| failure safety | kernel、event record、message 構築、ROS publish の各失敗で pending が残らない。 |
+| commit behavior | commit 後の destructor が pending を cancel しない。 |
+| descriptor | backend payload、event handle、SHM 名、slot/generation、device id、byte size を正しく生成する。 |
+| descriptor snapshot | descriptor 生成後に reservation state が変わっても値が変化しない。 |
+| encapsulation | helper が pool 内部 resource、`LeaseHandle`、backend state に直接アクセスしない。 |
+| lifetime safety | `PublishSlot` が controller/resource より長生きする不正利用を検出または防止する。 |
+| backend parity | CUDA IPC と VMM + FD が同一 facade API で descriptor を生成できる。 |
+| reinitialise | byte size、device、backend、slot count、SHM name の変更時に正しく再構築する。 |
+| zero subscriber | pending=0、generation 更新、即時再利用、古い message の generation mismatch を確認する。 |
 
-完了時には、Publisher helper が lifecycle と resource ownership の詳細を知らずに「slot を取得し、GPU に書き、
-event を記録し、descriptor を publish して commit する」だけになることを受け入れ条件とする。
+## 完了条件
+
+refactoring 完了時、Publisher helper は次だけを行う。
+
+```text
+PublishSlot を取得する
+GPU data を書き込む
+ready event を record する
+descriptor から ROS message を作る
+publish API へ渡す
+commit_publish() する
+```
+
+Publisher helper は次を知らない。
+
+- slot resource の内部 record
+- memory backend 実装
+- shared lifetime state の layout
+- `LeaseHandle`
+- generation の更新方法
+- pending の設定・回収方法
+- publish 失敗時の pending rollback 手順
+- Subscriber 向け `BufferView` の構築方法
+
+最終的な責務分担は次とする。
+
+```text
+GpuBufferPool
+  GPU resource を所有する
+
+SlotController
+  publish と lease の lifecycle を管理する
+
+SlotReservation
+  一回の reservation の状態遷移を管理する
+
+PublishSlot
+  一回の publish に必要な capability を提供する
+
+GpuBufferController
+  resource と lifecycle を統合する
+
+BufferDescriptor
+  process 間に公開する metadata を表す
+
+ROS adapter
+  BufferDescriptor を BufferCore へ変換する
+```
