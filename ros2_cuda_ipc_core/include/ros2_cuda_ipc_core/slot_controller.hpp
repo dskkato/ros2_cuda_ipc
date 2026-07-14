@@ -26,7 +26,7 @@ class SlotController {
 
   bool initialise();
   void reset() noexcept;
-  bool is_initialised() const noexcept { return initialised_; }
+  bool is_initialised() const noexcept;
   std::optional<Reservation> reserve_for_publish(uint32_t pending_count);
   bool cancel(const Reservation& reservation) noexcept;
   void reclaim_stale_pending();

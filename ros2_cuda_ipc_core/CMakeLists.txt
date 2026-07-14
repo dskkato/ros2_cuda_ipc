@@ -94,6 +94,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_gpu_buffer_controller ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
   target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
+  ament_add_gtest(test_slot_controller test/test_slot_controller.cpp)
+  target_link_libraries(test_slot_controller ${PROJECT_NAME})
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

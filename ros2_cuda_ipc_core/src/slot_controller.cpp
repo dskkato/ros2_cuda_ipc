@@ -33,8 +33,8 @@ bool SlotController::initialise() {
   {
     std::lock_guard<std::mutex> lock(deadlines_mutex_);
     pending_deadlines_.assign(slot_count_, {});
+    initialised_ = true;
   }
-  initialised_ = true;
   return true;
 }
 
@@ -44,23 +44,39 @@ void SlotController::reset() noexcept {
   initialised_ = false;
 }
 
+bool SlotController::is_initialised() const noexcept {
+  std::lock_guard<std::mutex> lock(deadlines_mutex_);
+  return initialised_;
+}
+
 std::optional<SlotController::Reservation> SlotController::reserve_for_publish(
     uint32_t pending_count) {
-  if (!initialised_) {
-    return std::nullopt;
+  {
+    std::lock_guard<std::mutex> lock(deadlines_mutex_);
+    if (!initialised_) {
+      return std::nullopt;
+    }
   }
   const auto reservation =
       LeaseHandle::reserve_for_publish(shm_name_, pending_count);
   if (!reservation || reservation->slot_id >= slot_count_) {
     return std::nullopt;
   }
-  std::lock_guard<std::mutex> lock(deadlines_mutex_);
-  if (pending_count > 0 && pending_ttl_.count() > 0) {
-    pending_deadlines_[reservation->slot_id] = Clock::now() + pending_ttl_;
-  } else {
-    pending_deadlines_[reservation->slot_id] = {};
+  {
+    std::lock_guard<std::mutex> lock(deadlines_mutex_);
+    if (initialised_ && reservation->slot_id < pending_deadlines_.size()) {
+      if (pending_count > 0 && pending_ttl_.count() > 0) {
+        pending_deadlines_[reservation->slot_id] = Clock::now() + pending_ttl_;
+      } else {
+        pending_deadlines_[reservation->slot_id] = {};
+      }
+      return Reservation{reservation->slot_id, reservation->generation};
+    }
   }
-  return Reservation{reservation->slot_id, reservation->generation};
+
+  LeaseHandle::cancel_pending(shm_name_, reservation->slot_id,
+                              reservation->generation);
+  return std::nullopt;
 }
 
 bool SlotController::cancel(const Reservation& reservation) noexcept {
@@ -79,10 +95,10 @@ bool SlotController::cancel(const Reservation& reservation) noexcept {
 }
 
 void SlotController::reclaim_stale_pending() {
+  std::lock_guard<std::mutex> lock(deadlines_mutex_);
   if (!initialised_ || pending_ttl_.count() <= 0) {
     return;
   }
-  std::lock_guard<std::mutex> lock(deadlines_mutex_);
   const auto now = Clock::now();
   for (uint32_t slot_id = 0; slot_id < pending_deadlines_.size(); ++slot_id) {
     auto& deadline = pending_deadlines_[slot_id];
