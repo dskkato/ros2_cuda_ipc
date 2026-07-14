@@ -28,7 +28,6 @@ add_library(${PROJECT_NAME}
   src/cuda/cuda_util.cpp
   src/cuda/gpu_buffer_controller.cpp
   src/cuda/gpu_buffer_pool.cpp
-  src/cuda/gpu_lease_pool.cpp
   src/cuda/memory_importer.cpp
   src/cuda/cuda_ipc/memory_backend.cpp
   src/cuda/cuda_ipc/memory_importer.cpp
@@ -90,8 +89,6 @@ if(BUILD_TESTING)
   target_link_libraries(test_pointcloud2_view_mapper ${PROJECT_NAME})
   ament_add_gtest(test_type_adapters test/test_type_adapters.cpp)
   target_link_libraries(test_type_adapters ${PROJECT_NAME})
-  ament_add_gtest(test_gpu_lease_pool test/test_gpu_lease_pool.cpp)
-  target_link_libraries(test_gpu_lease_pool ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_controller
                   test/test_gpu_buffer_controller.cpp)
   target_link_libraries(test_gpu_buffer_controller ${PROJECT_NAME})
