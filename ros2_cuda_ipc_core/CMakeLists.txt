@@ -24,7 +24,10 @@ if(NOT UUID_LIB)
 endif()
 
 add_library(${PROJECT_NAME}
+  src/buffer_descriptor.cpp
   src/cuda/cuda_util.cpp
+  src/cuda/gpu_buffer_controller.cpp
+  src/cuda/gpu_buffer_pool.cpp
   src/cuda/gpu_lease_pool.cpp
   src/cuda/memory_importer.cpp
   src/cuda/cuda_ipc/memory_backend.cpp
@@ -36,6 +39,7 @@ add_library(${PROJECT_NAME}
   src/view/pointcloud2_view.cpp
   src/ipc_handle_cache.cpp
   src/lease_handle.cpp
+  src/slot_controller.cpp
   src/mapper/buffer_view_mapper.cpp
   src/mapper/image_view_mapper.cpp
   src/mapper/pointcloud2_view_mapper.cpp
@@ -88,6 +92,11 @@ if(BUILD_TESTING)
   target_link_libraries(test_type_adapters ${PROJECT_NAME})
   ament_add_gtest(test_gpu_lease_pool test/test_gpu_lease_pool.cpp)
   target_link_libraries(test_gpu_lease_pool ${PROJECT_NAME})
+  ament_add_gtest(test_gpu_buffer_controller
+                  test/test_gpu_buffer_controller.cpp)
+  target_link_libraries(test_gpu_buffer_controller ${PROJECT_NAME})
+  ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
+  target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

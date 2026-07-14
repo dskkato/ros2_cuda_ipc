@@ -229,7 +229,7 @@ class UnixFdServer {
  * allocation. Destruction tears down the mapping, frees the allocation, closes
  * the FD, and stops the Unix socket server.
  */
-struct VmmSlotState : public GpuLeasePool::SlotBackendState {
+struct VmmSlotState : public GpuBufferPool::SlotBackendState {
   ~VmmSlotState() override {
     if (server) {
       server->stop();
@@ -264,7 +264,7 @@ struct VmmSlotState : public GpuLeasePool::SlotBackendState {
  * subscribers import. Each slot has a dedicated UUID + Unix socket for
  * distributing the FD.
  */
-class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
+class VmmFdMemoryBackend : public GpuBufferPool::MemoryBackend {
  public:
   /**
    * @brief Allocate and share GPU memory for every slot.
@@ -277,7 +277,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
    *    the FD using a randomly generated UUID.
    */
   bool allocate(uint64_t frame_size_bytes, int device_index,
-                std::vector<GpuLeasePool::Slot>& slots,
+                std::vector<GpuBufferPool::SlotResources>& slots,
                 rclcpp::Logger logger) override {
     if (!ensure_driver(logger)) {
       return false;
@@ -401,7 +401,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
    * The per-slot VmmSlotState RAII cleanup tears down CUDA driver resources and
    * socket servers; here we simply drop pointers and reset bookkeeping fields.
    */
-  void destroy(std::vector<GpuLeasePool::Slot>& slots,
+  void destroy(std::vector<GpuBufferPool::SlotResources>& slots,
                rclcpp::Logger logger) noexcept override {
     (void)logger;
     for (auto& slot : slots) {
@@ -435,7 +435,7 @@ class VmmFdMemoryBackend : public GpuLeasePool::MemoryBackend {
 
 }  // namespace
 
-std::unique_ptr<GpuLeasePool::MemoryBackend> make_vmm_fd_memory_backend() {
+std::unique_ptr<GpuBufferPool::MemoryBackend> make_vmm_fd_memory_backend() {
   return std::make_unique<VmmFdMemoryBackend>();
 }
 

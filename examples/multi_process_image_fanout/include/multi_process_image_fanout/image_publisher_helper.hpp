@@ -12,7 +12,7 @@
 #include <string>
 
 #include "rclcpp/logger.hpp"
-#include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
+#include "ros2_cuda_ipc_core/cuda/gpu_buffer_controller.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 #include "ros2_cuda_ipc_core/view/image_view.hpp"
 
@@ -44,16 +44,17 @@ class ImagePublisherHelper {
   ImagePublisherHelper(ImagePublisherHelper&&) = delete;
   ImagePublisherHelper& operator=(ImagePublisherHelper&&) = delete;
 
-  // Acquire a lease for the current subscriber count, generate one RGBA frame
-  // on the GPU, record its ready event, and return the ImageView metadata
-  // without copying image bytes to the host.
-  std::optional<ros2_cuda_ipc_core::view::ImageView> produce(
-      std::size_t subscriber_count, uint64_t frame_index);
+  // The returned PublishSlot must remain alive until the caller either
+  // publishes output and commits it, or abandons the attempt and lets RAII
+  // cancellation run.
+  std::optional<ros2_cuda_ipc_core::cuda::PublishSlot> produce(
+      std::size_t subscriber_count, uint64_t frame_index,
+      ros2_cuda_ipc_core::view::ImageView& output);
 
  private:
   Config config_;
   rclcpp::Logger logger_;
-  ros2_cuda_ipc_core::cuda::GpuLeasePool pool_;
+  ros2_cuda_ipc_core::cuda::GpuBufferController controller_;
   cudaStream_t stream_ = nullptr;
   uint64_t frame_size_bytes_ = 0;
 };

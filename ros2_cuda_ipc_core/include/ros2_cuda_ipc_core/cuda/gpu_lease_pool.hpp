@@ -12,11 +12,15 @@
 #include <vector>
 
 #include "rclcpp/logger.hpp"
+#include "ros2_cuda_ipc_core/cuda/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
+#include "ros2_cuda_ipc_core/slot_controller.hpp"
 #include "ros2_cuda_ipc_core/view/buffer_view.hpp"
 
 namespace ros2_cuda_ipc_core::cuda {
 
+// Deprecated compatibility facade. New Publisher code must use
+// GpuBufferController and PublishSlot. Kept temporarily for source migration.
 class GpuLeasePool {
  public:
   struct Config {
@@ -25,10 +29,6 @@ class GpuLeasePool {
     std::chrono::milliseconds pending_ttl{0};
     ros2_cuda_ipc_core::MemoryBackendKind backend =
         ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
-  };
-
-  struct SlotBackendState {
-    virtual ~SlotBackendState() = default;
   };
 
   struct Slot {
@@ -41,7 +41,6 @@ class GpuLeasePool {
     ros2_cuda_ipc_core::MemoryBackendKind backend =
         ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC;
     ros2_cuda_ipc_core::MemoryHandlePayload mem_handle{};
-    std::shared_ptr<SlotBackendState> backend_state;
   };
 
   explicit GpuLeasePool(Config config, rclcpp::Logger logger);
@@ -49,8 +48,8 @@ class GpuLeasePool {
 
   GpuLeasePool(const GpuLeasePool&) = delete;
   GpuLeasePool& operator=(const GpuLeasePool&) = delete;
-  GpuLeasePool(GpuLeasePool&&) = default;
-  GpuLeasePool& operator=(GpuLeasePool&&) = default;
+  GpuLeasePool(GpuLeasePool&&) = delete;
+  GpuLeasePool& operator=(GpuLeasePool&&) = delete;
 
   bool initialise(uint64_t frame_size_bytes, int device_index);
   void reset() noexcept;
@@ -67,17 +66,8 @@ class GpuLeasePool {
 
   view::BufferView buffer_view_from(const Slot& slot) const;
 
-  class MemoryBackend {
-   public:
-    virtual ~MemoryBackend() = default;
-    virtual bool allocate(uint64_t frame_size_bytes, int device_index,
-                          std::vector<Slot>& slots, rclcpp::Logger logger) = 0;
-    virtual void destroy(std::vector<Slot>& slots,
-                         rclcpp::Logger logger) noexcept = 0;
-  };
-
  private:
-  bool allocate_slots();
+  void sync_slot(uint32_t slot_id);
   void destroy_slots() noexcept;
 
   Config config_;
@@ -86,7 +76,8 @@ class GpuLeasePool {
   int device_index_ = -1;
   bool initialised_ = false;
   rclcpp::Logger logger_;
-  std::unique_ptr<MemoryBackend> memory_backend_;
+  GpuBufferPool buffer_pool_;
+  ros2_cuda_ipc_core::SlotController slot_controller_;
 };
 
 }  // namespace ros2_cuda_ipc_core::cuda

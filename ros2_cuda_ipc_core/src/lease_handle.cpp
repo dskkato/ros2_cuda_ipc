@@ -174,7 +174,7 @@ bool LeaseHandle::init(const std::string& shm_name, uint32_t capacity) {
     as_atomic(slots[i].generation).store(0u, std::memory_order_relaxed);
     as_atomic(slots[i].refcnt).store(0u, std::memory_order_relaxed);
     as_atomic(slots[i].pending).store(0u, std::memory_order_relaxed);
-    slots[i].reserved = 0;
+    as_atomic(slots[i].reserved).store(0u, std::memory_order_relaxed);
   }
 
   munmap(addr, size);
@@ -260,7 +260,9 @@ std::optional<uint32_t> LeaseHandle::choose_empty_slot(
     const uint32_t idx = (start_index + offset) % capacity;
     auto& ref = as_atomic(mapping->slots[idx].refcnt);
     auto& pending = as_atomic(mapping->slots[idx].pending);
-    if (ref.load(std::memory_order_acquire) == 0 &&
+    auto& reserved = as_atomic(mapping->slots[idx].reserved);
+    if (reserved.load(std::memory_order_acquire) == 0 &&
+        ref.load(std::memory_order_acquire) == 0 &&
         pending.load(std::memory_order_acquire) == 0) {
       const uint32_t next = (idx + 1) % capacity;
       mapping->next_slot.store(next, std::memory_order_relaxed);
@@ -315,6 +317,48 @@ std::optional<uint32_t> LeaseHandle::bump_generation(
   return next;
 }
 
+std::optional<LeaseHandle::PublisherReservation>
+LeaseHandle::reserve_for_publish(const std::string& shm_name,
+                                 uint32_t pending_count) {
+  auto mapping = attach(shm_name);
+  if (!mapping || mapping->capacity == 0) {
+    return std::nullopt;
+  }
+
+  const uint32_t capacity = mapping->capacity;
+  const uint32_t start =
+      mapping->next_slot.fetch_add(1, std::memory_order_relaxed) % capacity;
+  for (uint32_t offset = 0; offset < capacity; ++offset) {
+    const uint32_t slot_id = (start + offset) % capacity;
+    SlotMeta& slot = mapping->slots[slot_id];
+    auto& reserved = as_atomic(slot.reserved);
+    uint32_t expected = 0;
+    if (!reserved.compare_exchange_strong(expected, 1,
+                                          std::memory_order_acq_rel,
+                                          std::memory_order_acquire)) {
+      continue;
+    }
+
+    auto& ref = as_atomic(slot.refcnt);
+    auto& pending = as_atomic(slot.pending);
+    if (ref.load(std::memory_order_acquire) != 0 ||
+        pending.load(std::memory_order_acquire) != 0) {
+      reserved.store(0, std::memory_order_release);
+      continue;
+    }
+
+    auto& generation = as_atomic(slot.generation);
+    const uint32_t next = generation.load(std::memory_order_relaxed) + 1;
+    generation.store(next, std::memory_order_release);
+    pending.store(pending_count, std::memory_order_release);
+    reserved.store(0, std::memory_order_release);
+    mapping->next_slot.store((slot_id + 1) % capacity,
+                             std::memory_order_relaxed);
+    return PublisherReservation{slot_id, next};
+  }
+  return std::nullopt;
+}
+
 bool LeaseHandle::force_clear_pending(const std::string& shm_name,
                                       uint32_t slot_id) {
   auto mapping = attach(shm_name);
@@ -323,18 +367,52 @@ bool LeaseHandle::force_clear_pending(const std::string& shm_name,
   }
 
   SlotMeta* slot = &mapping->slots[slot_id];
+  auto& reserved = as_atomic(slot->reserved);
+  uint32_t expected = 0;
+  if (!reserved.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                        std::memory_order_acquire)) {
+    return false;
+  }
   auto& pending = as_atomic(slot->pending);
   const uint32_t observed_pending = pending.load(std::memory_order_acquire);
   if (observed_pending == 0) {
+    reserved.store(0, std::memory_order_release);
     return true;
   }
 
   auto& ref = as_atomic(slot->refcnt);
   if (ref.load(std::memory_order_acquire) != 0) {
+    reserved.store(0, std::memory_order_release);
     return false;
   }
 
   pending.store(0, std::memory_order_release);
+  reserved.store(0, std::memory_order_release);
+  return true;
+}
+
+bool LeaseHandle::cancel_pending(const std::string& shm_name, uint32_t slot_id,
+                                 uint32_t generation) {
+  auto mapping = attach(shm_name);
+  if (!mapping || slot_id >= mapping->capacity) {
+    return false;
+  }
+  SlotMeta& slot = mapping->slots[slot_id];
+  auto& reserved = as_atomic(slot.reserved);
+  uint32_t expected = 0;
+  if (!reserved.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                        std::memory_order_acquire)) {
+    return false;
+  }
+  auto& current_generation = as_atomic(slot.generation);
+  auto& ref = as_atomic(slot.refcnt);
+  if (current_generation.load(std::memory_order_acquire) != generation ||
+      ref.load(std::memory_order_acquire) != 0) {
+    reserved.store(0, std::memory_order_release);
+    return false;
+  }
+  as_atomic(slot.pending).store(0, std::memory_order_release);
+  reserved.store(0, std::memory_order_release);
   return true;
 }
 
@@ -348,6 +426,11 @@ LeaseHandle LeaseHandle::acquire(const std::string& shm_name, uint32_t slot_id,
   auto& gen = as_atomic(slot->generation);
   auto& ref = as_atomic(slot->refcnt);
   auto& pending = as_atomic(slot->pending);
+  auto& reserved = as_atomic(slot->reserved);
+
+  if (reserved.load(std::memory_order_acquire) != 0) {
+    return LeaseHandle{};
+  }
 
   const uint32_t observed_gen = gen.load(std::memory_order_acquire);
   if (observed_gen != generation) {
@@ -371,7 +454,8 @@ LeaseHandle LeaseHandle::acquire(const std::string& shm_name, uint32_t slot_id,
   }
 
   const uint32_t recheck_gen = gen.load(std::memory_order_acquire);
-  if (recheck_gen != generation) {
+  if (reserved.load(std::memory_order_acquire) != 0 ||
+      recheck_gen != generation) {
     ref.fetch_sub(1, std::memory_order_acq_rel);
     RCLCPP_DEBUG(lease_logger(),
                  "lease:gen_race slot=%u expected=%u observed=%u", slot_id,

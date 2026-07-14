@@ -18,8 +18,26 @@ who want to try the demo first.
 - `ros2_cuda_ipc_core::view::ImageView` / `PointCloud2View`: typed metadata layered on `BufferView`.
 - `ros2_cuda_ipc_core::mapper::*ViewMapper`: explicit mapping APIs from raw messages to imported views.
 - `ros2_cuda_ipc_core/type_adapters.hpp`: thin TypeAdapter layer for publishing/subscribing to views directly.
-- `ros2_cuda_ipc_core::LeaseHandle`: publisher-side slot lease accounting and stale pending release.
-- `ros2_cuda_ipc_core::cuda::GpuLeasePool`: publisher-side GPU slot pool with backend selection.
+- `ros2_cuda_ipc_core::LeaseHandle`: process-shared slot lease accounting.
+- `ros2_cuda_ipc_core::cuda::GpuBufferPool`: publisher-side GPU resource ownership.
+- `ros2_cuda_ipc_core::SlotController`: publisher reservation, pending, generation, and TTL state.
+- `ros2_cuda_ipc_core::cuda::GpuBufferController`: publisher-facing buffer controller.
+- `ros2_cuda_ipc_core::cuda::PublishSlot`: one move-only publish attempt with RAII cancellation.
+
+`GpuLeasePool` remains only as a deprecated compatibility API. New Publisher
+code should follow this order:
+
+```cpp
+auto slot = controller.acquire_for_publish(pending_count);
+launch_gpu_work(slot->device_ptr(), stream);
+slot->record_ready(stream);
+auto descriptor = slot->descriptor();
+publisher->publish(make_message(*descriptor));
+slot->commit_publish();
+```
+
+Destroying an uncommitted `PublishSlot` cancels its reservation. Descriptor
+creation is rejected until the ready event has been recorded successfully.
 
 Receiving code can use either:
 

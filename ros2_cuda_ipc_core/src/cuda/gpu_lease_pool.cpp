@@ -3,39 +3,22 @@
 
 #include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
 
-#include <memory>
-
 #include "rclcpp/logging.hpp"
-#include "ros2_cuda_ipc_core/cuda/cuda_ipc/memory_backend.hpp"
-#include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
-#include "ros2_cuda_ipc_core/cuda/vmm_fd/memory_backend.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::cuda {
 
-namespace {
-using Clock = std::chrono::steady_clock;
-
-bool deadline_reached(const Clock::time_point& deadline,
-                      const Clock::time_point& now) {
-  return deadline.time_since_epoch().count() != 0 && now >= deadline;
-}
-
-std::unique_ptr<GpuLeasePool::MemoryBackend> make_backend(
-    ros2_cuda_ipc_core::MemoryBackendKind backend) {
-  if (backend == ros2_cuda_ipc_core::MemoryBackendKind::VMM_FD) {
-    return vmm_fd::make_vmm_fd_memory_backend();
-  }
-  return cuda_ipc::make_cuda_ipc_memory_backend();
-}
-
-}  // namespace
-
 using ros2_cuda_ipc_core::LeaseHandle;
 
 GpuLeasePool::GpuLeasePool(Config config, rclcpp::Logger logger)
-    : config_(std::move(config)), logger_(std::move(logger)) {}
+    : config_(std::move(config)),
+      logger_(std::move(logger)),
+      buffer_pool_(config_.slot_count, config_.backend,
+                   logger_.get_child("GpuBufferPool")),
+      slot_controller_(config_.shm_name, config_.slot_count,
+                       config_.pending_ttl,
+                       logger_.get_child("SlotController")) {}
 
 GpuLeasePool::~GpuLeasePool() { destroy_slots(); }
 
@@ -47,15 +30,7 @@ bool GpuLeasePool::initialise(uint64_t frame_size_bytes, int device_index) {
 
   destroy_slots();
 
-  cudaError_t err = cudaSetDevice(device_index);
-  if (err != cudaSuccess) {
-    RCLCPP_ERROR(logger_, "cudaSetDevice failed: %s",
-                 cuda_error_to_string(err).c_str());
-    return false;
-  }
-
-  if (!LeaseHandle::init(config_.shm_name,
-                         static_cast<uint32_t>(config_.slot_count))) {
+  if (!slot_controller_.initialise()) {
     RCLCPP_ERROR(logger_, "Failed to initialise lease shared memory %s",
                  config_.shm_name.c_str());
     return false;
@@ -68,9 +43,12 @@ bool GpuLeasePool::initialise(uint64_t frame_size_bytes, int device_index) {
     slots_[i].index = static_cast<uint32_t>(i);
   }
 
-  if (!allocate_slots()) {
+  if (!buffer_pool_.initialise(frame_size_bytes, device_index)) {
     destroy_slots();
     return false;
+  }
+  for (uint32_t i = 0; i < slots_.size(); ++i) {
+    sync_slot(i);
   }
 
   initialised_ = true;
@@ -90,77 +68,27 @@ GpuLeasePool::Slot* GpuLeasePool::acquire(std::size_t subscriber_count) {
     return nullptr;
   }
 
-  auto free_slot = LeaseHandle::choose_empty_slot(config_.shm_name);
-  if (!free_slot.has_value()) {
+  auto reservation = slot_controller_.reserve_for_publish(
+      static_cast<uint32_t>(subscriber_count));
+  if (!reservation) {
     return nullptr;
   }
-  if (free_slot.value() >= slots_.size()) {
-    RCLCPP_ERROR(logger_, "LeaseHandle returned invalid slot index %u",
-                 free_slot.value());
-    return nullptr;
-  }
-
-  Slot& slot = slots_[free_slot.value()];
-
-  auto generation = LeaseHandle::bump_generation(
-      config_.shm_name, slot.index, static_cast<uint32_t>(subscriber_count));
-  if (!generation.has_value()) {
-    RCLCPP_WARN(logger_, "Failed to bump generation for slot %u", slot.index);
-    return nullptr;
-  }
-  slot.generation = generation.value();
-
-  if (subscriber_count > 0 && config_.pending_ttl.count() > 0) {
-    slot.pending_deadline = Clock::now() + config_.pending_ttl;
-  } else {
-    slot.pending_deadline = {};
-  }
-
+  Slot& slot = slots_[reservation->slot_id];
+  slot.generation = reservation->generation;
+  slot.pending_deadline = slot_controller_.pending_deadline(slot.index);
   return &slot;
 }
 
 void GpuLeasePool::reclaim_stale_pending() {
-  if (!initialised_ || config_.pending_ttl.count() <= 0) {
-    return;
-  }
-
-  const auto now = Clock::now();
-
+  slot_controller_.reclaim_stale_pending();
   for (auto& slot : slots_) {
-    if (!deadline_reached(slot.pending_deadline, now)) {
-      continue;
-    }
-
-    auto pending = LeaseHandle::current_pending(config_.shm_name, slot.index);
-    if (!pending.has_value()) {
-      continue;
-    }
-    if (pending.value() == 0) {
-      slot.pending_deadline = {};
-      continue;
-    }
-
-    auto refcnt = LeaseHandle::current_refcount(config_.shm_name, slot.index);
-    if (!refcnt.has_value() || refcnt.value() != 0) {
-      continue;
-    }
-
-    if (LeaseHandle::force_clear_pending(config_.shm_name, slot.index)) {
-      RCLCPP_WARN(
-          logger_, "Force-cleared pending lease slot=%u after %lld ms timeout",
-          slot.index, static_cast<long long>(config_.pending_ttl.count()));
-      slot.pending_deadline = {};
-    }
+    slot.pending_deadline = slot_controller_.pending_deadline(slot.index);
   }
 }
 
 bool GpuLeasePool::cancel_pending(Slot& slot) {
-  slot.pending_deadline = {};
-  if (!initialised_) {
-    return false;
-  }
-
-  if (LeaseHandle::force_clear_pending(config_.shm_name, slot.index)) {
+  if (slot_controller_.cancel({slot.index, slot.generation})) {
+    slot.pending_deadline = {};
     RCLCPP_DEBUG(logger_, "Cleared pending lease for slot %u", slot.index);
     return true;
   }
@@ -181,59 +109,22 @@ view::BufferView GpuLeasePool::buffer_view_from(const Slot& slot) const {
   return view;
 }
 
-bool GpuLeasePool::allocate_slots() {
-  memory_backend_ = make_backend(config_.backend);
-  if (!memory_backend_) {
-    RCLCPP_ERROR(logger_, "Failed to create memory backend");
-    return false;
+void GpuLeasePool::sync_slot(uint32_t slot_id) {
+  const auto* resources = buffer_pool_.resources(slot_id);
+  if (resources == nullptr || slot_id >= slots_.size()) {
+    return;
   }
-
-  if (!memory_backend_->allocate(frame_size_bytes_, device_index_, slots_,
-                                 logger_)) {
-    memory_backend_.reset();
-    return false;
-  }
-
-  for (auto& slot : slots_) {
-    cudaError_t err = cudaEventCreateWithFlags(
-        &slot.event, cudaEventDisableTiming | cudaEventInterprocess);
-    if (err != cudaSuccess) {
-      RCLCPP_ERROR(logger_, "cudaEventCreateWithFlags failed: %s",
-                   cuda_error_to_string(err).c_str());
-      return false;
-    }
-
-    err = cudaIpcGetEventHandle(&slot.event_handle, slot.event);
-    if (err != cudaSuccess) {
-      RCLCPP_ERROR(logger_, "cudaIpcGetEventHandle failed: %s",
-                   cuda_error_to_string(err).c_str());
-      return false;
-    }
-  }
-
-  return true;
+  auto& slot = slots_[slot_id];
+  slot.device_ptr = resources->device_ptr;
+  slot.event = resources->event;
+  slot.event_handle = resources->event_handle;
+  slot.backend = resources->backend;
+  slot.mem_handle = resources->mem_handle;
 }
 
 void GpuLeasePool::destroy_slots() noexcept {
-  if (device_index_ >= 0) {
-    cudaSetDevice(device_index_);
-  }
-
-  for (auto& slot : slots_) {
-    if (slot.event) {
-      const cudaError_t event_err = cudaEventDestroy(slot.event);
-      if (event_err != cudaSuccess) {
-        RCLCPP_ERROR(logger_, "cudaEventDestroy failed for slot %u: %s",
-                     slot.index, cuda_error_to_string(event_err).c_str());
-      }
-      slot.event = nullptr;
-    }
-    slot.pending_deadline = {};
-  }
-  if (memory_backend_) {
-    memory_backend_->destroy(slots_, logger_);
-    memory_backend_.reset();
-  }
+  buffer_pool_.reset();
+  slot_controller_.reset();
   slots_.clear();
   frame_size_bytes_ = 0;
   device_index_ = -1;

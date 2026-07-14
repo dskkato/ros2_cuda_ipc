@@ -70,17 +70,22 @@ class GpuImagePublisherNode : public rclcpp::Node {
     const std::size_t subscribers = publisher_->get_subscription_count();
     // The helper implements the lease acquisition, GPU generation, ready event,
     // and ImageView field population for this timer tick.
-    auto view = helper_->produce(subscribers, frame_index_);
-    if (!view.has_value()) {
+    ros2_cuda_ipc_core::view::ImageView view;
+    auto slot = helper_->produce(subscribers, frame_index_, view);
+    if (!slot.has_value()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Failed to produce GPU image frame");
       return;
     }
 
     // The node adds ROS header context and publishes the GPU-only view.
-    view->header.stamp = now();
-    view->header.frame_id = frame_id_;
-    publisher_->publish(*view);
+    view.header.stamp = now();
+    view.header.frame_id = frame_id_;
+    publisher_->publish(view);
+    if (!slot->commit_publish()) {
+      RCLCPP_ERROR(get_logger(), "Failed to commit published GPU slot");
+      return;
+    }
     ++frame_index_;
   }
 
