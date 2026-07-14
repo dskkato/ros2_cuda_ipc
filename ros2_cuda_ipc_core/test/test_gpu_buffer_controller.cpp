@@ -146,11 +146,3 @@ TEST_F(GpuBufferControllerTest, AcquireAutomaticallyReclaimsExpiredPending) {
   std::this_thread::sleep_for(std::chrono::milliseconds(5));
   EXPECT_TRUE(controller.acquire_for_publish(1).has_value());
 }
-
-int main(int argc, char** argv) {
-  testing::InitGoogleTest(&argc, argv);
-  rclcpp::init(argc, argv);
-  const int result = RUN_ALL_TESTS();
-  rclcpp::shutdown();
-  return result;
-}

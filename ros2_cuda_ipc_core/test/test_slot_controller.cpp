@@ -64,11 +64,3 @@ TEST(SlotControllerTest, ResetRacingWithReserveDoesNotLeavePending) {
     ::shm_unlink(shm_name.c_str());
   }
 }
-
-int main(int argc, char** argv) {
-  testing::InitGoogleTest(&argc, argv);
-  rclcpp::init(argc, argv);
-  const int result = RUN_ALL_TESTS();
-  rclcpp::shutdown();
-  return result;
-}

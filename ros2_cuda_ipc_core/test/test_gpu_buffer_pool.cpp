@@ -68,11 +68,3 @@ TEST(GpuBufferPoolTest, PartialBackendFailureIsRolledBack) {
   EXPECT_EQ(observation->populated_slots_at_destroy, 1);
   EXPECT_EQ(pool.size(), 0u);
 }
-
-int main(int argc, char** argv) {
-  testing::InitGoogleTest(&argc, argv);
-  rclcpp::init(argc, argv);
-  const int result = RUN_ALL_TESTS();
-  rclcpp::shutdown();
-  return result;
-}
