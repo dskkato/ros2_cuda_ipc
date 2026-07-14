@@ -10,10 +10,12 @@
 #include <chrono>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <type_traits>
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/cuda/gpu_buffer_controller.hpp"
+#include "ros2_cuda_ipc_core/lease_handle.hpp"
 
 namespace {
 std::string unique_name() {
@@ -47,9 +49,10 @@ class GpuBufferControllerTest : public ::testing::Test {
       ::shm_unlink(shm_name_.c_str());
     }
   }
-  GpuBufferController make_controller() {
+  GpuBufferController make_controller(
+      std::chrono::milliseconds pending_ttl = std::chrono::milliseconds(100)) {
     return GpuBufferController(
-        {shm_name_, 1, 1024, 0, std::chrono::milliseconds(100),
+        {shm_name_, 1, 1024, 0, pending_ttl,
          ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC},
         rclcpp::get_logger("GpuBufferControllerTest"));
   }
@@ -107,6 +110,39 @@ TEST_F(GpuBufferControllerTest, MovedFromSlotIsInert) {
   destination.cancel();
   destination.cancel();
   EXPECT_FALSE(destination.valid());
+  EXPECT_TRUE(controller.acquire_for_publish(1).has_value());
+}
+
+TEST_F(GpuBufferControllerTest, ResetDoesNotPreventReservationCancellation) {
+  auto controller = make_controller();
+  ASSERT_TRUE(controller.initialise());
+  auto slot = controller.acquire_for_publish(1);
+  ASSERT_TRUE(slot.has_value());
+  const auto pending_before =
+      ros2_cuda_ipc_core::LeaseHandle::current_pending(shm_name_, 0);
+  ASSERT_TRUE(pending_before.has_value());
+  ASSERT_EQ(*pending_before, 1u);
+
+  controller.reset();
+  slot.reset();
+
+  const auto pending =
+      ros2_cuda_ipc_core::LeaseHandle::current_pending(shm_name_, 0);
+  ASSERT_TRUE(pending.has_value());
+  EXPECT_EQ(*pending, 0u);
+}
+
+TEST_F(GpuBufferControllerTest, AcquireAutomaticallyReclaimsExpiredPending) {
+  auto controller = make_controller(std::chrono::milliseconds(1));
+  ASSERT_TRUE(controller.initialise());
+  {
+    auto slot = controller.acquire_for_publish(1);
+    ASSERT_TRUE(slot.has_value());
+    ASSERT_EQ(slot->record_ready(nullptr), cudaSuccess);
+    ASSERT_TRUE(slot->commit_publish());
+  }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(5));
   EXPECT_TRUE(controller.acquire_for_publish(1).has_value());
 }
 

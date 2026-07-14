@@ -118,7 +118,6 @@ class GpuImagePublisherNode : public rclcpp::Node {
   void on_timer() {
     NvtxScopedRange timer_range("GpuImagePublisherNode::on_timer");
 
-    controller_->reclaim_stale_pending();
     const std::size_t subscribers = publisher_->get_subscription_count();
     std::optional<ros2_cuda_ipc_core::cuda::PublishSlot> slot;
     {

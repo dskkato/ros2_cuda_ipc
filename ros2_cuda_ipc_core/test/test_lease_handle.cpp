@@ -187,12 +187,14 @@ TEST(LeaseHandleTest, AtomicPublisherReservationExcludesSubscriberAcquire) {
     std::optional<ros2_cuda_ipc_core::LeaseHandle> subscriber;
     std::thread publisher_thread([&]() {
       while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
       }
       publisher =
           ros2_cuda_ipc_core::LeaseHandle::reserve_for_publish(shm_name, 0);
     });
     std::thread subscriber_thread([&]() {
       while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
       }
       subscriber.emplace(ros2_cuda_ipc_core::LeaseHandle::acquire(
           shm_name, initial->slot_id, initial->generation));
@@ -214,11 +216,13 @@ TEST(LeaseHandleTest, OnlyOnePublisherCanReserveSingleSlot) {
   std::optional<ros2_cuda_ipc_core::LeaseHandle::PublisherReservation> second;
   std::thread a([&]() {
     while (!start.load(std::memory_order_acquire)) {
+      std::this_thread::yield();
     }
     first = ros2_cuda_ipc_core::LeaseHandle::reserve_for_publish(shm_name, 1);
   });
   std::thread b([&]() {
     while (!start.load(std::memory_order_acquire)) {
+      std::this_thread::yield();
     }
     second = ros2_cuda_ipc_core::LeaseHandle::reserve_for_publish(shm_name, 1);
   });

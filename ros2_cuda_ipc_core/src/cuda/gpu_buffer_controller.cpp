@@ -111,6 +111,7 @@ std::optional<PublishSlot> GpuBufferController::acquire_for_publish(
   if (!is_initialised()) {
     return std::nullopt;
   }
+  slot_controller_.reclaim_stale_pending();
   auto reservation = slot_controller_.reserve_for_publish(pending_count);
   if (!reservation) {
     return std::nullopt;

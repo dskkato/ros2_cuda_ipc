@@ -20,6 +20,10 @@ namespace ros2_cuda_ipc_core::cuda {
 
 class GpuBufferController;
 
+// Represents one active publish attempt. The owning GpuBufferController must
+// outlive every PublishSlot created from it. Calling controller.reset()
+// invalidates slot resource operations, but slot destruction can still cancel
+// its shared-memory reservation while the controller object remains alive.
 class PublishSlot {
  public:
   PublishSlot(PublishSlot&& other) noexcept;

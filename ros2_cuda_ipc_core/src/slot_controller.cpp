@@ -64,14 +64,16 @@ std::optional<SlotController::Reservation> SlotController::reserve_for_publish(
 }
 
 bool SlotController::cancel(const Reservation& reservation) noexcept {
-  if (!initialised_ || reservation.slot_id >= slot_count_) {
+  if (reservation.slot_id >= slot_count_) {
     return false;
   }
   const bool cancelled = LeaseHandle::cancel_pending(
       shm_name_, reservation.slot_id, reservation.generation);
   if (cancelled) {
     std::lock_guard<std::mutex> lock(deadlines_mutex_);
-    pending_deadlines_[reservation.slot_id] = {};
+    if (reservation.slot_id < pending_deadlines_.size()) {
+      pending_deadlines_[reservation.slot_id] = {};
+    }
   }
   return cancelled;
 }
