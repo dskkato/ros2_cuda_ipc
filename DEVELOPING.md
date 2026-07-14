@@ -24,8 +24,7 @@ who want to try the demo first.
 - `ros2_cuda_ipc_core::cuda::GpuBufferController`: publisher-facing buffer controller.
 - `ros2_cuda_ipc_core::cuda::PublishSlot`: one move-only publish attempt with RAII cancellation.
 
-`GpuLeasePool` remains only as a deprecated compatibility API. New Publisher
-code should follow this order:
+Publisher code should follow this order:
 
 ```cpp
 auto slot = controller.acquire_for_publish(pending_count);
