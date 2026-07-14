@@ -37,6 +37,8 @@ slot->commit_publish();
 
 Destroying an uncommitted `PublishSlot` cancels its reservation. Descriptor
 creation is rejected until the ready event has been recorded successfully.
+The protocol guarantees and known limitations are specified in
+[doc/lease_protocol.md](doc/lease_protocol.md).
 
 Receiving code can use either:
 
@@ -146,5 +148,6 @@ repository tag when needed.
 ## Design References
 
 - [doc/design.md](doc/design.md)
+- [doc/lease_protocol.md](doc/lease_protocol.md)
 - [doc/lease_handle.md](doc/lease_handle.md)
 - [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_image_fanout/doc/design.md)
