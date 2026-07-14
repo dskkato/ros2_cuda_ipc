@@ -35,7 +35,9 @@ class PublishSlot {
   void* device_ptr() const noexcept;
   cudaError_t record_ready(cudaStream_t stream) noexcept;
   std::optional<BufferDescriptor> descriptor() const;
-  bool commit_publish() noexcept;
+  // Marks a descriptor as handed to the middleware. Requires successful
+  // record_ready(); repeated calls after commit are harmless.
+  void commit_publish() noexcept;
   void cancel() noexcept;
   bool valid() const noexcept;
 

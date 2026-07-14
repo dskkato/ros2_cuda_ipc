@@ -74,8 +74,13 @@ std::optional<SlotController::Reservation> SlotController::reserve_for_publish(
     }
   }
 
-  LeaseHandle::cancel_pending(shm_name_, reservation->slot_id,
-                              reservation->generation);
+  const bool rolled_back = LeaseHandle::cancel_pending(
+      shm_name_, reservation->slot_id, reservation->generation);
+  if (!rolled_back) {
+    RCLCPP_ERROR(logger_,
+                 "Failed to roll back reservation slot=%u generation=%u",
+                 reservation->slot_id, reservation->generation);
+  }
   return std::nullopt;
 }
 
@@ -85,6 +90,10 @@ bool SlotController::cancel(const Reservation& reservation) noexcept {
   }
   const bool cancelled = LeaseHandle::cancel_pending(
       shm_name_, reservation.slot_id, reservation.generation);
+  if (!cancelled) {
+    RCLCPP_ERROR(logger_, "Failed to cancel reservation slot=%u generation=%u",
+                 reservation.slot_id, reservation.generation);
+  }
   if (cancelled) {
     std::lock_guard<std::mutex> lock(deadlines_mutex_);
     if (reservation.slot_id < pending_deadlines_.size()) {

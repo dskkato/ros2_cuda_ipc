@@ -3,6 +3,7 @@
 
 #include "ros2_cuda_ipc_core/cuda/gpu_buffer_controller.hpp"
 
+#include <cassert>
 #include <utility>
 
 namespace ros2_cuda_ipc_core::cuda {
@@ -60,12 +61,12 @@ std::optional<BufferDescriptor> PublishSlot::descriptor() const {
   return owner_->descriptor(reservation_);
 }
 
-bool PublishSlot::commit_publish() noexcept {
-  if (owner_ == nullptr || state_ != State::ready_recorded) {
-    return false;
+void PublishSlot::commit_publish() noexcept {
+  assert(owner_ != nullptr);
+  assert(state_ == State::ready_recorded || state_ == State::committed);
+  if (owner_ != nullptr && state_ == State::ready_recorded) {
+    state_ = State::committed;
   }
-  state_ = State::committed;
-  return true;
 }
 
 void PublishSlot::cancel() noexcept {

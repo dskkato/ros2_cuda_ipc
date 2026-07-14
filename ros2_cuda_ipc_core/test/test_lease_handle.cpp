@@ -249,3 +249,42 @@ TEST(LeaseHandleTest, CancelDoesNotClearNewerGeneration) {
   EXPECT_EQ(*pending, 1u);
   ::shm_unlink(shm_name.c_str());
 }
+
+TEST(LeaseHandleTest, CancelRetriesTransientReservationContention) {
+  const std::string shm_name = make_unique_shm_name("lease_cancel_contention");
+  ASSERT_TRUE(ros2_cuda_ipc_core::LeaseHandle::init(shm_name, 1));
+
+  for (int iteration = 0; iteration < 1000; ++iteration) {
+    auto reservation =
+        ros2_cuda_ipc_core::LeaseHandle::reserve_for_publish(shm_name, 1);
+    ASSERT_TRUE(reservation.has_value());
+
+    std::atomic<bool> start{false};
+    bool cancelled = false;
+    std::thread cancel_thread([&]() {
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      cancelled = ros2_cuda_ipc_core::LeaseHandle::cancel_pending(
+          shm_name, reservation->slot_id, reservation->generation);
+    });
+    std::thread reclaim_thread([&]() {
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      ros2_cuda_ipc_core::LeaseHandle::force_clear_pending(
+          shm_name, reservation->slot_id);
+    });
+
+    start.store(true, std::memory_order_release);
+    cancel_thread.join();
+    reclaim_thread.join();
+    EXPECT_TRUE(cancelled);
+
+    const auto pending = ros2_cuda_ipc_core::LeaseHandle::current_pending(
+        shm_name, reservation->slot_id);
+    ASSERT_TRUE(pending.has_value());
+    EXPECT_EQ(*pending, 0u);
+  }
+  ::shm_unlink(shm_name.c_str());
+}

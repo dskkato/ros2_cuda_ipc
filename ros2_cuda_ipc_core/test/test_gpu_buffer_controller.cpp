@@ -72,8 +72,9 @@ TEST_F(GpuBufferControllerTest, DescriptorIsGatedByReadyRecording) {
   EXPECT_EQ(descriptor->lease_shm_name, shm_name_);
   EXPECT_EQ(descriptor->byte_size, 1024u);
   EXPECT_NE(slot->record_ready(nullptr), cudaSuccess);
-  EXPECT_TRUE(slot->commit_publish());
-  EXPECT_FALSE(slot->commit_publish());
+  slot->commit_publish();
+  slot->commit_publish();
+  EXPECT_FALSE(slot->valid());
 }
 
 TEST_F(GpuBufferControllerTest, UncommittedDestructionCancelsReservation) {
@@ -93,7 +94,7 @@ TEST_F(GpuBufferControllerTest, CommittedDestructionKeepsPending) {
     auto slot = controller.acquire_for_publish(1);
     ASSERT_TRUE(slot.has_value());
     ASSERT_EQ(slot->record_ready(nullptr), cudaSuccess);
-    ASSERT_TRUE(slot->commit_publish());
+    slot->commit_publish();
   }
   EXPECT_FALSE(controller.acquire_for_publish(1).has_value());
 }
@@ -139,7 +140,7 @@ TEST_F(GpuBufferControllerTest, AcquireAutomaticallyReclaimsExpiredPending) {
     auto slot = controller.acquire_for_publish(1);
     ASSERT_TRUE(slot.has_value());
     ASSERT_EQ(slot->record_ready(nullptr), cudaSuccess);
-    ASSERT_TRUE(slot->commit_publish());
+    slot->commit_publish();
   }
 
   std::this_thread::sleep_for(std::chrono::milliseconds(5));

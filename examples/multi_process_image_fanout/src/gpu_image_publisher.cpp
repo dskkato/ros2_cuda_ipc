@@ -169,10 +169,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     view.header.frame_id = frame_id_;
 
     publisher_->publish(view);
-    if (!slot->commit_publish()) {
-      RCLCPP_ERROR(get_logger(), "Failed to commit published GPU slot");
-      return;
-    }
+    slot->commit_publish();
     ++frame_index_;
   }
 

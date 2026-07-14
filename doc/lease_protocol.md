@@ -150,8 +150,10 @@ libraryは、すべてのGPU書き込みが`record_ready()`より前にenqueue�
 ### 5.3 publishとcommit
 
 `commit_publish()`は、ROS publish APIがmessageをmiddlewareへ引き渡した後に呼ぶ。
-commitは`PublishSlot`のprocess-localな状態だけを変更し、destructorによるcancelを
-無効にする。
+commitは`PublishSlot`のprocess-localな状態を`committed`へ変更し、destructorによる
+cancelを無効にするだけの非失敗操作である。同じslotへの繰り返しcommitはno-opになる。
+descriptor取得成功後はstateが`ready_recorded`であるため、正常なpublish workflowでは
+外部resourceや競合に起因するcommit失敗は存在しない。
 
 commitは次を意味しない。
 
@@ -165,9 +167,10 @@ commitは次を意味しない。
 未commitの`PublishSlot`を破棄するとreservationを自動的にcancelする。明示的な
 `cancel()`も同じ操作を行い、複数回呼んでも安全である。
 
-cancelは`reserved`をCASで取得し、reservationのgenerationが現在も一致し、かつ
-`refcnt == 0`の場合だけpendingを0へ戻す。古いreservationから新しいgenerationの
-pendingを消去してはならない。
+cancelは`reserved`をCASで取得する。短いPublisher/TTL回収との競合ではbounded retryし、
+reservationのgenerationが現在も一致し、かつ`refcnt == 0`の場合だけpendingを0へ戻す。
+古いreservationから新しいgenerationのpendingを消去してはならない。retry上限、
+generation不一致、active leaseによりcancelできない場合はERRORとして記録する。
 
 `GpuBufferController::reset()`後でも、controller objectが生存している間は
 `PublishSlot`のdestructorがshared-memory reservationをcancelできる。

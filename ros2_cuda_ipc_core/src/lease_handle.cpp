@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <rclcpp/logging.hpp>
+#include <thread>
 #include <unordered_map>
 
 namespace ros2_cuda_ipc_core {
@@ -21,6 +22,7 @@ namespace {
 
 constexpr uint32_t kShmMagic = 0x4C534531;  // 'LSE1'
 constexpr uint32_t kLayoutVersion = 2;
+constexpr uint32_t kCancelReservationAttempts = 1024;
 
 /// Shared memory header structure stored at the start of the shared-memory
 /// segment.
@@ -331,6 +333,15 @@ LeaseHandle::reserve_for_publish(const std::string& shm_name,
   for (uint32_t offset = 0; offset < capacity; ++offset) {
     const uint32_t slot_id = (start + offset) % capacity;
     SlotMeta& slot = mapping->slots[slot_id];
+    auto& ref = as_atomic(slot.refcnt);
+    auto& pending = as_atomic(slot.pending);
+    // Avoid taking the inter-process reservation for an obviously busy slot.
+    // The values are checked again after the CAS to close the race.
+    if (ref.load(std::memory_order_acquire) != 0 ||
+        pending.load(std::memory_order_acquire) != 0) {
+      continue;
+    }
+
     auto& reserved = as_atomic(slot.reserved);
     uint32_t expected = 0;
     if (!reserved.compare_exchange_strong(expected, 1,
@@ -339,8 +350,6 @@ LeaseHandle::reserve_for_publish(const std::string& shm_name,
       continue;
     }
 
-    auto& ref = as_atomic(slot.refcnt);
-    auto& pending = as_atomic(slot.pending);
     if (ref.load(std::memory_order_acquire) != 0 ||
         pending.load(std::memory_order_acquire) != 0) {
       reserved.store(0, std::memory_order_release);
@@ -399,9 +408,20 @@ bool LeaseHandle::cancel_pending(const std::string& shm_name, uint32_t slot_id,
   }
   SlotMeta& slot = mapping->slots[slot_id];
   auto& reserved = as_atomic(slot.reserved);
-  uint32_t expected = 0;
-  if (!reserved.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
-                                        std::memory_order_acquire)) {
+  bool reservation_acquired = false;
+  for (uint32_t attempt = 0; attempt < kCancelReservationAttempts; ++attempt) {
+    uint32_t expected = 0;
+    if (reserved.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
+                                         std::memory_order_acquire)) {
+      reservation_acquired = true;
+      break;
+    }
+    std::this_thread::yield();
+  }
+  if (!reservation_acquired) {
+    RCLCPP_ERROR(lease_logger(),
+                 "lease:cancel_reservation_contention slot=%u gen=%u", slot_id,
+                 generation);
     return false;
   }
   auto& current_generation = as_atomic(slot.generation);
