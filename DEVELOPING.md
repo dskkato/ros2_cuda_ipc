@@ -150,4 +150,5 @@ repository tag when needed.
 - [doc/design.md](doc/design.md)
 - [doc/lease_protocol.md](doc/lease_protocol.md)
 - [doc/lease_handle.md](doc/lease_handle.md)
+- [doc/future_work.md](doc/future_work.md)
 - [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_image_fanout/doc/design.md)

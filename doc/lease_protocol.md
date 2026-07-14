@@ -326,6 +326,11 @@ Publisher instanceごとに一意なSHM名を使用することを推奨する�
 /base_name/<publisher_instance_uuid>
 ```
 
+実装はlocal configurationを超える`slot_id`を検出した場合、取得したreservationを
+generation付きでrollbackしてERRORを記録する。ただし、これはcapacity不一致時の
+defensive cleanupであり、同じSHM名を複数Publisherが再初期化することを安全にする
+仕組みではない。
+
 ### 12.3 generation wraparound
 
 wire formatとshared stateのgenerationは`uint32_t`である。長時間稼働してwraparoundすると、
@@ -374,6 +379,7 @@ middleware上のdropにより、`pending_count`と実際のlease取得数は一�
 | refcnt overflow | Subscriber acquire失敗 |
 | stale pending | TTL条件を満たす場合にPublisherが回収 |
 | Subscriber crash | refcnt leak。自動回収しない |
+| SHM capacity不一致 | reservationをrollbackしてPublisher acquire失敗。並行再初期化自体は非対応 |
 
 ---
 

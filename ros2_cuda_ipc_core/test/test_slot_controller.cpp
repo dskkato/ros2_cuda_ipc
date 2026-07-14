@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/lease_handle.hpp"
@@ -25,11 +26,24 @@ std::string make_unique_shm_name() {
   return out.str();
 }
 
+class ShmUnlinkGuard {
+ public:
+  explicit ShmUnlinkGuard(std::string name) : name_(std::move(name)) {}
+  ~ShmUnlinkGuard() { ::shm_unlink(name_.c_str()); }
+
+  ShmUnlinkGuard(const ShmUnlinkGuard&) = delete;
+  ShmUnlinkGuard& operator=(const ShmUnlinkGuard&) = delete;
+
+ private:
+  std::string name_;
+};
+
 }  // namespace
 
 TEST(SlotControllerTest, ResetRacingWithReserveDoesNotLeavePending) {
   for (int iteration = 0; iteration < 1000; ++iteration) {
     const std::string shm_name = make_unique_shm_name();
+    const ShmUnlinkGuard shm_guard(shm_name);
     ros2_cuda_ipc_core::SlotController controller(
         shm_name, 1, std::chrono::milliseconds(100),
         rclcpp::get_logger("SlotControllerTest"));
@@ -61,6 +75,32 @@ TEST(SlotControllerTest, ResetRacingWithReserveDoesNotLeavePending) {
         ros2_cuda_ipc_core::LeaseHandle::current_pending(shm_name, 0);
     ASSERT_TRUE(pending.has_value());
     EXPECT_EQ(*pending, 0u);
-    ::shm_unlink(shm_name.c_str());
   }
+}
+
+TEST(SlotControllerTest, CapacityMismatchRollsBackOutOfRangeReservation) {
+  const std::string shm_name = make_unique_shm_name();
+  const ShmUnlinkGuard shm_guard(shm_name);
+  ros2_cuda_ipc_core::SlotController controller(
+      shm_name, 1, std::chrono::milliseconds(100),
+      rclcpp::get_logger("SlotControllerTest"));
+  ASSERT_TRUE(controller.initialise());
+
+  // Simulate an unsupported second Publisher reinitialising the same name
+  // with a different capacity, then occupy slot 0 so the local controller
+  // observes an out-of-range reservation for slot 1.
+  ASSERT_TRUE(ros2_cuda_ipc_core::LeaseHandle::init(shm_name, 2));
+  const auto occupied =
+      ros2_cuda_ipc_core::LeaseHandle::reserve_for_publish(shm_name, 1);
+  ASSERT_TRUE(occupied.has_value());
+  ASSERT_EQ(occupied->slot_id, 0u);
+
+  EXPECT_FALSE(controller.reserve_for_publish(1).has_value());
+  const auto out_of_range_pending =
+      ros2_cuda_ipc_core::LeaseHandle::current_pending(shm_name, 1);
+  ASSERT_TRUE(out_of_range_pending.has_value());
+  EXPECT_EQ(*out_of_range_pending, 0u);
+
+  EXPECT_TRUE(ros2_cuda_ipc_core::LeaseHandle::cancel_pending(
+      shm_name, occupied->slot_id, occupied->generation));
 }

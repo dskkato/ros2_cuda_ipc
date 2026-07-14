@@ -59,7 +59,22 @@ std::optional<SlotController::Reservation> SlotController::reserve_for_publish(
   }
   const auto reservation =
       LeaseHandle::reserve_for_publish(shm_name_, pending_count);
-  if (!reservation || reservation->slot_id >= slot_count_) {
+  if (!reservation) {
+    return std::nullopt;
+  }
+  if (reservation->slot_id >= slot_count_) {
+    RCLCPP_ERROR(logger_,
+                 "Lease shared-memory capacity changed unexpectedly: "
+                 "slot=%u configured_count=%zu",
+                 reservation->slot_id, slot_count_);
+    const bool rolled_back = LeaseHandle::cancel_pending(
+        shm_name_, reservation->slot_id, reservation->generation);
+    if (!rolled_back) {
+      RCLCPP_ERROR(logger_,
+                   "Failed to roll back out-of-range reservation slot=%u "
+                   "generation=%u",
+                   reservation->slot_id, reservation->generation);
+    }
     return std::nullopt;
   }
   {
