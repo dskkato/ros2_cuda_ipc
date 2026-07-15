@@ -245,35 +245,6 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
   return mapping;
 }
 
-std::optional<uint32_t> LeaseHandle::choose_empty_slot(
-    const std::string& shm_name) {
-  auto mapping = attach(shm_name);
-  if (!mapping || mapping->capacity == 0) {
-    return std::nullopt;
-  }
-
-  const uint32_t capacity = mapping->capacity;
-  const uint32_t start_index =
-      mapping->next_slot.fetch_add(1, std::memory_order_relaxed) % capacity;
-
-  // Probe slots in a round-robin order so each slot gets exercised early and
-  // cached IPC handles become available for all of them.
-  for (uint32_t offset = 0; offset < capacity; ++offset) {
-    const uint32_t idx = (start_index + offset) % capacity;
-    auto& ref = as_atomic(mapping->slots[idx].refcnt);
-    auto& pending = as_atomic(mapping->slots[idx].pending);
-    auto& reserved = as_atomic(mapping->slots[idx].reserved);
-    if (reserved.load(std::memory_order_acquire) == 0 &&
-        ref.load(std::memory_order_acquire) == 0 &&
-        pending.load(std::memory_order_acquire) == 0) {
-      const uint32_t next = (idx + 1) % capacity;
-      mapping->next_slot.store(next, std::memory_order_relaxed);
-      return idx;
-    }
-  }
-  return std::nullopt;
-}
-
 std::optional<uint32_t> LeaseHandle::current_generation(
     const std::string& shm_name, uint32_t slot_id) {
   auto mapping = attach(shm_name);
@@ -302,21 +273,6 @@ std::optional<uint32_t> LeaseHandle::current_pending(
   }
   auto& pending = as_atomic(mapping->slots[slot_id].pending);
   return pending.load(std::memory_order_acquire);
-}
-
-std::optional<uint32_t> LeaseHandle::bump_generation(
-    const std::string& shm_name, uint32_t slot_id, uint32_t pending_count) {
-  auto mapping = attach(shm_name);
-  if (!mapping || slot_id >= mapping->capacity) {
-    return std::nullopt;
-  }
-  SlotMeta* slot = &mapping->slots[slot_id];
-  auto& gen = as_atomic(slot->generation);
-  const uint32_t next = gen.load(std::memory_order_relaxed) + 1;
-  gen.store(next, std::memory_order_release);
-  auto& pending = as_atomic(slot->pending);
-  pending.store(pending_count, std::memory_order_release);
-  return next;
 }
 
 std::optional<LeaseHandle::PublisherReservation>

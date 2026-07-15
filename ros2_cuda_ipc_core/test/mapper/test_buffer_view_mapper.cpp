@@ -52,15 +52,15 @@ TEST_F(BufferViewMapperTest, UnsupportedBackendReturnsInvalid) {
   const std::string shm_name =
       ros2_cuda_ipc_core::test::make_unique_shm_name("buffer_mapper_backend");
   ASSERT_TRUE(ros2_cuda_ipc_core::LeaseHandle::init(shm_name, 1));
-  auto generation =
-      ros2_cuda_ipc_core::LeaseHandle::bump_generation(shm_name, 0, 0);
-  ASSERT_TRUE(generation.has_value());
+  auto reservation =
+      ros2_cuda_ipc_core::LeaseHandle::reserve_for_publish(shm_name, 0);
+  ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
   msg.slot_id = 0;
   msg.device_id = 0;
-  msg.generation = generation.value();
+  msg.generation = reservation->generation;
   msg.byte_size = 64;
   msg.backend = 255;
 
@@ -79,15 +79,15 @@ TEST_F(BufferViewMapperTest, InvalidVmmPayloadReturnsInvalid) {
   const std::string shm_name = ros2_cuda_ipc_core::test::make_unique_shm_name(
       "buffer_mapper_vmm_payload");
   ASSERT_TRUE(ros2_cuda_ipc_core::LeaseHandle::init(shm_name, 1));
-  auto generation =
-      ros2_cuda_ipc_core::LeaseHandle::bump_generation(shm_name, 0, 1);
-  ASSERT_TRUE(generation.has_value());
+  auto reservation =
+      ros2_cuda_ipc_core::LeaseHandle::reserve_for_publish(shm_name, 1);
+  ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
   msg.slot_id = 0;
   msg.device_id = 0;
-  msg.generation = generation.value();
+  msg.generation = reservation->generation;
   msg.byte_size = 64;
   msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD;
   msg.mem_handle.fill(0);
@@ -108,15 +108,15 @@ TEST_F(BufferViewMapperTest, MissingVmmSocketReturnsInvalidAndReleasesLease) {
   const std::string shm_name =
       ros2_cuda_ipc_core::test::make_unique_shm_name("buffer_mapper_vmm_sock");
   ASSERT_TRUE(ros2_cuda_ipc_core::LeaseHandle::init(shm_name, 1));
-  auto generation =
-      ros2_cuda_ipc_core::LeaseHandle::bump_generation(shm_name, 0, 1);
-  ASSERT_TRUE(generation.has_value());
+  auto reservation =
+      ros2_cuda_ipc_core::LeaseHandle::reserve_for_publish(shm_name, 1);
+  ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
   msg.slot_id = 0;
   msg.device_id = 0;
-  msg.generation = generation.value();
+  msg.generation = reservation->generation;
   msg.byte_size = 64;
   msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD;
   msg.event_handle.fill(0);
