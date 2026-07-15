@@ -16,10 +16,10 @@
 namespace ros2_cuda_ipc_core::cuda::cuda_ipc {
 namespace {
 
-class CudaIpcMemoryBackend : public GpuLeasePool::MemoryBackend {
+class CudaIpcMemoryBackend : public GpuBufferPool::MemoryBackend {
  public:
   bool allocate(uint64_t frame_size_bytes, int device_index,
-                std::vector<GpuLeasePool::Slot>& slots,
+                std::vector<GpuBufferPool::SlotResources>& slots,
                 rclcpp::Logger logger) override {
     (void)device_index;
     for (auto& slot : slots) {
@@ -46,7 +46,7 @@ class CudaIpcMemoryBackend : public GpuLeasePool::MemoryBackend {
     return true;
   }
 
-  void destroy(std::vector<GpuLeasePool::Slot>& slots,
+  void destroy(std::vector<GpuBufferPool::SlotResources>& slots,
                rclcpp::Logger logger) noexcept override {
     for (auto& slot : slots) {
       if (slot.device_ptr) {
@@ -66,7 +66,7 @@ class CudaIpcMemoryBackend : public GpuLeasePool::MemoryBackend {
 
 }  // namespace
 
-std::unique_ptr<GpuLeasePool::MemoryBackend> make_cuda_ipc_memory_backend() {
+std::unique_ptr<GpuBufferPool::MemoryBackend> make_cuda_ipc_memory_backend() {
   return std::make_unique<CudaIpcMemoryBackend>();
 }
 

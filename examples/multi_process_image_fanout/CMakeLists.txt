@@ -21,23 +21,22 @@ find_package(ros2_cuda_ipc_core REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
-add_library(${PROJECT_NAME}_helpers
-  src/image_publisher_helper.cpp
+add_library(${PROJECT_NAME}_kernels
   src/cuda/kernels.cu
 )
 
-set_target_properties(${PROJECT_NAME}_helpers PROPERTIES
+set_target_properties(${PROJECT_NAME}_kernels PROPERTIES
   CUDA_SEPARABLE_COMPILATION ON
   POSITION_INDEPENDENT_CODE ON
 )
 
-target_include_directories(${PROJECT_NAME}_helpers
+target_include_directories(${PROJECT_NAME}_kernels
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(${PROJECT_NAME}_helpers
+target_link_libraries(${PROJECT_NAME}_kernels
   PUBLIC
     rclcpp::rclcpp
     ros2_cuda_ipc_core::ros2_cuda_ipc_core
@@ -53,7 +52,7 @@ add_executable(gpu_image_publisher
 
 target_link_libraries(gpu_image_publisher
   PRIVATE
-    ${PROJECT_NAME}_helpers
+    ${PROJECT_NAME}_kernels
     ${ros2_cuda_ipc_msgs_TARGETS}
 )
 
@@ -63,7 +62,7 @@ add_executable(preview_node
 
 target_link_libraries(preview_node
   PRIVATE
-    ${PROJECT_NAME}_helpers
+    ${PROJECT_NAME}_kernels
     ${ros2_cuda_ipc_msgs_TARGETS}
 )
 
@@ -73,7 +72,7 @@ add_executable(encoder_like_node
 
 target_link_libraries(encoder_like_node
   PRIVATE
-    ${PROJECT_NAME}_helpers
+    ${PROJECT_NAME}_kernels
     ${ros2_cuda_ipc_msgs_TARGETS}
 )
 
@@ -83,12 +82,12 @@ add_executable(inference_like_node
 
 target_link_libraries(inference_like_node
   PRIVATE
-    ${PROJECT_NAME}_helpers
+    ${PROJECT_NAME}_kernels
     ${ros2_cuda_ipc_msgs_TARGETS}
 )
 
 install(TARGETS
-  ${PROJECT_NAME}_helpers
+  ${PROJECT_NAME}_kernels
   gpu_image_publisher
   preview_node
   encoder_like_node
@@ -116,7 +115,7 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_kernels test/test_kernels.cpp)
   target_link_libraries(test_kernels
-    ${PROJECT_NAME}_helpers
+    ${PROJECT_NAME}_kernels
     CUDA::cudart
   )
 endif()

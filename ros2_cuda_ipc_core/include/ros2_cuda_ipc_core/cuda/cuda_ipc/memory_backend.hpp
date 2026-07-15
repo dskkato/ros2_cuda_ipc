@@ -5,10 +5,10 @@
 
 #include <memory>
 
-#include "ros2_cuda_ipc_core/cuda/gpu_lease_pool.hpp"
+#include "ros2_cuda_ipc_core/cuda/gpu_buffer_pool.hpp"
 
 namespace ros2_cuda_ipc_core::cuda::cuda_ipc {
 
-std::unique_ptr<GpuLeasePool::MemoryBackend> make_cuda_ipc_memory_backend();
+std::unique_ptr<GpuBufferPool::MemoryBackend> make_cuda_ipc_memory_backend();
 
 }  // namespace ros2_cuda_ipc_core::cuda::cuda_ipc

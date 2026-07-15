@@ -16,20 +16,17 @@ namespace ros2_cuda_ipc_core {
 /// reference counting and generation checks.
 class LeaseHandle {
  public:
+  struct PublisherReservation {
+    uint32_t slot_id;
+    uint32_t generation;
+  };
+
   /// Create or reset the shared-memory layout for a lease pool.
   ///
   /// \param shm_name Shared-memory name (POSIX shm_open identifier).
   /// \param capacity Number of slots to allocate in the pool.
   /// \return true when the memory is initialized successfully.
   static bool init(const std::string& shm_name, uint32_t capacity);
-
-  /// Find a slot whose reference and pending counters have both dropped to
-  /// zero.
-  ///
-  /// \param shm_name Shared-memory name to query.
-  /// \return slot id on success; std::nullopt when no free slot exists or the
-  /// mapping cannot be attached.
-  static std::optional<uint32_t> choose_empty_slot(const std::string& shm_name);
 
   /// Read the current generation value for a slot.
   ///
@@ -49,16 +46,10 @@ class LeaseHandle {
   static std::optional<uint32_t> current_refcount(const std::string& shm_name,
                                                   uint32_t slot_id);
 
-  /// Advance the generation number for a slot before publishing new data and
-  /// seed the pending consumer count.
-  ///
-  /// \param shm_name Shared-memory name to update.
-  /// \param slot_id Slot index inside the pool.
-  /// \param pending Number of consumers expected to acquire the payload.
-  /// \return next generation number; std::nullopt when the slot is invalid.
-  static std::optional<uint32_t> bump_generation(const std::string& shm_name,
-                                                 uint32_t slot_id,
-                                                 uint32_t pending);
+  /// Atomically claim an idle slot against concurrent Publisher reservations
+  /// and Subscriber acquisitions, then advance generation and seed pending.
+  static std::optional<PublisherReservation> reserve_for_publish(
+      const std::string& shm_name, uint32_t pending);
 
   /// Read the current pending count for a slot.
   static std::optional<uint32_t> current_pending(const std::string& shm_name,
@@ -71,6 +62,10 @@ class LeaseHandle {
   /// interfering with active consumers.
   static bool force_clear_pending(const std::string& shm_name,
                                   uint32_t slot_id);
+
+  /// Clear pending only when the slot still belongs to the given generation.
+  static bool cancel_pending(const std::string& shm_name, uint32_t slot_id,
+                             uint32_t generation);
 
   /// Acquire a lease for a slot if the generation matches and increment its
   /// reference count.
