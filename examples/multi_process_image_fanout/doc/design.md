@@ -84,10 +84,7 @@ Topic types:
 
 ```text
 /fanout/image_gpu
-  custom type:
-    ros2_cuda_ipc_core::view::ImageView
-  ROS message type through TypeAdapter:
-    ros2_cuda_ipc_msgs::msg::GpuImage
+  ros2_cuda_ipc_msgs::msg::GpuImage
 
 /fanout/preview/image
   sensor_msgs::msg::Image

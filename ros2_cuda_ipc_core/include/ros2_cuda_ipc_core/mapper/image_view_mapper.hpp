@@ -21,7 +21,4 @@ class ImageViewMapper {
 
 view::ImageView map_image_view(const ros2_cuda_ipc_msgs::msg::GpuImage& msg);
 
-void fill_gpu_image_message(const view::ImageView& view,
-                            ros2_cuda_ipc_msgs::msg::GpuImage& msg);
-
 }  // namespace ros2_cuda_ipc_core::mapper

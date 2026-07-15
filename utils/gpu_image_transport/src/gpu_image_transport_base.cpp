@@ -26,9 +26,14 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
   subscription_options.use_intra_process_comm =
       rclcpp::IntraProcessSetting::Disable;
 
-  subscription_ = create_subscription<ros2_cuda_ipc_core::view::ImageView>(
+  subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
       input_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
-      [this](const ros2_cuda_ipc_core::view::ImageView& view) {
+      [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
+        auto view = ros2_cuda_ipc_core::mapper::map_image_view(message);
+        if (!view.valid()) {
+          RCLCPP_WARN(get_logger(), "Failed to map received GPU image");
+          return;
+        }
         on_image(view);
       },
       subscription_options);

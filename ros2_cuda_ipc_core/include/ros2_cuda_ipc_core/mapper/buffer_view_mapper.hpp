@@ -27,7 +27,4 @@ class BufferViewMapper {
 view::BufferView map_buffer_view(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg);
 
-void fill_buffer_core_message(const view::BufferView& view,
-                              ros2_cuda_ipc_msgs::msg::BufferCore& msg);
-
 }  // namespace ros2_cuda_ipc_core::mapper

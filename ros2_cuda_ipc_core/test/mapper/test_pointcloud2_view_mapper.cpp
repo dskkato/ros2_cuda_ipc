@@ -84,36 +84,4 @@ TEST_F(PointCloud2ViewMapperTest, CopiesLayoutWhenCoreIsValid) {
   ::shm_unlink(core.shm_name.c_str());
 }
 
-TEST_F(PointCloud2ViewMapperTest,
-       FillGpuPointCloud2MessageCopiesLayoutAndCore) {
-  ros2_cuda_ipc_core::view::PointCloud2View view;
-  view.header.frame_id = "frame";
-  view.core.device_id = 1;
-  view.core.byte_size = 120;
-  view.core.slot_id = 5;
-  view.core.generation = 9;
-  view.core.shm_name = "/pc_demo";
-  cudaIpcMemHandle_t mem_handle{};
-  cudaIpcEventHandle_t event_handle{};
-  view.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
-                            reinterpret_cast<const uint8_t*>(&mem_handle),
-                            sizeof(mem_handle), event_handle);
-  view.height = 1;
-  view.width = 10;
-  view.point_step = 12;
-  view.row_step = 120;
-  view.is_dense = true;
-  view.fields = {{"x", 0u, sensor_msgs::msg::PointField::FLOAT32, 1u},
-                 {"y", 4u, sensor_msgs::msg::PointField::FLOAT32, 1u}};
-
-  ros2_cuda_ipc_msgs::msg::GpuPointCloud2 msg;
-  ros2_cuda_ipc_core::mapper::fill_gpu_pointcloud2_message(view, msg);
-
-  EXPECT_EQ(msg.header.frame_id, "frame");
-  EXPECT_EQ(msg.width, 10u);
-  EXPECT_EQ(msg.fields.size(), 2u);
-  EXPECT_EQ(msg.core.slot_id, 5u);
-  EXPECT_EQ(msg.core.shm_name, "/pc_demo");
-}
-
 }  // namespace

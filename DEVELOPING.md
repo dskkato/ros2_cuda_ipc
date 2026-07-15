@@ -7,9 +7,9 @@ who want to try the demo first.
 ## Packages
 
 - `ros2_cuda_ipc_msgs`: message definitions for GPU-backed buffers.
-- `ros2_cuda_ipc_core`: CUDA memory sharing, lease handling, mapper APIs, and type adapters.
+- `ros2_cuda_ipc_core`: CUDA memory sharing, lease handling, mapper APIs, and Views.
 - `examples/multi_process_image_fanout`: primary multi-process sample.
-- `utils/gpu_image_transport`: utility bridge from `ImageView` to CPU image topics.
+- `utils/gpu_image_transport`: utility bridge from `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: CUDA IPC and VMM-FD environment checks.
 
 ## Core Components
@@ -17,7 +17,6 @@ who want to try the demo first.
 - `ros2_cuda_ipc_core::view::BufferView`: base view for an imported GPU resource and its lease.
 - `ros2_cuda_ipc_core::view::ImageView` / `PointCloud2View`: typed metadata layered on `BufferView`.
 - `ros2_cuda_ipc_core::mapper::*ViewMapper`: explicit mapping APIs from raw messages to imported views.
-- `ros2_cuda_ipc_core/type_adapters.hpp`: thin TypeAdapter layer for publishing/subscribing to views directly.
 - `ros2_cuda_ipc_core::LeaseHandle`: process-shared slot lease accounting.
 - `ros2_cuda_ipc_core::cuda::GpuBufferPool`: publisher-side GPU resource ownership.
 - `ros2_cuda_ipc_core::SlotController`: publisher reservation, pending, generation, and TTL state.
@@ -40,10 +39,9 @@ creation is rejected until the ready event has been recorded successfully.
 The protocol guarantees and known limitations are specified in
 [doc/lease_protocol.md](doc/lease_protocol.md).
 
-Receiving code can use either:
-
-- TypeAdapter API: subscribe directly to `ros2_cuda_ipc_core::view::ImageView`.
-- Mapper API: subscribe to `ros2_cuda_ipc_msgs::msg::GpuImage` and call the mapper explicitly.
+Receiving code subscribes to `ros2_cuda_ipc_msgs::msg::GpuImage` and calls the
+mapper explicitly. Mapping acquires the lease and imports or looks up the GPU
+resource before returning an `ImageView`.
 
 ## Memory Backends
 

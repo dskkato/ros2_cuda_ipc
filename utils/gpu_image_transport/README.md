@@ -1,13 +1,15 @@
 # gpu_image_transport
 
-`gpu_image_transport` provides utility ROS 2 nodes for converting
-`ros2_cuda_ipc_core::view::ImageView` messages into CPU-backed image topics.
+`gpu_image_transport` provides utility ROS 2 nodes for mapping
+`ros2_cuda_ipc_msgs::msg::GpuImage` messages into imported Views and then
+republishing CPU-backed image topics.
 
 This package is not an `image_transport` plugin package. It does not register
 pluginlib transports like the packages in
 `ros-perception/image_transport_plugins`; it subscribes to GPU-backed
-`ImageView` messages, waits on the exported CUDA ready event, copies the image
-payload to pinned host memory, and republishes it as standard ROS messages.
+`GpuImage` messages, maps each message explicitly, waits on the exported CUDA
+ready event, copies the image payload to pinned host memory, and republishes it
+as standard ROS messages.
 
 ## Nodes
 
@@ -33,7 +35,7 @@ Publishes `sensor_msgs::msg::CompressedImage`.
 
 ## Parameters
 
-- `input_topic_name`: GPU `ImageView` input topic. Default: `image_gpu`.
+- `input_topic_name`: GPU `GpuImage` input topic. Default: `image_gpu`.
 - `cpu_topic_name`: CPU image output topic. Default: `image`.
 - `compressed_format`: `jpeg`, `png`, or `bmp` for the compressed node.
 - `jpeg_quality`: JPEG quality for the compressed node, clamped to `0..100`.
