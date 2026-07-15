@@ -24,7 +24,4 @@ class PointCloud2ViewMapper {
 view::PointCloud2View map_pointcloud2_view(
     const ros2_cuda_ipc_msgs::msg::GpuPointCloud2& msg);
 
-void fill_gpu_pointcloud2_message(const view::PointCloud2View& view,
-                                  ros2_cuda_ipc_msgs::msg::GpuPointCloud2& msg);
-
 }  // namespace ros2_cuda_ipc_core::mapper

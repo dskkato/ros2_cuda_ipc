@@ -9,7 +9,7 @@
 #include <string>
 
 #include "ros2_cuda_ipc_core/memory_types.hpp"
-#include "ros2_cuda_ipc_core/view/buffer_view.hpp"
+#include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
 namespace ros2_cuda_ipc_core {
 
@@ -24,10 +24,11 @@ struct BufferDescriptor {
   MemoryBackendKind backend = MemoryBackendKind::CUDA_IPC;
   MemoryHandlePayload memory_handle{};
   cudaIpcEventHandle_t ready_event_handle{};
-
-  // Bridge for the existing publisher-side ROS type adapters.  The returned
-  // view does not own the pointer and does not carry a Subscriber lease.
-  view::BufferView to_publisher_view(void* device_ptr) const;
 };
+
+// Copies transport metadata into the ROS wire message.  Publisher-local CUDA
+// pointers and leases are intentionally not part of BufferCore.
+void fill_buffer_core_message(const BufferDescriptor& descriptor,
+                              ros2_cuda_ipc_msgs::msg::BufferCore& message);
 
 }  // namespace ros2_cuda_ipc_core

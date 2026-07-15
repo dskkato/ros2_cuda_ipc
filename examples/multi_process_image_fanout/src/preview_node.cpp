@@ -15,7 +15,8 @@
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/type_adapters.hpp"
+#include "ros2_cuda_ipc_core/mapper/image_view_mapper.hpp"
+#include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
 namespace multi_process_image_fanout {
@@ -74,9 +75,15 @@ class PreviewNode : public rclcpp::Node {
 
     rclcpp::SubscriptionOptions sub_options;
     sub_options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-    subscription_ = create_subscription<ros2_cuda_ipc_core::view::ImageView>(
+    subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
         input_topic_name_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
-        [this](const ros2_cuda_ipc_core::view::ImageView& view) {
+        [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
+          auto view = ros2_cuda_ipc_core::mapper::map_image_view(message);
+          if (!view.valid()) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                 "Skipping GPU image mapping failure");
+            return;
+          }
           on_image(view);
         },
         sub_options);
@@ -247,7 +254,7 @@ class PreviewNode : public rclcpp::Node {
     return cudaSuccess;
   }
 
-  rclcpp::Subscription<ros2_cuda_ipc_core::view::ImageView>::SharedPtr
+  rclcpp::Subscription<ros2_cuda_ipc_msgs::msg::GpuImage>::SharedPtr
       subscription_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_;
   cudaStream_t stream_ = nullptr;

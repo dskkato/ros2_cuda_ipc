@@ -16,7 +16,8 @@
 #include "ros2_cuda_ipc_core/cuda/gpu_buffer_controller.hpp"
 #include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/memory_backend_utils.hpp"
-#include "ros2_cuda_ipc_core/type_adapters.hpp"
+#include "ros2_cuda_ipc_core/view/image_view.hpp"
+#include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 
 namespace multi_process_image_fanout {
 
@@ -24,7 +25,7 @@ using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
 
 namespace {
 constexpr uint64_t kBytesPerPixel = 4;
-}
+}  // namespace
 
 class GpuImagePublisherNode : public rclcpp::Node {
  public:
@@ -78,7 +79,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     try {
       rclcpp::PublisherOptions options;
       options.use_intra_process_comm = rclcpp::IntraProcessSetting::Disable;
-      publisher_ = create_publisher<ros2_cuda_ipc_core::view::ImageView>(
+      publisher_ = create_publisher<ros2_cuda_ipc_msgs::msg::GpuImage>(
           topic_name_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(), options);
 
       if (publish_rate_hz_ <= 0.0) {
@@ -159,21 +160,21 @@ class GpuImagePublisherNode : public rclcpp::Node {
       return;
     }
 
-    ros2_cuda_ipc_core::view::ImageView view;
-    view.core = descriptor->to_publisher_view(slot->device_ptr());
-    view.dtype = ros2_cuda_ipc_core::view::DType::U8;
-    view.shape = {height_, width_, kDefaultChannels};
-    view.strides = {width_ * kBytesPerPixel, kDefaultChannels, 1};
-    view.encoding = encoding_;
-    view.header.stamp = now();
-    view.header.frame_id = frame_id_;
+    ros2_cuda_ipc_msgs::msg::GpuImage message;
+    ros2_cuda_ipc_core::fill_buffer_core_message(*descriptor, message.core);
+    message.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::view::DType::U8);
+    message.shape = {height_, width_, kDefaultChannels};
+    message.strides = {width_ * kBytesPerPixel, kDefaultChannels, 1};
+    message.encoding = encoding_;
+    message.header.stamp = now();
+    message.header.frame_id = frame_id_;
 
-    publisher_->publish(view);
+    publisher_->publish(message);
     slot->commit_publish();
     ++frame_index_;
   }
 
-  rclcpp::Publisher<ros2_cuda_ipc_core::view::ImageView>::SharedPtr publisher_;
+  rclcpp::Publisher<ros2_cuda_ipc_msgs::msg::GpuImage>::SharedPtr publisher_;
   std::unique_ptr<ros2_cuda_ipc_core::cuda::GpuBufferController> controller_;
   rclcpp::TimerBase::SharedPtr timer_;
   cudaStream_t stream_ = nullptr;

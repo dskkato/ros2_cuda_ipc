@@ -57,9 +57,18 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
   msg.encoding = "mono16";
   msg.core = core;
 
+  auto before = ros2_cuda_ipc_core::LeaseHandle::current_refcount(core.shm_name,
+                                                                  core.slot_id);
+  ASSERT_TRUE(before.has_value());
+  EXPECT_EQ(before.value(), 0u);
+
   ros2_cuda_ipc_core::mapper::ImageViewMapper mapper;
   auto view = mapper.map(msg);
   ASSERT_TRUE(view.core.valid());
+  auto during = ros2_cuda_ipc_core::LeaseHandle::current_refcount(core.shm_name,
+                                                                  core.slot_id);
+  ASSERT_TRUE(during.has_value());
+  EXPECT_EQ(during.value(), 1u);
   EXPECT_EQ(view.header.frame_id, "camera_frame");
   EXPECT_EQ(view.dtype, ros2_cuda_ipc_core::view::DType::U16);
   EXPECT_EQ(view.shape[1], 5u);
@@ -67,35 +76,11 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
   EXPECT_EQ(view.encoding, "mono16");
 
   view.core.reset();
+  auto after = ros2_cuda_ipc_core::LeaseHandle::current_refcount(core.shm_name,
+                                                                 core.slot_id);
+  ASSERT_TRUE(after.has_value());
+  EXPECT_EQ(after.value(), 0u);
   ::shm_unlink(core.shm_name.c_str());
-}
-
-TEST_F(ImageViewMapperTest, FillGpuImageMessageCopiesMetadataAndCore) {
-  ros2_cuda_ipc_core::view::ImageView view;
-  view.header.frame_id = "frame";
-  view.dtype = ros2_cuda_ipc_core::view::DType::U8;
-  view.shape = {4, 5, 3};
-  view.strides = {15, 3, 1};
-  view.encoding = "rgb8";
-  view.core.device_id = 1;
-  view.core.byte_size = 60;
-  view.core.slot_id = 3;
-  view.core.generation = 7;
-  view.core.shm_name = "/demo";
-  cudaIpcMemHandle_t mem_handle{};
-  cudaIpcEventHandle_t event_handle{};
-  view.core.set_ipc_handles(ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
-                            reinterpret_cast<const uint8_t*>(&mem_handle),
-                            sizeof(mem_handle), event_handle);
-
-  ros2_cuda_ipc_msgs::msg::GpuImage msg;
-  ros2_cuda_ipc_core::mapper::fill_gpu_image_message(view, msg);
-
-  EXPECT_EQ(msg.header.frame_id, "frame");
-  EXPECT_EQ(msg.encoding, "rgb8");
-  EXPECT_EQ(msg.shape[1], 5u);
-  EXPECT_EQ(msg.core.slot_id, 3u);
-  EXPECT_EQ(msg.core.shm_name, "/demo");
 }
 
 }  // namespace

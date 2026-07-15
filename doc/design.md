@@ -97,7 +97,7 @@ memo:
 
 #### BufferView
 
-  * BufferCore.msg を TypeAdapter が開いた結果 (dev_ptr, ready_evt, LeaseHandle)。
+  * BufferCore.msg を Subscriber mapper が import した結果 (dev_ptr, ready_evt, LeaseHandle)。
   * データの解釈は持たない。
 
 ```cpp
@@ -155,8 +155,7 @@ private:
 
 BufferView 自体はハンドルを開かず、受信側 mapper が構築した dev_ptr / ready_evt と
 LeaseHandle を保持する。mapper はプロセス内キャッシュを使って同じハンドルの open/import を
-初回だけ実行する。TypeAdapter は mapper を呼ぶだけの薄い wrapper とする。これにより
-CopyConstructible という rclcpp の要件を満たしつつ、フレームごとの open/close コストを排除する。
+初回だけ実行し、フレームごとの open/close コストを排除する。
 
 #### MemoryBackend / MemoryImporter の抽象化
 
@@ -194,7 +193,8 @@ GPU メモリを「Shareable FD」として扱い、`backend=VMM_FD` で配布�
    * Subscriber からの接続を待ち、`SCM_RIGHTS` で FD を配布する。FD を持つプロセスは
      `cuMemImportFromShareableHandle` で VMM アドレス空間にマップできる。
 2. **ROS 2 publish**
-   * ROS メッセージには slot\_id、generation、`cudaIpcEventHandle_t` と uuid（mem\_handle）だけを入れる。
+   * Publisher は `BufferDescriptor` から `BufferCore` を構築し、slot\_id、generation、
+     `cudaIpcEventHandle_t` と uuid（mem\_handle）を ROS メッセージに入れる。
      メモリ自体は FD 配布済みなので、フレームごとに再送する必要がない。
    * Subscriber は `mem_handle` から uuid を取り出し、まだ FD を import していなければ Unix ソケット経由で取得
      し、`cuMemImportFromShareableHandle` でデバイスポインタを得る。ready イベントは従来通り
@@ -221,8 +221,8 @@ GPU メモリを「Shareable FD」として扱い、`backend=VMM_FD` で配布�
      管理情報で socket の所有者を確認してから削除する仕組みを検討する。
 
 この設計により、GPU メモリの配布方法だけを MemoryBackend/MemoryImporter で差し替え、ROS 2 メッセージ形式と
-BufferView/TypeAdapter の API を維持したまま Jetson Orin をサポートできる。明示制御が必要な利用者には
-Mapper API を併設する。
+BufferView と Mapper の API を維持したまま Jetson Orin をサポートできる。
+Publisher は wire message を直接構築し、Subscriber は Mapper API で明示的に View を取得する。
 
 #### ImageView（BufferView + 最小限の画像メタデータ）
 
@@ -399,16 +399,16 @@ struct PointCloud2View {
 * DeviceField 配列は デバイスメモリに一度コピーしてキャッシュするとよい。
 * BufferView がハンドル情報を共有するため、この View もコピー可能。
 
-### 3. 受信変換層 (Mapper + TypeAdapter)
+### 3. 受信変換層 (Mapper)
 
 対応表:
 
-* `BufferCore.msg  ⇄ BufferView`
-* `GpuImage.msg    ⇄ ImageView`
-* `GpuPointCloud2.msg ⇄ PointCloud2View`
+* `BufferCore.msg  → BufferView`
+* `GpuImage.msg    → ImageView`
+* `GpuPointCloud2.msg → PointCloud2View`
 
 Mapper の責務は **Lease の取得、MemoryImporter 経由の IPC/VMM ハンドル open/import とキャッシュ、BufferView の構築、
-ROS msg と View 間のメタデータコピー**。TypeAdapter の責務は mapper / fill helper を呼ぶことだけに絞る。
+ROS message から View へのアプリケーションメタデータコピー**。
 
 * GPU データ本体のコピーは行わない。ROS msg と View の間では、shape や strides などのメタデータだけをコピーする。
 * 同期 (cudaStreamWaitEvent) はユーザ側の責務。
@@ -425,13 +425,13 @@ Publisher/Subscriber の役割:
 * Publisher: cudaIpcGet*Handle でハンドル生成 → msg に格納。
 * Publisher (VMM-FD): VMM allocation を FD export し、uuid 経由の Unix domain socket で FD を配布する。
 * Subscriber: Mapper が BufferView を構築し、`BufferCore.backend` に応じて `cuda::MemoryImporter` から dev_ptr/event を取得する。
-* TypeAdapter API を使う場合だけ、TypeAdapter が既定 mapper を呼んで View を返す。
+* Subscriber は ROS message を受け取り、既定 mapper または Mapper オブジェクトを明示的に呼び出して View を取得する。
 
 memo:
 * cudaIpcOpenEventHandle で開いたイベントの破棄は受信側では不要（破棄は送信側が責任を持つ）。
 
 エラーハンドリングポリシー:
-convert_to_custom (ROS→View) で cudaIpcOpen*Handle する際の失敗ケースと方針について:
+Mapper が ROS→View 変換中に cudaIpcOpen*Handle する際の失敗ケースと方針について:
 
 **主な失敗ケース**  
 1. ハンドル期限切れ / 送信側で解放済み
@@ -444,14 +444,12 @@ convert_to_custom (ROS→View) で cudaIpcOpen*Handle する際の失敗ケー�
     * 同様に cudaErrorInvalidResourceHandle。
 
 **推奨ポリシー**
-* convert_to_custom 内では例外を投げない。
-  * rclcpp::TypeAdapter 経由だと例外伝播が難しい。
-  * 代わりに「無効な View (dev_ptr==nullptr)」を返す。
+* Mapper 内では例外を投げず、「無効な View (dev_ptr==nullptr)」を返す。
 * Subscriber 側のコールバックで view.valid() を必ず確認。
   * 無効ならログ出力して破棄。
   * QoS が reliable でも再送は要求しない（上位レイヤの責務にする）。
     * 一時的なエラーか永続的なエラーかは上位レイヤで判断する。
-* Publisher 側での convert_to_ros_message は失敗しない前提（ハンドル生成失敗は publish 前に検出すべき）。
+* Publisher 側の descriptor-to-message 変換は失敗しない前提（ハンドル生成失敗は publish 前に検出すべき）。
 
 Example:
 
@@ -462,11 +460,13 @@ class BufferViewMapper {
 };
 ```
 
-TypeAdapter は mapper に委譲する:
-
 ```cpp
-static void convert_to_custom(const ros_message_type& src, custom_type& dst) {
-  dst = ros2_cuda_ipc_core::map_buffer_view(src);
+void on_message(const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
+  auto view = ros2_cuda_ipc_core::mapper::map_image_view(message);
+  if (!view.valid()) {
+    return;
+  }
+  process(view);
 }
 ```
 
@@ -475,8 +475,7 @@ static void convert_to_custom(const ros_message_type& src, custom_type& dst) {
 * Publisher
   * バッファプール管理、書き込み、cudaEventRecord、ハンドル取得、ROS msg 生成・publish。
 * Subscriber
-  * TypeAdapter API では mapper によって初期化済みの View を受け取る。
-  * 明示制御 API では raw message を受け取り、`ImageViewMapper::map()` / `PointCloud2ViewMapper::map()` を呼ぶ。
+  * raw message を受け取り、`ImageViewMapper::map()` / `PointCloud2ViewMapper::map()` を呼ぶ。
   * アプリは View の `dev_ptr` と `ready_evt` を使い、任意のストリームで同期・処理。
 
 ## 命名規則
@@ -488,12 +487,12 @@ static void convert_to_custom(const ros_message_type& src, custom_type& dst) {
 
 ## 運用設計のポイント
 
-* **TypeAdapter と Mapper は同期をしない**：Lease 取得と View 初期化のみを行い、ユーザがストリーム同期を行う。
+* **Mapper は同期をしない**：Lease 取得と View 初期化のみを行い、ユーザがストリーム同期を行う。
 * **Lease RAII 一貫**：View が LeaseHandle を共有し、最後の参照が消えた時点で refcnt を解放する。
   IPC/VMM ハンドルは `IpcHandleCache` のプロセス内キャッシュで共有する。
 * **ROS msg の最小メタデータ**：ros2 topic echo / bag で内容をすぐ確認できる程度の情報を追加。
 * **TypeNegotiation の余地**：future work。
-* エラー発生時は「TypeAdapter エラーハンドリングポリシー」に従う。
+* エラー発生時は Mapper が無効な View を返し、Subscriber がログと破棄を処理する。
 
 ## フロー例
 

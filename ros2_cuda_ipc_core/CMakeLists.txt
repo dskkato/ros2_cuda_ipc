@@ -87,8 +87,8 @@ if(BUILD_TESTING)
   ament_add_gtest(test_pointcloud2_view_mapper
                   test/mapper/test_pointcloud2_view_mapper.cpp)
   target_link_libraries(test_pointcloud2_view_mapper ${PROJECT_NAME})
-  ament_add_gtest(test_type_adapters test/test_type_adapters.cpp)
-  target_link_libraries(test_type_adapters ${PROJECT_NAME})
+  ament_add_gtest(test_publisher_messages test/test_publisher_messages.cpp)
+  target_link_libraries(test_publisher_messages ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_controller
                   test/test_gpu_buffer_controller.cpp)
   target_link_libraries(test_gpu_buffer_controller ${PROJECT_NAME})

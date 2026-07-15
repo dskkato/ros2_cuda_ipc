@@ -12,8 +12,9 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/type_adapters.hpp"
+#include "ros2_cuda_ipc_core/mapper/image_view_mapper.hpp"
 #include "ros2_cuda_ipc_core/view/image_view.hpp"
+#include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 
 namespace gpu_image_transport {
 
@@ -40,7 +41,7 @@ class GpuImageTransportNodeBase : public rclcpp::Node {
   cudaError_t ensure_pinned_capacity(std::size_t bytes);
   void release_pinned_host();
 
-  rclcpp::Subscription<ros2_cuda_ipc_core::view::ImageView>::SharedPtr
+  rclcpp::Subscription<ros2_cuda_ipc_msgs::msg::GpuImage>::SharedPtr
       subscription_;
   cudaStream_t stream_ = nullptr;
   std::string input_topic_;

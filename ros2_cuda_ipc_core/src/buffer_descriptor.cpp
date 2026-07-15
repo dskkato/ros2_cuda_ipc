@@ -3,19 +3,35 @@
 
 #include "ros2_cuda_ipc_core/buffer_descriptor.hpp"
 
+#include <cstring>
+
 namespace ros2_cuda_ipc_core {
 
-view::BufferView BufferDescriptor::to_publisher_view(void* device_ptr) const {
-  view::BufferView result;
-  result.dev_ptr = device_ptr;
-  result.device_id = device_id;
-  result.byte_size = byte_size;
-  result.slot_id = slot_id;
-  result.generation = generation;
-  result.shm_name = lease_shm_name;
-  result.set_ipc_handles(backend, memory_handle.data(), memory_handle.size(),
-                         ready_event_handle);
-  return result;
+namespace {
+
+using BufferCoreMessage = ros2_cuda_ipc_msgs::msg::BufferCore;
+
+static_assert(sizeof(BufferCoreMessage::_mem_handle_type) ==
+                  sizeof(MemoryHandlePayload),
+              "BufferCore.mem_handle must match MemoryHandlePayload");
+static_assert(sizeof(BufferCoreMessage::_event_handle_type) ==
+                  sizeof(cudaIpcEventHandle_t),
+              "BufferCore.event_handle must match cudaIpcEventHandle_t");
+
+}  // namespace
+
+void fill_buffer_core_message(const BufferDescriptor& descriptor,
+                              ros2_cuda_ipc_msgs::msg::BufferCore& message) {
+  message.shm_name = descriptor.lease_shm_name;
+  message.device_id = static_cast<uint32_t>(descriptor.device_id);
+  message.slot_id = descriptor.slot_id;
+  message.generation = descriptor.generation;
+  message.byte_size = descriptor.byte_size;
+  message.backend = to_backend_byte(descriptor.backend);
+  std::memcpy(message.mem_handle.data(), descriptor.memory_handle.data(),
+              sizeof(message.mem_handle));
+  std::memcpy(message.event_handle.data(), &descriptor.ready_event_handle,
+              sizeof(message.event_handle));
 }
 
 }  // namespace ros2_cuda_ipc_core

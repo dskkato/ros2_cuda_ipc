@@ -95,23 +95,4 @@ view::BufferView map_buffer_view(
   return default_buffer_view_mapper().map(msg);
 }
 
-void fill_buffer_core_message(const view::BufferView& view,
-                              ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
-  msg.shm_name = view.shm_name;
-  msg.device_id = static_cast<uint32_t>(view.device_id);
-  msg.slot_id = view.slot_id;
-  msg.generation = view.generation;
-  msg.byte_size = view.byte_size;
-  msg.backend = to_backend_byte(view.backend());
-  if (view.handles_ready()) {
-    const auto& payload = view.mem_payload();
-    std::memcpy(msg.mem_handle.data(), payload.data(), payload.size());
-    std::memcpy(msg.event_handle.data(), &view.event_handle(),
-                sizeof(cudaIpcEventHandle_t));
-  } else {
-    std::memset(msg.mem_handle.data(), 0, msg.mem_handle.size());
-    std::memset(msg.event_handle.data(), 0, msg.event_handle.size());
-  }
-}
-
 }  // namespace ros2_cuda_ipc_core::mapper

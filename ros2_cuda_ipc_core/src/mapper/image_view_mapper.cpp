@@ -38,14 +38,4 @@ view::ImageView map_image_view(const ros2_cuda_ipc_msgs::msg::GpuImage& msg) {
   return default_image_view_mapper().map(msg);
 }
 
-void fill_gpu_image_message(const view::ImageView& view,
-                            ros2_cuda_ipc_msgs::msg::GpuImage& msg) {
-  msg.dtype = static_cast<uint8_t>(view.dtype);
-  msg.shape = view.shape;
-  msg.strides = view.strides;
-  msg.encoding = view.encoding;
-  msg.header = view.header;
-  fill_buffer_core_message(view.core, msg.core);
-}
-
 }  // namespace ros2_cuda_ipc_core::mapper
