@@ -16,6 +16,7 @@
 #include "ros2_cuda_ipc_core/cuda/gpu_buffer_controller.hpp"
 #include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/memory_backend_utils.hpp"
+#include "ros2_cuda_ipc_core/view/image_view.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 
 namespace multi_process_image_fanout {
@@ -24,7 +25,6 @@ using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
 
 namespace {
 constexpr uint64_t kBytesPerPixel = 4;
-constexpr uint8_t kDTypeU8 = 0;
 }  // namespace
 
 class GpuImagePublisherNode : public rclcpp::Node {
@@ -162,7 +162,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
 
     ros2_cuda_ipc_msgs::msg::GpuImage message;
     ros2_cuda_ipc_core::fill_buffer_core_message(*descriptor, message.core);
-    message.dtype = kDTypeU8;
+    message.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::view::DType::U8);
     message.shape = {height_, width_, kDefaultChannels};
     message.strides = {width_ * kBytesPerPixel, kDefaultChannels, 1};
     message.encoding = encoding_;

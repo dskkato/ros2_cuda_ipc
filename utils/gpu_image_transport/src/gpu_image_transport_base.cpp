@@ -31,7 +31,8 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
       [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
         auto view = ros2_cuda_ipc_core::mapper::map_image_view(message);
         if (!view.valid()) {
-          RCLCPP_WARN(get_logger(), "Failed to map received GPU image");
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                               "Failed to map received GPU image");
           return;
         }
         on_image(view);
