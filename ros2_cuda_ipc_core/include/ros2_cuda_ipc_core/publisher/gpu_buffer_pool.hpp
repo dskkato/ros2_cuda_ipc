@@ -6,7 +6,6 @@
 #include <cuda_runtime_api.h>
 
 #include <cstdint>
-#include <optional>
 #include <vector>
 
 #include "rclcpp/logger.hpp"
