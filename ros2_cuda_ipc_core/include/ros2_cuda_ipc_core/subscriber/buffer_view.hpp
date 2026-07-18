@@ -5,7 +5,6 @@
 
 #include <cuda_runtime_api.h>
 
-#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
