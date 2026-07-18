@@ -3,25 +3,37 @@
 
 #include "ros2_cuda_ipc_core/publisher/slot_controller.hpp"
 
+#include <stdexcept>
+
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 namespace {
-using Clock = std::chrono::steady_clock;
+rclcpp::Clock::SharedPtr require_clock(rclcpp::Clock::SharedPtr clock) {
+  if (!clock) {
+    throw std::invalid_argument("SlotController requires a clock");
+  }
+  return clock;
+}
 
-bool deadline_reached(const Clock::time_point& deadline,
-                      const Clock::time_point& now) {
-  return deadline.time_since_epoch().count() != 0 && now >= deadline;
+rclcpp::Time zero_time(rcl_clock_type_t clock_type) {
+  return rclcpp::Time(int64_t{0}, clock_type);
+}
+
+bool deadline_reached(const rclcpp::Time& deadline, const rclcpp::Time& now) {
+  return deadline.nanoseconds() != 0 && now >= deadline;
 }
 }  // namespace
 
 SlotController::SlotController(std::string shm_name, std::size_t slot_count,
                                std::chrono::milliseconds pending_ttl,
-                               rclcpp::Logger logger)
+                               rclcpp::Logger logger,
+                               rclcpp::Clock::SharedPtr clock)
     : shm_name_(std::move(shm_name)),
       slot_count_(slot_count),
       pending_ttl_(pending_ttl),
+      clock_(require_clock(std::move(clock))),
       logger_(std::move(logger)) {}
 
 bool SlotController::initialise() {
@@ -32,7 +44,7 @@ bool SlotController::initialise() {
   }
   {
     std::lock_guard<std::mutex> lock(deadlines_mutex_);
-    pending_deadlines_.assign(slot_count_, {});
+    pending_deadlines_.assign(slot_count_, zero_time(clock_->get_clock_type()));
     initialised_ = true;
   }
   return true;
@@ -81,9 +93,11 @@ std::optional<SlotController::Reservation> SlotController::reserve_for_publish(
     std::lock_guard<std::mutex> lock(deadlines_mutex_);
     if (initialised_ && reservation->slot_id < pending_deadlines_.size()) {
       if (pending_count > 0 && pending_ttl_.count() > 0) {
-        pending_deadlines_[reservation->slot_id] = Clock::now() + pending_ttl_;
+        pending_deadlines_[reservation->slot_id] =
+            clock_->now() + rclcpp::Duration(pending_ttl_);
       } else {
-        pending_deadlines_[reservation->slot_id] = {};
+        pending_deadlines_[reservation->slot_id] =
+            zero_time(clock_->get_clock_type());
       }
       return Reservation{reservation->slot_id, reservation->generation};
     }
@@ -112,7 +126,8 @@ bool SlotController::cancel(const Reservation& reservation) noexcept {
   if (cancelled) {
     std::lock_guard<std::mutex> lock(deadlines_mutex_);
     if (reservation.slot_id < pending_deadlines_.size()) {
-      pending_deadlines_[reservation.slot_id] = {};
+      pending_deadlines_[reservation.slot_id] =
+          zero_time(clock_->get_clock_type());
     }
   }
   return cancelled;
@@ -123,7 +138,7 @@ void SlotController::reclaim_stale_pending() {
   if (!initialised_ || pending_ttl_.count() <= 0) {
     return;
   }
-  const auto now = Clock::now();
+  const auto now = clock_->now();
   for (uint32_t slot_id = 0; slot_id < pending_deadlines_.size(); ++slot_id) {
     auto& deadline = pending_deadlines_[slot_id];
     if (!deadline_reached(deadline, now)) {
@@ -135,23 +150,22 @@ void SlotController::reclaim_stale_pending() {
       continue;
     }
     if (*pending == 0) {
-      deadline = {};
+      deadline = zero_time(clock_->get_clock_type());
       continue;
     }
     if (lease::LeaseHandle::force_clear_pending(shm_name_, slot_id)) {
       RCLCPP_WARN(logger_,
                   "Force-cleared pending lease slot=%u after %lld ms timeout",
                   slot_id, static_cast<long long>(pending_ttl_.count()));
-      deadline = {};
+      deadline = zero_time(clock_->get_clock_type());
     }
   }
 }
 
-Clock::time_point SlotController::pending_deadline(
-    uint32_t slot_id) const noexcept {
+rclcpp::Time SlotController::pending_deadline(uint32_t slot_id) const noexcept {
   std::lock_guard<std::mutex> lock(deadlines_mutex_);
   if (slot_id >= pending_deadlines_.size()) {
-    return {};
+    return zero_time(clock_->get_clock_type());
   }
   return pending_deadlines_[slot_id];
 }

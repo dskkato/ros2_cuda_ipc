@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <type_traits>
@@ -54,10 +55,20 @@ class GpuBufferControllerTest : public ::testing::Test {
     return GpuBufferController(
         {shm_name_, 1, 1024, 0, pending_ttl,
          ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC},
-        rclcpp::get_logger("GpuBufferControllerTest"));
+        rclcpp::get_logger("GpuBufferControllerTest"),
+        std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME));
   }
   std::string shm_name_;
 };
+
+TEST(GpuBufferControllerClockTest, RejectsNullClock) {
+  EXPECT_THROW(GpuBufferController(
+                   {"/gpu_controller_null_clock", 1, 1024, 0,
+                    std::chrono::milliseconds(100),
+                    ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC},
+                   rclcpp::get_logger("GpuBufferControllerTest"), nullptr),
+               std::invalid_argument);
+}
 
 TEST_F(GpuBufferControllerTest, DescriptorIsGatedByReadyRecording) {
   auto controller = make_controller();

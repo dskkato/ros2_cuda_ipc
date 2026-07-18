@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "rclcpp/clock.hpp"
 #include "rclcpp/logger.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
@@ -22,7 +23,8 @@ class SlotController {
   };
 
   SlotController(std::string shm_name, std::size_t slot_count,
-                 std::chrono::milliseconds pending_ttl, rclcpp::Logger logger);
+                 std::chrono::milliseconds pending_ttl, rclcpp::Logger logger,
+                 rclcpp::Clock::SharedPtr clock);
 
   bool initialise();
   void reset() noexcept;
@@ -32,16 +34,16 @@ class SlotController {
   void reclaim_stale_pending();
 
   const std::string& shm_name() const noexcept { return shm_name_; }
-  std::chrono::steady_clock::time_point pending_deadline(
-      uint32_t slot_id) const noexcept;
+  rclcpp::Time pending_deadline(uint32_t slot_id) const noexcept;
 
  private:
   std::string shm_name_;
   std::size_t slot_count_;
   std::chrono::milliseconds pending_ttl_;
+  rclcpp::Clock::SharedPtr clock_;
   rclcpp::Logger logger_;
   mutable std::mutex deadlines_mutex_;
-  std::vector<std::chrono::steady_clock::time_point> pending_deadlines_;
+  std::vector<rclcpp::Time> pending_deadlines_;
   bool initialised_ = false;
 };
 

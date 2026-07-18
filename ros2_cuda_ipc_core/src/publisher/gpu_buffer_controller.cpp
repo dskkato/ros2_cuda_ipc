@@ -77,14 +77,15 @@ void PublishSlot::cancel() noexcept {
   }
 }
 
-GpuBufferController::GpuBufferController(Config config, rclcpp::Logger logger)
+GpuBufferController::GpuBufferController(Config config, rclcpp::Logger logger,
+                                         rclcpp::Clock::SharedPtr clock)
     : config_(std::move(config)),
       logger_(std::move(logger)),
       buffer_pool_(config_.slot_count, config_.backend,
                    logger_.get_child("GpuBufferPool")),
       slot_controller_(config_.shm_name, config_.slot_count,
-                       config_.pending_ttl,
-                       logger_.get_child("SlotController")) {}
+                       config_.pending_ttl, logger_.get_child("SlotController"),
+                       std::move(clock)) {}
 
 bool GpuBufferController::initialise() {
   reset();

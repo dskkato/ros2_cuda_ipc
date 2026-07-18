@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 
+#include "rclcpp/clock.hpp"
 #include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/publisher/slot_controller.hpp"
@@ -72,7 +73,10 @@ class GpuBufferController {
         transport::MemoryBackendKind::CUDA_IPC;
   };
 
-  GpuBufferController(Config config, rclcpp::Logger logger);
+  /// The clock must be the owning Node's get_clock() result so pending TTL
+  /// follows use_sim_time.
+  GpuBufferController(Config config, rclcpp::Logger logger,
+                      rclcpp::Clock::SharedPtr clock);
   ~GpuBufferController() = default;
   GpuBufferController(const GpuBufferController&) = delete;
   GpuBufferController& operator=(const GpuBufferController&) = delete;

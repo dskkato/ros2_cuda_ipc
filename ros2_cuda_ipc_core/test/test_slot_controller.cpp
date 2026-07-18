@@ -9,6 +9,7 @@
 #include <chrono>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
@@ -41,12 +42,13 @@ class ShmUnlinkGuard {
 }  // namespace
 
 TEST(SlotControllerTest, ResetRacingWithReserveDoesNotLeavePending) {
+  const auto clock = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
   for (int iteration = 0; iteration < 1000; ++iteration) {
     const std::string shm_name = make_unique_shm_name();
     const ShmUnlinkGuard shm_guard(shm_name);
     ros2_cuda_ipc_core::publisher::SlotController controller(
         shm_name, 1, std::chrono::milliseconds(100),
-        rclcpp::get_logger("SlotControllerTest"));
+        rclcpp::get_logger("SlotControllerTest"), clock);
     ASSERT_TRUE(controller.initialise());
 
     std::atomic<bool> start{false};
@@ -82,9 +84,10 @@ TEST(SlotControllerTest, ResetRacingWithReserveDoesNotLeavePending) {
 TEST(SlotControllerTest, CapacityMismatchRollsBackOutOfRangeReservation) {
   const std::string shm_name = make_unique_shm_name();
   const ShmUnlinkGuard shm_guard(shm_name);
+  const auto clock = std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
   ros2_cuda_ipc_core::publisher::SlotController controller(
       shm_name, 1, std::chrono::milliseconds(100),
-      rclcpp::get_logger("SlotControllerTest"));
+      rclcpp::get_logger("SlotControllerTest"), clock);
   ASSERT_TRUE(controller.initialise());
 
   // Simulate an unsupported second Publisher reinitialising the same name
@@ -104,4 +107,41 @@ TEST(SlotControllerTest, CapacityMismatchRollsBackOutOfRangeReservation) {
 
   EXPECT_TRUE(ros2_cuda_ipc_core::lease::LeaseHandle::cancel_pending(
       shm_name, occupied->slot_id, occupied->generation));
+}
+
+TEST(SlotControllerTest, ReclaimsPendingUsingInjectedRosClock) {
+  const std::string shm_name = make_unique_shm_name();
+  const ShmUnlinkGuard shm_guard(shm_name);
+  const auto clock = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);
+  ASSERT_EQ(rcl_enable_ros_time_override(clock->get_clock_handle()),
+            RCL_RET_OK);
+  ASSERT_EQ(rcl_set_ros_time_override(clock->get_clock_handle(), 0),
+            RCL_RET_OK);
+
+  {
+    ros2_cuda_ipc_core::publisher::SlotController controller(
+        shm_name, 1, std::chrono::milliseconds(100),
+        rclcpp::get_logger("SlotControllerTest"), clock);
+    ASSERT_TRUE(controller.initialise());
+    auto reservation = controller.reserve_for_publish(1);
+    ASSERT_TRUE(reservation.has_value());
+
+    controller.reclaim_stale_pending();
+    EXPECT_FALSE(controller.reserve_for_publish(0).has_value());
+
+    ASSERT_EQ(rcl_set_ros_time_override(clock->get_clock_handle(), 100000000),
+              RCL_RET_OK);
+    controller.reclaim_stale_pending();
+    EXPECT_TRUE(controller.reserve_for_publish(0).has_value());
+  }
+
+  EXPECT_EQ(rcl_disable_ros_time_override(clock->get_clock_handle()),
+            RCL_RET_OK);
+}
+
+TEST(SlotControllerTest, RejectsNullClock) {
+  EXPECT_THROW(ros2_cuda_ipc_core::publisher::SlotController(
+                   make_unique_shm_name(), 1, std::chrono::milliseconds(100),
+                   rclcpp::get_logger("SlotControllerTest"), nullptr),
+               std::invalid_argument);
 }

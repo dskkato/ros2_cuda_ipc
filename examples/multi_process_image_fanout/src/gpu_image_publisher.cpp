@@ -69,7 +69,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
             ros2_cuda_ipc_core::publisher::GpuBufferController::Config{
                 shm_name, slot_count, frame_size_bytes, device_index,
                 pending_ttl, backend},
-            get_logger().get_child("GpuBufferController"));
+            get_logger().get_child("GpuBufferController"), get_clock());
     if (!controller_->initialise()) {
       throw std::runtime_error("Failed to initialise GPU buffer controller");
     }
