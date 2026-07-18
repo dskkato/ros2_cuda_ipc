@@ -4,9 +4,21 @@
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_controller.hpp"
 
 #include <cassert>
+#include <stdexcept>
 #include <utility>
 
 namespace ros2_cuda_ipc_core::publisher {
+namespace {
+
+rclcpp::Clock::SharedPtr require_clock(rclcpp::Clock::SharedPtr clock) {
+  if (!clock) {
+    throw std::invalid_argument(
+        "GpuBufferController requires a non-null clock");
+  }
+  return clock;
+}
+
+}  // namespace
 
 PublishSlot::PublishSlot(GpuBufferController* owner,
                          SlotController::Reservation reservation) noexcept
@@ -81,11 +93,12 @@ GpuBufferController::GpuBufferController(Config config, rclcpp::Logger logger,
                                          rclcpp::Clock::SharedPtr clock)
     : config_(std::move(config)),
       logger_(std::move(logger)),
+      clock_(require_clock(std::move(clock))),
       buffer_pool_(config_.slot_count, config_.backend,
                    logger_.get_child("GpuBufferPool")),
       slot_controller_(config_.shm_name, config_.slot_count,
                        config_.pending_ttl, logger_.get_child("SlotController"),
-                       std::move(clock)) {}
+                       clock_) {}
 
 bool GpuBufferController::initialise() {
   reset();

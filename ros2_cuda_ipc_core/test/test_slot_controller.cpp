@@ -14,6 +14,7 @@
 #include <thread>
 #include <utility>
 
+#include "rcl/time.h"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/publisher/slot_controller.hpp"
@@ -37,6 +38,30 @@ class ShmUnlinkGuard {
 
  private:
   std::string name_;
+};
+
+class RosTimeOverrideGuard {
+ public:
+  explicit RosTimeOverrideGuard(rcl_clock_t* clock) : clock_(clock) {}
+  ~RosTimeOverrideGuard() {
+    if (enabled_) {
+      const rcl_ret_t result = rcl_disable_ros_time_override(clock_);
+      (void)result;
+    }
+  }
+
+  rcl_ret_t enable() {
+    const rcl_ret_t result = rcl_enable_ros_time_override(clock_);
+    enabled_ = result == RCL_RET_OK;
+    return result;
+  }
+
+  RosTimeOverrideGuard(const RosTimeOverrideGuard&) = delete;
+  RosTimeOverrideGuard& operator=(const RosTimeOverrideGuard&) = delete;
+
+ private:
+  rcl_clock_t* clock_;
+  bool enabled_ = false;
 };
 
 }  // namespace
@@ -113,8 +138,8 @@ TEST(SlotControllerTest, ReclaimsPendingUsingInjectedRosClock) {
   const std::string shm_name = make_unique_shm_name();
   const ShmUnlinkGuard shm_guard(shm_name);
   const auto clock = std::make_shared<rclcpp::Clock>(RCL_ROS_TIME);
-  ASSERT_EQ(rcl_enable_ros_time_override(clock->get_clock_handle()),
-            RCL_RET_OK);
+  RosTimeOverrideGuard ros_time_override(clock->get_clock_handle());
+  ASSERT_EQ(ros_time_override.enable(), RCL_RET_OK);
   ASSERT_EQ(rcl_set_ros_time_override(clock->get_clock_handle(), 0),
             RCL_RET_OK);
 
@@ -134,9 +159,6 @@ TEST(SlotControllerTest, ReclaimsPendingUsingInjectedRosClock) {
     controller.reclaim_stale_pending();
     EXPECT_TRUE(controller.reserve_for_publish(0).has_value());
   }
-
-  EXPECT_EQ(rcl_disable_ros_time_override(clock->get_clock_handle()),
-            RCL_RET_OK);
 }
 
 TEST(SlotControllerTest, RejectsNullClock) {

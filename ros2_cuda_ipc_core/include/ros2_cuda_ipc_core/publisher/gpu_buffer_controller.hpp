@@ -73,8 +73,8 @@ class GpuBufferController {
         transport::MemoryBackendKind::CUDA_IPC;
   };
 
-  /// The clock must be the owning Node's get_clock() result so pending TTL
-  /// follows use_sim_time.
+  /// The clock must be non-null. Pass the owning Node's get_clock() result to
+  /// make pending TTL follow that node's use_sim_time setting.
   GpuBufferController(Config config, rclcpp::Logger logger,
                       rclcpp::Clock::SharedPtr clock);
   ~GpuBufferController() = default;
@@ -101,6 +101,7 @@ class GpuBufferController {
 
   Config config_;
   rclcpp::Logger logger_;
+  rclcpp::Clock::SharedPtr clock_;
   GpuBufferPool buffer_pool_;
   SlotController slot_controller_;
 };
