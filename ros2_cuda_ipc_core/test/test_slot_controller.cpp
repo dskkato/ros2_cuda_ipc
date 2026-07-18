@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
