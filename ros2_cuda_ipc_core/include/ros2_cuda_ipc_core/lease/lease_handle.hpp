@@ -23,25 +23,25 @@ class LeaseHandle {
 
   /// Create or reset the shared-memory layout for a lease pool.
   ///
-  /// \param shm_name Shared-memory name (POSIX shm_open identifier).
-  /// \param capacity Number of slots to allocate in the pool.
-  /// \return true when the memory is initialized successfully.
+  /// @param shm_name Shared-memory name (POSIX shm_open identifier).
+  /// @param capacity Number of slots to allocate in the pool.
+  /// @return true when the memory is initialized successfully.
   static bool init(const std::string& shm_name, uint32_t capacity);
 
   /// Read the current generation value for a slot.
   ///
-  /// \param shm_name Shared-memory name to query.
-  /// \param slot_id Slot index inside the pool.
-  /// \return generation number; std::nullopt if attachment fails or the slot is
+  /// @param shm_name Shared-memory name to query.
+  /// @param slot_id Slot index inside the pool.
+  /// @return generation number; std::nullopt if attachment fails or the slot is
   /// out of range.
   static std::optional<uint32_t> current_generation(const std::string& shm_name,
                                                     uint32_t slot_id);
 
   /// Read the current reference count for a slot.
   ///
-  /// \param shm_name Shared-memory name to query.
-  /// \param slot_id Slot index inside the pool.
-  /// \return reference count; std::nullopt if attachment fails or the slot is
+  /// @param shm_name Shared-memory name to query.
+  /// @param slot_id Slot index inside the pool.
+  /// @return reference count; std::nullopt if attachment fails or the slot is
   /// out of range.
   static std::optional<uint32_t> current_refcount(const std::string& shm_name,
                                                   uint32_t slot_id);
@@ -70,10 +70,10 @@ class LeaseHandle {
   /// Acquire a lease for a slot if the generation matches and increment its
   /// reference count.
   ///
-  /// \param shm_name Shared-memory name containing the slot metadata.
-  /// \param slot_id Slot index that should be leased.
-  /// \param generation Expected generation for the slot.
-  /// \return Valid LeaseHandle when the slot is obtained; otherwise an invalid
+  /// @param shm_name Shared-memory name containing the slot metadata.
+  /// @param slot_id Slot index that should be leased.
+  /// @param generation Expected generation for the slot.
+  /// @return Valid LeaseHandle when the slot is obtained; otherwise an invalid
   /// (empty) handle.
   static LeaseHandle acquire(const std::string& shm_name, uint32_t slot_id,
                              uint32_t generation);
