@@ -36,8 +36,8 @@ struct ShmHeader {
 /// Treat a `uint32_t` reference as an `std::atomic<uint32_t>` to apply atomic
 /// operations without altering the POD layout.
 ///
-/// \param value Reference to a slot field inside shared memory.
-/// \return std::atomic<uint32_t>& alias to the given reference.
+/// @param value Reference to a slot field inside shared memory.
+/// @return std::atomic<uint32_t>& alias to the given reference.
 inline std::atomic<uint32_t>& as_atomic(uint32_t& value) {
   return reinterpret_cast<std::atomic<uint32_t>&>(value);
 }

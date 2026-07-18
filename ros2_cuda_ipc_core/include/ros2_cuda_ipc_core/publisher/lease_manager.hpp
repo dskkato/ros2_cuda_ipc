@@ -14,15 +14,15 @@
 
 namespace ros2_cuda_ipc_core::publisher {
 
-class SlotController {
+class LeaseManager {
  public:
   struct Reservation {
     uint32_t slot_id = 0;
     uint32_t generation = 0;
   };
 
-  SlotController(std::string shm_name, std::size_t slot_count,
-                 std::chrono::milliseconds pending_ttl, rclcpp::Logger logger);
+  LeaseManager(std::string shm_name, std::size_t slot_count,
+               std::chrono::milliseconds pending_ttl, rclcpp::Logger logger);
 
   bool initialise();
   void reset() noexcept;

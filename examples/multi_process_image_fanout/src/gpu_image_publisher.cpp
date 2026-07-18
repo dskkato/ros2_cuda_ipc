@@ -16,7 +16,7 @@
 #include "ros2_cuda_ipc_core/backend/memory_backend_utils.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/image/image_view.hpp"
-#include "ros2_cuda_ipc_core/publisher/gpu_buffer_controller.hpp"
+#include "ros2_cuda_ipc_core/publisher/gpu_buffer_manager.hpp"
 #include "ros2_cuda_ipc_core/transport/message_utils.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 
@@ -64,14 +64,14 @@ class GpuImagePublisherNode : public rclcpp::Node {
     throw_on_cuda_error(cudaSetDevice(device_index), "cudaSetDevice");
     const uint64_t frame_size_bytes =
         static_cast<uint64_t>(width_) * height_ * kBytesPerPixel;
-    controller_ =
-        std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferController>(
-            ros2_cuda_ipc_core::publisher::GpuBufferController::Config{
+    manager_ =
+        std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferManager>(
+            ros2_cuda_ipc_core::publisher::GpuBufferManager::Config{
                 shm_name, slot_count, frame_size_bytes, device_index,
                 pending_ttl, backend},
-            get_logger().get_child("GpuBufferController"));
-    if (!controller_->initialise()) {
-      throw std::runtime_error("Failed to initialise GPU buffer controller");
+            get_logger().get_child("GpuBufferManager"));
+    if (!manager_->initialise()) {
+      throw std::runtime_error("Failed to initialise GPU buffer manager");
     }
     throw_on_cuda_error(
         cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking),
@@ -94,7 +94,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     } catch (...) {
       cudaStreamDestroy(stream_);
       stream_ = nullptr;
-      controller_.reset();
+      manager_.reset();
       throw;
     }
 
@@ -113,7 +113,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
       }
       stream_ = nullptr;
     }
-    controller_.reset();
+    manager_.reset();
   }
 
  private:
@@ -124,8 +124,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     std::optional<ros2_cuda_ipc_core::publisher::PublishSlot> slot;
     {
       NvtxScopedRange acquire_range("GpuImagePublisherNode::acquire_slot");
-      slot =
-          controller_->acquire_for_publish(static_cast<uint32_t>(subscribers));
+      slot = manager_->acquire_for_publish(static_cast<uint32_t>(subscribers));
     }
     if (!slot) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
@@ -177,8 +176,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
   }
 
   rclcpp::Publisher<ros2_cuda_ipc_msgs::msg::GpuImage>::SharedPtr publisher_;
-  std::unique_ptr<ros2_cuda_ipc_core::publisher::GpuBufferController>
-      controller_;
+  std::unique_ptr<ros2_cuda_ipc_core::publisher::GpuBufferManager> manager_;
   rclcpp::TimerBase::SharedPtr timer_;
   cudaStream_t stream_ = nullptr;
   double publish_rate_hz_ = 30.0;

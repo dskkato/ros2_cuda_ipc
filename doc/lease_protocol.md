@@ -42,9 +42,9 @@ ROS middlewareによる配送保証、Subscriber processの死活監視、Publis
 
 ```text
 Publisher process
-  GpuBufferController
+  GpuBufferManager
     GpuBufferPool       GPU allocationとready eventを所有
-    SlotController      reservation、pending、generation、TTLを管理
+    LeaseManager        reservation、pending、generation、TTLを管理
       LeaseHandle       process-shared lease stateを操作
     PublishSlot         1回のpublish試行を表すmove-only object
 
@@ -98,7 +98,7 @@ reserved == 0 && refcnt == 0 && pending == 0
 Publisherの公開APIは次の順序で使用する。
 
 ```cpp
-auto slot = controller.acquire_for_publish(pending_count);
+auto slot = manager.acquire_for_publish(pending_count);
 
 launch_gpu_work(slot->device_ptr(), stream);
 slot->record_ready(stream);
@@ -172,7 +172,7 @@ reservationのgenerationが現在も一致し、かつ`refcnt == 0`の場合だ�
 古いreservationから新しいgenerationのpendingを消去してはならない。retry上限、
 generation不一致、active leaseによりcancelできない場合はERRORとして記録する。
 
-`GpuBufferController::reset()`後でも、controller objectが生存している間は
+`GpuBufferManager::reset()`後でも、manager objectが生存している間は
 `PublishSlot`のdestructorがshared-memory reservationをcancelできる。
 
 ---
@@ -241,7 +241,7 @@ deadline reached && reservedを取得できる && refcnt == 0
 
 TTL回収はbackground timerではない。次の場合に実行される。
 
-- `GpuBufferController::acquire_for_publish()`の先頭
+- `GpuBufferManager::acquire_for_publish()`の先頭
 - `reclaim_stale_pending()`の明示呼び出し
 
 TTLを過ぎても、slotがまだ再利用されずgenerationが一致していれば、遅延Subscriberの
@@ -287,18 +287,18 @@ acquireまたはpublish試行を失敗させることである。
 
 ## 11. Lifetime contract
 
-`PublishSlot`は所有元`GpuBufferController`への非所有pointerを保持する。すべての
-`PublishSlot`は、そのcontroller objectより先に破棄しなければならない。
+`PublishSlot`は所有元`GpuBufferManager`への非所有pointerを保持する。すべての
+`PublishSlot`は、そのmanager objectより先に破棄しなければならない。
 
 ```text
 required:
   PublishSlot destruction
     before
-  GpuBufferController destruction
+  GpuBufferManager destruction
 ```
 
-この順序に反してcontrollerを先に破棄することはAPI contract violationであり、libraryは
-shared ownershipによって補償しない。`reset()`はresource操作を無効にするが、controller
+この順序に反してmanagerを先に破棄することはAPI contract violationであり、libraryは
+shared ownershipによって補償しない。`reset()`はresource操作を無効にするが、manager
 objectが生存していれば未commit slotのshared-memory cancelは可能である。
 
 ---
