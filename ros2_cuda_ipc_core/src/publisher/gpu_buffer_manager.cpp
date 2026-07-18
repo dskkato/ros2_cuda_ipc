@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/publisher/gpu_buffer_controller.hpp"
+#include "ros2_cuda_ipc_core/publisher/gpu_buffer_manager.hpp"
 
 #include <cassert>
 #include <utility>
 
 namespace ros2_cuda_ipc_core::publisher {
 
-PublishSlot::PublishSlot(GpuBufferController* owner,
-                         SlotController::Reservation reservation) noexcept
+PublishSlot::PublishSlot(GpuBufferManager* owner,
+                         LeaseManager::Reservation reservation) noexcept
     : owner_(owner), reservation_(reservation), state_(State::reserved) {}
 
 PublishSlot::PublishSlot(PublishSlot&& other) noexcept {
@@ -77,66 +77,65 @@ void PublishSlot::cancel() noexcept {
   }
 }
 
-GpuBufferController::GpuBufferController(Config config, rclcpp::Logger logger)
+GpuBufferManager::GpuBufferManager(Config config, rclcpp::Logger logger)
     : config_(std::move(config)),
       logger_(std::move(logger)),
       buffer_pool_(config_.slot_count, config_.backend,
                    logger_.get_child("GpuBufferPool")),
-      slot_controller_(config_.shm_name, config_.slot_count,
-                       config_.pending_ttl,
-                       logger_.get_child("SlotController")) {}
+      lease_manager_(config_.shm_name, config_.slot_count, config_.pending_ttl,
+                     logger_.get_child("LeaseManager")) {}
 
-bool GpuBufferController::initialise() {
+bool GpuBufferManager::initialise() {
   reset();
-  if (!slot_controller_.initialise()) {
+  if (!lease_manager_.initialise()) {
     return false;
   }
   if (!buffer_pool_.initialise(config_.byte_size, config_.device_index)) {
-    slot_controller_.reset();
+    lease_manager_.reset();
     return false;
   }
   return true;
 }
 
-void GpuBufferController::reset() noexcept {
+void GpuBufferManager::reset() noexcept {
   buffer_pool_.reset();
-  slot_controller_.reset();
+  lease_manager_.reset();
 }
 
-bool GpuBufferController::is_initialised() const noexcept {
-  return buffer_pool_.is_initialised() && slot_controller_.is_initialised();
+bool GpuBufferManager::is_initialised() const noexcept {
+  return buffer_pool_.is_initialised() && lease_manager_.is_initialised();
 }
 
-std::optional<PublishSlot> GpuBufferController::acquire_for_publish(
+std::optional<PublishSlot> GpuBufferManager::acquire_for_publish(
     uint32_t pending_count) {
   if (!is_initialised()) {
     return std::nullopt;
   }
-  slot_controller_.reclaim_stale_pending();
-  auto reservation = slot_controller_.reserve_for_publish(pending_count);
+  lease_manager_.reclaim_stale_pending();
+  auto reservation = lease_manager_.reserve_for_publish(pending_count);
   if (!reservation) {
     return std::nullopt;
   }
   return PublishSlot(this, *reservation);
 }
 
-void GpuBufferController::reclaim_stale_pending() {
-  slot_controller_.reclaim_stale_pending();
+void GpuBufferManager::reclaim_stale_pending() {
+  lease_manager_.reclaim_stale_pending();
 }
 
-void* GpuBufferController::device_ptr(
-    const SlotController::Reservation& reservation) const noexcept {
+void* GpuBufferManager::device_ptr(
+    const LeaseManager::Reservation& reservation) const noexcept {
   return buffer_pool_.device_ptr(reservation.slot_id);
 }
 
-cudaError_t GpuBufferController::record_ready(
-    const SlotController::Reservation& reservation,
+cudaError_t GpuBufferManager::record_ready(
+    const LeaseManager::Reservation& reservation,
     cudaStream_t stream) noexcept {
   return buffer_pool_.record_ready(reservation.slot_id, stream);
 }
 
-std::optional<transport::BufferDescriptor> GpuBufferController::descriptor(
-    const SlotController::Reservation& reservation) const {
+std::optional<transport::BufferDescriptor> GpuBufferManager::descriptor(
+    const LeaseManager::Reservation& reservation) const {
   const auto* resources = buffer_pool_.resources(reservation.slot_id);
   if (resources == nullptr) {
     return std::nullopt;
@@ -153,9 +152,9 @@ std::optional<transport::BufferDescriptor> GpuBufferController::descriptor(
   return result;
 }
 
-void GpuBufferController::cancel(
-    const SlotController::Reservation& reservation) noexcept {
-  slot_controller_.cancel(reservation);
+void GpuBufferManager::cancel(
+    const LeaseManager::Reservation& reservation) noexcept {
+  lease_manager_.cancel(reservation);
 }
 
 }  // namespace ros2_cuda_ipc_core::publisher

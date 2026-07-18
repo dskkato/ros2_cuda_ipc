@@ -12,20 +12,20 @@
 
 #include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
-#include "ros2_cuda_ipc_core/publisher/slot_controller.hpp"
+#include "ros2_cuda_ipc_core/publisher/lease_manager.hpp"
 #include "ros2_cuda_ipc_core/transport/buffer_descriptor.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 
-class GpuBufferController;
+class GpuBufferManager;
 
 /// Represents one active publish attempt.
 ///
-/// The owning GpuBufferController must outlive every PublishSlot created from
-/// it. Calling GpuBufferController::reset() invalidates slot resource
+/// The owning GpuBufferManager must outlive every PublishSlot created from
+/// it. Calling GpuBufferManager::reset() invalidates slot resource
 /// operations, but slot destruction can still cancel its shared-memory
-/// reservation while the controller object remains alive.
+/// reservation while the manager object remains alive.
 class PublishSlot {
  public:
   /// Move a publish slot while transferring ownership of its reservation.
@@ -69,8 +69,8 @@ class PublishSlot {
   bool valid() const noexcept;
 
  private:
-  /// Allow the controller to construct slots only from valid reservations.
-  friend class GpuBufferController;
+  /// Allow the manager to construct slots only from valid reservations.
+  friend class GpuBufferManager;
 
   enum class State {
     reserved,
@@ -80,20 +80,20 @@ class PublishSlot {
     moved_from
   };
 
-  PublishSlot(GpuBufferController* owner,
-              SlotController::Reservation reservation) noexcept;
+  PublishSlot(GpuBufferManager* owner,
+              LeaseManager::Reservation reservation) noexcept;
   void move_from(PublishSlot&& other) noexcept;
 
-  GpuBufferController* owner_ = nullptr;
-  SlotController::Reservation reservation_{};
+  GpuBufferManager* owner_ = nullptr;
+  LeaseManager::Reservation reservation_{};
   State state_ = State::moved_from;
 };
 
 /// Owns the GPU buffer pool and shared-memory slot reservations used for
 /// publishing.
-class GpuBufferController {
+class GpuBufferManager {
  public:
-  /// Configuration for a GPU buffer controller.
+  /// Configuration for a GPU buffer manager.
   struct Config {
     /// Shared-memory name used for slot lease metadata.
     std::string shm_name;
@@ -115,23 +115,23 @@ class GpuBufferController {
         transport::MemoryBackendKind::CUDA_IPC;
   };
 
-  /// Construct a controller with the given configuration and logger.
-  GpuBufferController(Config config, rclcpp::Logger logger);
+  /// Construct a manager with the given configuration and logger.
+  GpuBufferManager(Config config, rclcpp::Logger logger);
 
-  /// Release controller-owned resources.
-  ~GpuBufferController() = default;
+  /// Release manager-owned resources.
+  ~GpuBufferManager() = default;
 
-  GpuBufferController(const GpuBufferController&) = delete;
-  GpuBufferController& operator=(const GpuBufferController&) = delete;
-  GpuBufferController(GpuBufferController&&) = delete;
-  GpuBufferController& operator=(GpuBufferController&&) = delete;
+  GpuBufferManager(const GpuBufferManager&) = delete;
+  GpuBufferManager& operator=(const GpuBufferManager&) = delete;
+  GpuBufferManager(GpuBufferManager&&) = delete;
+  GpuBufferManager& operator=(GpuBufferManager&&) = delete;
 
   /// Initialize the shared-memory lease pool and GPU buffer pool.
   ///
   /// @return true when both pools are initialized successfully.
   bool initialise();
 
-  /// Release pool resources and reset the controller to an uninitialized state.
+  /// Release pool resources and reset the manager to an uninitialized state.
   void reset() noexcept;
 
   /// Check whether both the lease pool and buffer pool are initialized.
@@ -149,22 +149,21 @@ class GpuBufferController {
   void reclaim_stale_pending();
 
  private:
-  /// Allow a slot to delegate resource operations to its owning controller
-  /// without exposing those operations as part of the public controller API.
+  /// Allow a slot to delegate resource operations to its owning manager
+  /// without exposing those operations as part of the public manager API.
   friend class PublishSlot;
 
-  void* device_ptr(
-      const SlotController::Reservation& reservation) const noexcept;
-  cudaError_t record_ready(const SlotController::Reservation& reservation,
+  void* device_ptr(const LeaseManager::Reservation& reservation) const noexcept;
+  cudaError_t record_ready(const LeaseManager::Reservation& reservation,
                            cudaStream_t stream) noexcept;
   std::optional<transport::BufferDescriptor> descriptor(
-      const SlotController::Reservation& reservation) const;
-  void cancel(const SlotController::Reservation& reservation) noexcept;
+      const LeaseManager::Reservation& reservation) const;
+  void cancel(const LeaseManager::Reservation& reservation) noexcept;
 
   Config config_;
   rclcpp::Logger logger_;
   GpuBufferPool buffer_pool_;
-  SlotController slot_controller_;
+  LeaseManager lease_manager_;
 };
 
 }  // namespace ros2_cuda_ipc_core::publisher

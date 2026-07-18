@@ -24,22 +24,22 @@ Publisherのmessageが残っている間に同じ名前でPublisherを再起動�
 - SHM state、GPU memory handle、ready event handleの組み合わせが、messageを作成した
   Publisher instanceと一致しなくなる。
 
-`SlotController`は、SHM capacity外のreservationを検出した場合にgenerationを確認して
+`LeaseManager`は、SHM capacity外のreservationを検出した場合にgenerationを確認して
 rollbackし、ERRORを記録する。この処理はreservation leakを防ぐための防御策であり、
 同名SHMの同時使用や再初期化を安全にするものではない。
 
 ### 推奨する設計
 
-設定上のSHM名をnamespaceの接頭辞として扱い、Publisher controllerの初期化ごとに一意な
+設定上のSHM名をnamespaceの接頭辞として扱い、Publisher managerの初期化ごとに一意な
 instance UUIDを生成する。POSIX SHMの実体名には、例えば
 `/ros2_cuda_ipc_fanout_<uuid>`のようにUUIDを付加し、ROS messageにはこの実体名を格納する。
 POSIX SHM名の移植性を保つため、先頭以外には`/`を使用しない。
 
 この方式では、次のownershipを明確にする。
 
-- controllerが実体SHM名を生成し、そのSHM objectを所有する。
+- managerが実体SHM名を生成し、そのSHM objectを所有する。
 - descriptorとROS messageは設定上の接頭辞ではなく実体SHM名を伝える。
-- controllerの終了時に、自身が作成した実体SHM名だけをunlinkする。
+- managerの終了時に、自身が作成した実体SHM名だけをunlinkする。
 - 実体SHM名は再利用しない。再起動後は必ず新しいUUIDを使用する。
 
 unlink済みSHMの既存mappingはOSの参照が残る間は有効だが、遅れて到着したmessageからの
@@ -52,7 +52,7 @@ unlink済みSHMの既存mappingはOSの参照が残る間は有効だが、遅�
 | --- | --- |
 | 設定値の意味 | 現在の「実体名」から「接頭辞」へ変更すると、設定と診断出力の互換性に影響する。 |
 | 実体名の公開 | logおよび診断APIから実体名を取得できるようにすると運用調査が容易になる。 |
-| 正常終了時のcleanup | controller終了時に即時unlinkするか、明示的なlifecycle操作を設けるかを決める。 |
+| 正常終了時のcleanup | manager終了時に即時unlinkするか、明示的なlifecycle操作を設けるかを決める。 |
 | crash後のorphan | UUID方式では名前衝突しない一方、異常終了したSHMが残る。列挙・期限付き削除toolまたは運用手順が必要になる。 |
 | 互換モード | 実体名をcallerが固定する高度なoptionを残す場合、その安全条件を別途定義する必要がある。 |
 | 他のIPC resource | CUDA VMM用Unix domain socketなど、instance identityを共有すべきresourceの範囲を決める。 |
@@ -68,7 +68,7 @@ unlink済みSHMの既存mappingはOSの参照が残る間は有効だが、遅�
 
 ### 完了条件
 
-- 同じ設定上の接頭辞で2つのPublisher controllerを同時に作成しても、異なる実体SHM名を
+- 同じ設定上の接頭辞で2つのPublisher managerを同時に作成しても、異なる実体SHM名を
   使用する。
 - capacityが異なるPublisher間でheaderとslot stateが干渉しない。
 - Publisher再起動前のmessageが、再起動後のinstanceへattachしない。

@@ -25,7 +25,7 @@ endif()
 
 add_library(${PROJECT_NAME}
   src/detail/cuda_util.cpp
-  src/publisher/gpu_buffer_controller.cpp
+  src/publisher/gpu_buffer_manager.cpp
   src/publisher/gpu_buffer_pool.cpp
   src/backend/memory_importer.cpp
   src/backend/cuda_ipc/memory_backend.cpp
@@ -37,7 +37,7 @@ add_library(${PROJECT_NAME}
   src/pointcloud2/pointcloud2_view.cpp
   src/subscriber/ipc_handle_cache.cpp
   src/lease/lease_handle.cpp
-  src/publisher/slot_controller.cpp
+  src/publisher/lease_manager.cpp
   src/subscriber/buffer_view_mapper.cpp
   src/image/image_view_mapper.cpp
   src/pointcloud2/pointcloud2_view_mapper.cpp
@@ -89,13 +89,13 @@ if(BUILD_TESTING)
   target_link_libraries(test_pointcloud2_view_mapper ${PROJECT_NAME})
   ament_add_gtest(test_publisher_messages test/test_publisher_messages.cpp)
   target_link_libraries(test_publisher_messages ${PROJECT_NAME})
-  ament_add_gtest(test_gpu_buffer_controller
-                  test/test_gpu_buffer_controller.cpp)
-  target_link_libraries(test_gpu_buffer_controller ${PROJECT_NAME})
+  ament_add_gtest(test_gpu_buffer_manager
+                  test/test_gpu_buffer_manager.cpp)
+  target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
   target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
-  ament_add_gtest(test_slot_controller test/test_slot_controller.cpp)
-  target_link_libraries(test_slot_controller ${PROJECT_NAME})
+  ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
+  target_link_libraries(test_lease_manager ${PROJECT_NAME})
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
