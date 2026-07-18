@@ -13,8 +13,8 @@
 #include "multi_process_image_fanout/kernels.hpp"
 #include "multi_process_image_fanout/status_format.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/mapper/image_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
+#include "ros2_cuda_ipc_core/image/image_view_mapper.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "std_msgs/msg/string.hpp"
 
@@ -25,7 +25,7 @@ constexpr uint32_t kChannels = 4;
 constexpr uint64_t kBytesPerPixel = 4;
 
 bool is_supported_rgba8_layout(
-    const ros2_cuda_ipc_core::view::ImageView& view) noexcept {
+    const ros2_cuda_ipc_core::image::ImageView& view) noexcept {
   const uint64_t row_bytes =
       static_cast<uint64_t>(view.cols()) * kBytesPerPixel;
   return view.strideC() == 1 && view.strideW() == kBytesPerPixel &&
@@ -34,7 +34,7 @@ bool is_supported_rgba8_layout(
 
 }  // namespace
 
-using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
+using ros2_cuda_ipc_core::detail::NvtxScopedRange;
 
 class InferenceLikeNode : public rclcpp::Node {
  public:
@@ -65,7 +65,7 @@ class InferenceLikeNode : public rclcpp::Node {
     subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
         input_topic_name_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
         [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
-          auto view = ros2_cuda_ipc_core::mapper::map_image_view(message);
+          auto view = ros2_cuda_ipc_core::image::map_image_view(message);
           if (!view.valid()) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                  "Skipping GPU image mapping failure");
@@ -83,7 +83,7 @@ class InferenceLikeNode : public rclcpp::Node {
   ~InferenceLikeNode() override { cleanup_cuda_state(); }
 
  private:
-  void on_image(const ros2_cuda_ipc_core::view::ImageView& view) {
+  void on_image(const ros2_cuda_ipc_core::image::ImageView& view) {
     NvtxScopedRange callback_range("InferenceLikeNode::on_image");
 
     ++received_;
@@ -100,7 +100,7 @@ class InferenceLikeNode : public rclcpp::Node {
                            "Skipping GPU image with invalid layout");
       return;
     }
-    if (view.dtype != ros2_cuda_ipc_core::view::DType::U8 ||
+    if (view.dtype != ros2_cuda_ipc_core::image::DType::U8 ||
         view.channels() != kChannels) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Skipping image with unsupported dtype/channels");
@@ -299,7 +299,7 @@ class InferenceLikeNode : public rclcpp::Node {
 
   // Lazily allocate or resize the internal normalized gray tensor when input
   // dimensions change. The tensor remains GPU-only.
-  bool ensure_buffers(const ros2_cuda_ipc_core::view::ImageView& view) {
+  bool ensure_buffers(const ros2_cuda_ipc_core::image::ImageView& view) {
     const std::size_t required_count = static_cast<std::size_t>(view.rows()) *
                                        static_cast<std::size_t>(view.cols());
     if (required_count == 0) {

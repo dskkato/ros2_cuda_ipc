@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/cuda/gpu_buffer_pool.hpp"
+#include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 
 namespace {
 
@@ -18,25 +18,21 @@ struct CleanupObservation {
 };
 
 class PartiallyFailingBackend
-    : public ros2_cuda_ipc_core::cuda::GpuBufferPool::MemoryBackend {
+    : public ros2_cuda_ipc_core::backend::MemoryBackend {
  public:
   explicit PartiallyFailingBackend(
       std::shared_ptr<CleanupObservation> observation)
       : observation_(std::move(observation)) {}
 
-  bool allocate(
-      uint64_t, int,
-      std::vector<ros2_cuda_ipc_core::cuda::GpuBufferPool::SlotResources>&
-          slots,
-      rclcpp::Logger) override {
+  bool allocate(uint64_t, int,
+                std::vector<ros2_cuda_ipc_core::backend::SlotResources>& slots,
+                rclcpp::Logger) override {
     slots[0].device_ptr = reinterpret_cast<void*>(0x1);
     return false;
   }
 
-  void destroy(
-      std::vector<ros2_cuda_ipc_core::cuda::GpuBufferPool::SlotResources>&
-          slots,
-      rclcpp::Logger) noexcept override {
+  void destroy(std::vector<ros2_cuda_ipc_core::backend::SlotResources>& slots,
+               rclcpp::Logger) noexcept override {
     ++observation_->destroy_calls;
     for (auto& slot : slots) {
       if (slot.device_ptr != nullptr) {
@@ -58,8 +54,8 @@ TEST(GpuBufferPoolTest, PartialBackendFailureIsRolledBack) {
     GTEST_SKIP() << "CUDA device not available";
   }
   auto observation = std::make_shared<CleanupObservation>();
-  ros2_cuda_ipc_core::cuda::GpuBufferPool pool(
-      2, ros2_cuda_ipc_core::MemoryBackendKind::CUDA_IPC,
+  ros2_cuda_ipc_core::publisher::GpuBufferPool pool(
+      2, ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC,
       rclcpp::get_logger("GpuBufferPoolTest"),
       std::make_unique<PartiallyFailingBackend>(observation));
   EXPECT_FALSE(pool.initialise(1024, 0));

@@ -85,7 +85,7 @@ ros2 topic echo /fanout/inference_like/status
 ## Repository Layout
 
 - `ros2_cuda_ipc_msgs`: ROS 2 message definitions for GPU-backed buffers.
-- `ros2_cuda_ipc_core`: CUDA memory sharing, mapping, and view utilities.
+- `ros2_cuda_ipc_core`: CUDA memory sharing plus modality-oriented mapping and view utilities.
 - `examples/multi_process_image_fanout`: primary runnable demo.
 - `utils/gpu_image_transport`: utility nodes that map `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: small CUDA IPC / VMM-FD environment checks.

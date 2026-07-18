@@ -9,11 +9,11 @@
 #include <stdexcept>
 #include <string>
 
-#include "ros2_cuda_ipc_core/cuda/cuda_util.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 
 namespace multi_process_image_fanout {
 
-using ros2_cuda_ipc_core::cuda::cuda_error_to_string;
+using ros2_cuda_ipc_core::detail::cuda_error_to_string;
 
 inline bool log_cuda_error(const rclcpp::Logger& logger, const char* operation,
                            cudaError_t err) {

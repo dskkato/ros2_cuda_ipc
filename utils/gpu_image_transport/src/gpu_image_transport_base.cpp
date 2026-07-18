@@ -7,7 +7,7 @@
 
 namespace gpu_image_transport {
 
-using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
+using ros2_cuda_ipc_core::detail::NvtxScopedRange;
 
 GpuImageTransportNodeBase::GpuImageTransportNodeBase(
     const std::string& node_name, const rclcpp::NodeOptions& options)
@@ -29,7 +29,7 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
   subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
       input_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
       [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
-        auto view = ros2_cuda_ipc_core::mapper::map_image_view(message);
+        auto view = ros2_cuda_ipc_core::image::map_image_view(message);
         if (!view.valid()) {
           RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                "Failed to map received GPU image");
@@ -53,7 +53,7 @@ GpuImageTransportNodeBase::~GpuImageTransportNodeBase() {
 }
 
 void GpuImageTransportNodeBase::on_image(
-    const ros2_cuda_ipc_core::view::ImageView& view) {
+    const ros2_cuda_ipc_core::image::ImageView& view) {
   NvtxScopedRange callback_range("GpuImageTransportNodeBase::on_image");
   if (!view.core.valid()) {
     RCLCPP_WARN(get_logger(), "Received invalid GPU image view");

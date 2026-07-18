@@ -13,15 +13,16 @@
 #include "multi_process_image_fanout/cuda_checks.hpp"
 #include "multi_process_image_fanout/kernels.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/cuda/gpu_buffer_controller.hpp"
-#include "ros2_cuda_ipc_core/cuda/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/memory_backend_utils.hpp"
-#include "ros2_cuda_ipc_core/view/image_view.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_backend_utils.hpp"
+#include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
+#include "ros2_cuda_ipc_core/image/image_view.hpp"
+#include "ros2_cuda_ipc_core/publisher/gpu_buffer_controller.hpp"
+#include "ros2_cuda_ipc_core/transport/message_utils.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 
 namespace multi_process_image_fanout {
 
-using ros2_cuda_ipc_core::cuda::NvtxScopedRange;
+using ros2_cuda_ipc_core::detail::NvtxScopedRange;
 
 namespace {
 constexpr uint64_t kBytesPerPixel = 4;
@@ -45,7 +46,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     const auto shm_name =
         declare_parameter<std::string>("shm_name", "/ros2_cuda_ipc_fanout");
     const int device_index = declare_parameter<int>("device_index", 0);
-    const auto backend = ros2_cuda_ipc_core::parse_memory_backend(
+    const auto backend = ros2_cuda_ipc_core::backend::parse_memory_backend(
         declare_parameter<std::string>("memory_backend", "cuda_ipc"),
         get_logger());
     encoding_ = declare_parameter<std::string>("encoding", kDefaultEncoding);
@@ -64,8 +65,8 @@ class GpuImagePublisherNode : public rclcpp::Node {
     const uint64_t frame_size_bytes =
         static_cast<uint64_t>(width_) * height_ * kBytesPerPixel;
     controller_ =
-        std::make_unique<ros2_cuda_ipc_core::cuda::GpuBufferController>(
-            ros2_cuda_ipc_core::cuda::GpuBufferController::Config{
+        std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferController>(
+            ros2_cuda_ipc_core::publisher::GpuBufferController::Config{
                 shm_name, slot_count, frame_size_bytes, device_index,
                 pending_ttl, backend},
             get_logger().get_child("GpuBufferController"));
@@ -108,7 +109,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
       if (error != cudaSuccess) {
         RCLCPP_ERROR(
             get_logger(), "cudaStreamDestroy failed: %s",
-            ros2_cuda_ipc_core::cuda::cuda_error_to_string(error).c_str());
+            ros2_cuda_ipc_core::detail::cuda_error_to_string(error).c_str());
       }
       stream_ = nullptr;
     }
@@ -120,7 +121,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     NvtxScopedRange timer_range("GpuImagePublisherNode::on_timer");
 
     const std::size_t subscribers = publisher_->get_subscription_count();
-    std::optional<ros2_cuda_ipc_core::cuda::PublishSlot> slot;
+    std::optional<ros2_cuda_ipc_core::publisher::PublishSlot> slot;
     {
       NvtxScopedRange acquire_range("GpuImagePublisherNode::acquire_slot");
       slot =
@@ -161,8 +162,9 @@ class GpuImagePublisherNode : public rclcpp::Node {
     }
 
     ros2_cuda_ipc_msgs::msg::GpuImage message;
-    ros2_cuda_ipc_core::fill_buffer_core_message(*descriptor, message.core);
-    message.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::view::DType::U8);
+    ros2_cuda_ipc_core::transport::fill_buffer_core_message(*descriptor,
+                                                            message.core);
+    message.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::image::DType::U8);
     message.shape = {height_, width_, kDefaultChannels};
     message.strides = {width_ * kBytesPerPixel, kDefaultChannels, 1};
     message.encoding = encoding_;
@@ -175,7 +177,8 @@ class GpuImagePublisherNode : public rclcpp::Node {
   }
 
   rclcpp::Publisher<ros2_cuda_ipc_msgs::msg::GpuImage>::SharedPtr publisher_;
-  std::unique_ptr<ros2_cuda_ipc_core::cuda::GpuBufferController> controller_;
+  std::unique_ptr<ros2_cuda_ipc_core::publisher::GpuBufferController>
+      controller_;
   rclcpp::TimerBase::SharedPtr timer_;
   cudaStream_t stream_ = nullptr;
   double publish_rate_hz_ = 30.0;

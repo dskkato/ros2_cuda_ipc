@@ -5,25 +5,25 @@
 
 #include <atomic>
 
-#include "ros2_cuda_ipc_core/ipc_handle_cache.hpp"
+#include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 
-namespace {
+namespace ros2_cuda_ipc_core {
 
 TEST(IpcHandleCacheTest, KeyEqualityAndHashUseBackendPayloadAndEvent) {
-  ros2_cuda_ipc_core::IpcHandleKey lhs{};
+  subscriber::IpcHandleKey lhs{};
   lhs.backend = 1;
   lhs.mem[0] = 3;
   lhs.event[0] = 5;
 
-  ros2_cuda_ipc_core::IpcHandleKey same = lhs;
-  ros2_cuda_ipc_core::IpcHandleKey different_backend = lhs;
+  subscriber::IpcHandleKey same = lhs;
+  subscriber::IpcHandleKey different_backend = lhs;
   different_backend.backend = 2;
-  ros2_cuda_ipc_core::IpcHandleKey different_mem = lhs;
+  subscriber::IpcHandleKey different_mem = lhs;
   different_mem.mem[1] = 7;
-  ros2_cuda_ipc_core::IpcHandleKey different_event = lhs;
+  subscriber::IpcHandleKey different_event = lhs;
   different_event.event[1] = 9;
 
-  ros2_cuda_ipc_core::IpcHandleKeyHash hash;
+  subscriber::IpcHandleKeyHash hash;
   EXPECT_TRUE(lhs == same);
   EXPECT_EQ(hash(lhs), hash(same));
   EXPECT_FALSE(lhs == different_backend);
@@ -32,18 +32,17 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseBackendPayloadAndEvent) {
 }
 
 TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
-  ros2_cuda_ipc_core::IpcHandleCache cache(
-      [](const ros2_cuda_ipc_core::cuda::ImportedMemory&) {});
-  ros2_cuda_ipc_core::IpcHandleKey key{};
+  subscriber::IpcHandleCache cache([](const backend::ImportedMemory&) {});
+  subscriber::IpcHandleKey key{};
   key.backend = 1;
   key.mem[0] = 11;
   key.event[0] = 13;
 
-  ros2_cuda_ipc_core::cuda::ImportedMemory first;
+  backend::ImportedMemory first;
   first.dev_ptr = reinterpret_cast<void*>(0x1010);
   first.event = reinterpret_cast<cudaEvent_t>(0x2020);
 
-  ros2_cuda_ipc_core::cuda::ImportedMemory duplicate;
+  backend::ImportedMemory duplicate;
   duplicate.dev_ptr = reinterpret_cast<void*>(0x3030);
   duplicate.event = reinterpret_cast<cudaEvent_t>(0x4040);
 
@@ -58,20 +57,18 @@ TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
 
 TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
   std::atomic<int> released{0};
-  ros2_cuda_ipc_core::IpcHandleCache cache(
-      [&released](const ros2_cuda_ipc_core::cuda::ImportedMemory&) {
-        released.fetch_add(1);
-      });
-  ros2_cuda_ipc_core::IpcHandleKey key{};
+  subscriber::IpcHandleCache cache(
+      [&released](const backend::ImportedMemory&) { released.fetch_add(1); });
+  subscriber::IpcHandleKey key{};
   key.backend = 1;
   key.mem[0] = 17;
   key.event[0] = 19;
 
-  ros2_cuda_ipc_core::cuda::ImportedMemory first;
+  backend::ImportedMemory first;
   first.dev_ptr = reinterpret_cast<void*>(0x5050);
   first.event = reinterpret_cast<cudaEvent_t>(0x6060);
 
-  ros2_cuda_ipc_core::cuda::ImportedMemory duplicate;
+  backend::ImportedMemory duplicate;
   duplicate.dev_ptr = reinterpret_cast<void*>(0x7070);
   duplicate.event = reinterpret_cast<cudaEvent_t>(0x8080);
 
@@ -81,4 +78,4 @@ TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
   EXPECT_EQ(released.load(), 1);
 }
 
-}  // namespace
+}  // namespace ros2_cuda_ipc_core
