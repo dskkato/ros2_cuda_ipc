@@ -7,21 +7,21 @@ who want to try the demo first.
 ## Packages
 
 - `ros2_cuda_ipc_msgs`: message definitions for GPU-backed buffers.
-- `ros2_cuda_ipc_core`: CUDA memory sharing, lease handling, mapper APIs, and Views.
+- `ros2_cuda_ipc_core`: CUDA memory sharing, lease handling, and modality-specific Views.
 - `examples/multi_process_image_fanout`: primary multi-process sample.
 - `utils/gpu_image_transport`: utility bridge from `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: CUDA IPC and VMM-FD environment checks.
 
 ## Core Components
 
-- `ros2_cuda_ipc_core::view::BufferView`: base view for an imported GPU resource and its lease.
-- `ros2_cuda_ipc_core::view::ImageView` / `PointCloud2View`: typed metadata layered on `BufferView`.
-- `ros2_cuda_ipc_core::mapper::*ViewMapper`: explicit mapping APIs from raw messages to imported views.
-- `ros2_cuda_ipc_core::LeaseHandle`: process-shared slot lease accounting.
-- `ros2_cuda_ipc_core::cuda::GpuBufferPool`: publisher-side GPU resource ownership.
-- `ros2_cuda_ipc_core::SlotController`: publisher reservation, pending, generation, and TTL state.
-- `ros2_cuda_ipc_core::cuda::GpuBufferController`: publisher-facing buffer controller.
-- `ros2_cuda_ipc_core::cuda::PublishSlot`: one move-only publish attempt with RAII cancellation.
+- `ros2_cuda_ipc_core::subscriber::BufferView`: modality-independent view for an imported GPU resource and its lease.
+- `ros2_cuda_ipc_core::image::ImageView` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2View`: example modality views layered on `subscriber::BufferView`.
+- `ros2_cuda_ipc_core::subscriber::BufferViewMapper` and `ros2_cuda_ipc_core::image::ImageViewMapper` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2ViewMapper`: explicit mapping APIs from raw messages to imported views.
+- `ros2_cuda_ipc_core::lease::LeaseHandle`: process-shared slot lease accounting.
+- `ros2_cuda_ipc_core::publisher::GpuBufferPool`: publisher-side GPU resource ownership.
+- `ros2_cuda_ipc_core::publisher::SlotController`: publisher reservation, pending, generation, and TTL state.
+- `ros2_cuda_ipc_core::publisher::GpuBufferController`: publisher-facing buffer controller.
+- `ros2_cuda_ipc_core::publisher::PublishSlot`: one move-only publish attempt with RAII cancellation.
 
 Publisher code should follow this order:
 
@@ -41,7 +41,7 @@ The protocol guarantees and known limitations are specified in
 
 Receiving code subscribes to `ros2_cuda_ipc_msgs::msg::GpuImage` and calls the
 mapper explicitly. Mapping acquires the lease and imports or looks up the GPU
-resource before returning an `ImageView`.
+resource before returning an `ros2_cuda_ipc_core::image::ImageView`.
 
 ## Memory Backends
 

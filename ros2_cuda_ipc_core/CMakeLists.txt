@@ -24,24 +24,24 @@ if(NOT UUID_LIB)
 endif()
 
 add_library(${PROJECT_NAME}
-  src/buffer_descriptor.cpp
-  src/cuda/cuda_util.cpp
-  src/cuda/gpu_buffer_controller.cpp
-  src/cuda/gpu_buffer_pool.cpp
-  src/cuda/memory_importer.cpp
-  src/cuda/cuda_ipc/memory_backend.cpp
-  src/cuda/cuda_ipc/memory_importer.cpp
-  src/cuda/vmm_fd/memory_backend.cpp
-  src/cuda/vmm_fd/memory_importer.cpp
-  src/view/buffer_view.cpp
-  src/view/image_view.cpp
-  src/view/pointcloud2_view.cpp
-  src/ipc_handle_cache.cpp
-  src/lease_handle.cpp
-  src/slot_controller.cpp
-  src/mapper/buffer_view_mapper.cpp
-  src/mapper/image_view_mapper.cpp
-  src/mapper/pointcloud2_view_mapper.cpp
+  src/detail/cuda_util.cpp
+  src/publisher/gpu_buffer_controller.cpp
+  src/publisher/gpu_buffer_pool.cpp
+  src/backend/memory_importer.cpp
+  src/backend/cuda_ipc/memory_backend.cpp
+  src/backend/cuda_ipc/memory_importer.cpp
+  src/backend/vmm_fd/memory_backend.cpp
+  src/backend/vmm_fd/memory_importer.cpp
+  src/subscriber/buffer_view.cpp
+  src/image/image_view.cpp
+  src/pointcloud2/pointcloud2_view.cpp
+  src/subscriber/ipc_handle_cache.cpp
+  src/lease/lease_handle.cpp
+  src/publisher/slot_controller.cpp
+  src/subscriber/buffer_view_mapper.cpp
+  src/image/image_view_mapper.cpp
+  src/pointcloud2/pointcloud2_view_mapper.cpp
+  src/transport/message_utils.cpp
 )
 
 target_include_directories(${PROJECT_NAME}

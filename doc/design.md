@@ -169,7 +169,7 @@ Subscriber 側の import/open を抽象化する。どちらも `BufferCore.back
 
 MemoryBackend は「slot 用 GPU メモリの確保」「BufferCore に載せるハンドル情報の生成」
 「Publisher 側リソースのクリーンアップ」をまとめる小さなクラスである。Subscriber 側では
-`BufferViewMapper` が `cuda::MemoryImporter` を通して CUDA IPC open または VMM import を呼び分ける。
+`BufferViewMapper` が `backend::MemoryImporter` を通して CUDA IPC open または VMM import を呼び分ける。
 イベントハンドル（`cudaIpcEventHandle_t`）は共通実装を維持し、CUDA IPC ベースの同期を継続する。
 
 ##### x86 + dGPU: 既存の cudaIpcMemHandle_t パス
@@ -227,13 +227,13 @@ Publisher は wire message を直接構築し、Subscriber は Mapper API で明
 #### ImageView（BufferView + 最小限の画像メタデータ）
 
 ```cpp
-// view/image_view.hpp
+// image/image_view.hpp
 #pragma once
 #include <cstdint>
 #include <string>
-#include <ros2_cuda_ipc_core/view/buffer_view.hpp>
+#include <ros2_cuda_ipc_core/subscriber/buffer_view.hpp>
 
-namespace ros2_cuda_ipc_core::view {
+namespace ros2_cuda_ipc_core::image {
 
 // 画素型（必要十分な最小セット。用途に応じて拡張可）
 enum class DType : uint8_t {
@@ -321,7 +321,7 @@ struct ImageView {
   }
 };
 
-}  // namespace ros2_cuda_ipc_core::view
+}  // namespace ros2_cuda_ipc_core::image
 ```
 
 **ポイント**
@@ -334,7 +334,7 @@ struct ImageView {
 #### 点群：PointCloud2View（BufferView + レイアウト情報）
 
 ```cpp
-namespace ros2_cuda_ipc_core::view {
+namespace ros2_cuda_ipc_core::pointcloud2 {
 
 // PointCloud2View: sensor_msgs/PointCloud2 のレイアウトをGPU向けにそのまま保持
 struct PointCloud2View {
@@ -390,7 +390,7 @@ struct PointCloud2View {
   }
 };
 
-}  // namespace ros2_cuda_ipc_core::view
+}  // namespace ros2_cuda_ipc_core::pointcloud2
 ```
 
 **ポイント**
@@ -424,7 +424,7 @@ ROS message から View へのアプリケーションメタデータコピー**
 Publisher/Subscriber の役割:
 * Publisher: cudaIpcGet*Handle でハンドル生成 → msg に格納。
 * Publisher (VMM-FD): VMM allocation を FD export し、uuid 経由の Unix domain socket で FD を配布する。
-* Subscriber: Mapper が BufferView を構築し、`BufferCore.backend` に応じて `cuda::MemoryImporter` から dev_ptr/event を取得する。
+* Subscriber: Mapper が BufferView を構築し、`BufferCore.backend` に応じて `backend::MemoryImporter` から dev_ptr/event を取得する。
 * Subscriber は ROS message を受け取り、既定 mapper または Mapper オブジェクトを明示的に呼び出して View を取得する。
 
 memo:
@@ -462,7 +462,7 @@ class BufferViewMapper {
 
 ```cpp
 void on_message(const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
-  auto view = ros2_cuda_ipc_core::mapper::map_image_view(message);
+  auto view = ros2_cuda_ipc_core::image::map_image_view(message);
   if (!view.valid()) {
     return;
   }
