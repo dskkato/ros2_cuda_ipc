@@ -43,8 +43,8 @@ class GpuImagePublisherNode : public rclcpp::Node {
     const int slot_count_parameter = declare_parameter<int>("slot_count", 4);
     const auto pending_ttl = std::chrono::milliseconds(
         declare_parameter<int>("pending_ttl_ms", 300));
-    const auto shm_name =
-        declare_parameter<std::string>("shm_name", "/ros2_cuda_ipc_fanout");
+    const auto shm_name_prefix = declare_parameter<std::string>(
+        "shm_name_prefix", "/ros2_cuda_ipc_fanout");
     const int device_index = declare_parameter<int>("device_index", 0);
     const auto backend = ros2_cuda_ipc_core::backend::parse_memory_backend(
         declare_parameter<std::string>("memory_backend", "cuda_ipc"),
@@ -67,7 +67,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     manager_ =
         std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferManager>(
             ros2_cuda_ipc_core::publisher::GpuBufferManager::Config{
-                shm_name, slot_count, frame_size_bytes, device_index,
+                shm_name_prefix, slot_count, frame_size_bytes, device_index,
                 pending_ttl, backend},
             get_logger().get_child("GpuBufferManager"));
     if (!manager_->initialise()) {

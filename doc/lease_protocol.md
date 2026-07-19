@@ -58,6 +58,7 @@ Subscriber process
 ROS messageには少なくとも次が含まれる。
 
 - shared memory名
+- 16-byte `publisher_instance_id`
 - `slot_id`
 - `generation`
 - device IDとbyte size
@@ -79,8 +80,9 @@ application固有の画像shape、encoding、point cloud layoutなどはlease pr
 | `pending` | lease取得がまだ期待される数 | 0でなければ再利用不可 |
 | `reserved` | Publisher更新中の排他flag | 0でなければPublisher reserveとSubscriber acquireを拒否 |
 
-現在のshared memory layout versionは2である。attach時にmagicとlayout versionを検証し、
-各APIは`slot_id`がheaderのcapacity範囲内であることを検証する。
+現在のshared memory layout versionは3であり、headerに16-byte
+`publisher_instance_id`を保持する。attach時にmagic、layout version、messageから渡された
+instance IDを検証し、各APIは`slot_id`がheaderのcapacity範囲内であることを検証する。
 
 slotを再利用できる基本条件は次である。
 
@@ -179,18 +181,21 @@ generation不一致、active leaseによりcancelできない場合はERRORと�
 
 ## 6. Subscriber acquireとrelease
 
-Subscriberはmessageの`shm_name`、`slot_id`、`generation`を使ってleaseを取得する。
+Subscriberはmessageの`shm_name`、`publisher_instance_id`、`slot_id`、`generation`を
+使ってleaseを取得する。`shm_name`はresource locatorであり、publisher instanceの同一性は
+headerとmessageの`publisher_instance_id`の一致によって確認する。
 
 acquireは次を行う。
 
-1. shared memoryへattachし、slot範囲を検証する。
-2. `reserved == 0`を確認する。
-3. `generation`がmessageと一致することを確認する。
-4. `refcnt`をCASで1増加する。
-5. `reserved == 0`と`generation`一致を再確認する。
-6. 再確認に失敗した場合は`refcnt`を戻し、acquireを失敗させる。
-7. `pending > 0`ならCASで1減少する。
-8. 有効な`LeaseHandle`を返す。
+1. shared memoryへattachし、layoutとslot範囲を検証する。
+2. headerとmessageの`publisher_instance_id`一致を検証する。
+3. `reserved == 0`を確認する。
+4. `generation`がmessageと一致することを確認する。
+5. `refcnt`をCASで1増加する。
+6. `reserved == 0`と`generation`一致を再確認する。
+7. 再確認に失敗した場合は`refcnt`を戻し、acquireを失敗させる。
+8. `pending > 0`ならCASで1減少する。
+9. 有効な`LeaseHandle`を返す。
 
 有効な`LeaseHandle`の破棄またはmove assignmentによるreleaseは`refcnt`を1減少する。
 `BufferView`は内部で`LeaseHandle`を保持するため、viewの生存中はslotを再利用できない。
@@ -314,22 +319,16 @@ crash、machine failureなどでdestructorを通らず終了するとrefcntが�
 これはmemory safety上は安全側だが、pool capacityを失うavailability上の問題である。
 現在はprocess identity、heartbeat、process death detectionを実装していない。
 
-### 12.2 Publisher restartと同一SHM名
+### 12.2 Publisher restart
 
-`LeaseHandle::init()`は指定されたshared memory layoutを再初期化する。同じ`shm_name`で
-Publisherを再起動した場合、古いSubscriber mapping、古いmessage、古いlease、古いGPU
-handleと新しい状態を安全に引き継ぐprotocolにはなっていない。
+`GpuBufferManager::initialise()`は毎回新しいUUIDを生成する。UUIDは実体SHM名へ付加され、
+同じ16-byte値がSHM headerとROS messageの`publisher_instance_id`へ格納される。正常な
+`reset()`またはdestructorは実体SHM名をunlinkするため、遅延messageからの新規attachは
+失敗する。既存mapping cacheを使用する場合にもinstance IDを照合する。
 
-Publisher instanceごとに一意なSHM名を使用することを推奨する。
-
-```text
-/base_name/<publisher_instance_uuid>
-```
-
-実装はlocal configurationを超える`slot_id`を検出した場合、取得したreservationを
-generation付きでrollbackしてERRORを記録する。ただし、これはcapacity不一致時の
-defensive cleanupであり、同じSHM名を複数Publisherが再初期化することを安全にする
-仕組みではない。
+Publisherが正常終了処理を通らずcrashした場合はorphan SHMが残り得る。再起動後の
+Publisherは別名・別instance IDを使用するため新instanceとの混同は起こらないが、orphanの
+列挙と回収は現在のprotocolには含まれない。
 
 ### 12.3 generation wraparound
 

@@ -19,7 +19,8 @@ class PointCloud2ViewMapperTest : public ::testing::Test {
 TEST_F(PointCloud2ViewMapperTest, InvalidCorePreservesHeaderOnlyBehavior) {
   const std::string shm_name =
       test::make_unique_shm_name("pointcloud_mapper_invalid");
-  ASSERT_TRUE(lease::LeaseHandle::init(shm_name, 1));
+  ASSERT_TRUE(lease::LeaseHandle::init(
+      shm_name, test::publisher_instance_id(shm_name), 1));
 
   ros2_cuda_ipc_msgs::msg::GpuPointCloud2 msg;
   msg.header.frame_id = "frame_pc";
@@ -29,6 +30,7 @@ TEST_F(PointCloud2ViewMapperTest, InvalidCorePreservesHeaderOnlyBehavior) {
   msg.row_step = 24;
   msg.is_dense = true;
   msg.core.shm_name = shm_name;
+  msg.core.publisher_instance_id = test::publisher_instance_id(shm_name);
   msg.core.slot_id = 0;
   msg.core.device_id = 0;
   msg.core.generation = 42;

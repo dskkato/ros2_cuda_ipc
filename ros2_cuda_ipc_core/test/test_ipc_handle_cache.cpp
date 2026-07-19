@@ -6,11 +6,13 @@
 #include <atomic>
 
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
+#include "test_instance_id.hpp"
 
 namespace ros2_cuda_ipc_core {
 
-TEST(IpcHandleCacheTest, KeyEqualityAndHashUseBackendPayloadAndEvent) {
+TEST(IpcHandleCacheTest, KeyEqualityAndHashUseInstanceBackendPayloadAndEvent) {
   subscriber::IpcHandleKey lhs{};
+  lhs.publisher_instance_id = test::publisher_instance_id("lhs");
   lhs.backend = 1;
   lhs.mem[0] = 3;
   lhs.event[0] = 5;
@@ -22,6 +24,9 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseBackendPayloadAndEvent) {
   different_mem.mem[1] = 7;
   subscriber::IpcHandleKey different_event = lhs;
   different_event.event[1] = 9;
+  subscriber::IpcHandleKey different_instance = lhs;
+  different_instance.publisher_instance_id =
+      test::publisher_instance_id("different");
 
   subscriber::IpcHandleKeyHash hash;
   EXPECT_TRUE(lhs == same);
@@ -29,6 +34,8 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseBackendPayloadAndEvent) {
   EXPECT_FALSE(lhs == different_backend);
   EXPECT_FALSE(lhs == different_mem);
   EXPECT_FALSE(lhs == different_event);
+  EXPECT_FALSE(lhs == different_instance);
+  EXPECT_NE(hash(lhs), hash(different_instance));
 }
 
 TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {

@@ -10,6 +10,7 @@
 #include <string>
 
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber {
@@ -22,6 +23,7 @@ struct BufferView {
   uint32_t slot_id = 0;
   uint32_t generation = 0;
   std::string shm_name;
+  PublisherInstanceId publisher_instance_id{};
   std::shared_ptr<lease::LeaseHandle> lease;
 
   BufferView() = default;

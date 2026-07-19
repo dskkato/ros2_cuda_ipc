@@ -21,7 +21,7 @@ namespace ros2_cuda_ipc_core::lease {
 namespace {
 
 constexpr uint32_t kShmMagic = 0x4C534531;  // 'LSE1'
-constexpr uint32_t kLayoutVersion = 2;
+constexpr uint32_t kLayoutVersion = 3;
 constexpr uint32_t kCancelReservationAttempts = 1024;
 
 /// Shared memory header structure stored at the start of the shared-memory
@@ -31,6 +31,7 @@ struct ShmHeader {
   uint32_t layout_version;
   uint32_t capacity;
   uint32_t consumer_count;
+  PublisherInstanceId publisher_instance_id;
 };
 
 /// Treat a `uint32_t` reference as an `std::atomic<uint32_t>` to apply atomic
@@ -65,6 +66,7 @@ struct LeaseHandle::Mapping {
   void* addr = nullptr;
   SlotMeta* slots = nullptr;
   ShmHeader* header = nullptr;
+  PublisherInstanceId publisher_instance_id{};
   std::atomic<uint32_t> next_slot{0};
 
   ~Mapping() {
@@ -135,15 +137,18 @@ void LeaseHandle::release() noexcept {
   mapping_.reset();
 }
 
-bool LeaseHandle::init(const std::string& shm_name, uint32_t capacity) {
-  if (capacity == 0) {
-    RCLCPP_ERROR(lease_logger(), "lease:init capacity must be >0");
+bool LeaseHandle::init(const std::string& shm_name,
+                       const PublisherInstanceId& publisher_instance_id,
+                       uint32_t capacity) {
+  if (capacity == 0 || is_nil(publisher_instance_id)) {
+    RCLCPP_ERROR(lease_logger(),
+                 "lease:init capacity must be >0 and instance ID non-nil");
     return false;
   }
 
   const size_t size =
       sizeof(ShmHeader) + static_cast<size_t>(capacity) * sizeof(SlotMeta);
-  const int fd = shm_open(shm_name.c_str(), O_CREAT | O_RDWR, 0660);
+  const int fd = shm_open(shm_name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0660);
   if (fd < 0) {
     RCLCPP_ERROR(lease_logger(), "lease:init shm_open failed name=%s errno=%d",
                  shm_name.c_str(), errno);
@@ -154,6 +159,7 @@ bool LeaseHandle::init(const std::string& shm_name, uint32_t capacity) {
     RCLCPP_ERROR(lease_logger(), "lease:init ftruncate failed name=%s errno=%d",
                  shm_name.c_str(), errno);
     close(fd);
+    shm_unlink(shm_name.c_str());
     return false;
   }
 
@@ -162,6 +168,7 @@ bool LeaseHandle::init(const std::string& shm_name, uint32_t capacity) {
     RCLCPP_ERROR(lease_logger(), "lease:init mmap failed name=%s errno=%d",
                  shm_name.c_str(), errno);
     close(fd);
+    shm_unlink(shm_name.c_str());
     return false;
   }
 
@@ -170,6 +177,7 @@ bool LeaseHandle::init(const std::string& shm_name, uint32_t capacity) {
   header->layout_version = kLayoutVersion;
   header->capacity = capacity;
   header->consumer_count = 0;
+  header->publisher_instance_id = publisher_instance_id;
 
   auto* slots = reinterpret_cast<SlotMeta*>(header + 1);
   for (uint32_t i = 0; i < capacity; ++i) {
@@ -182,19 +190,24 @@ bool LeaseHandle::init(const std::string& shm_name, uint32_t capacity) {
   munmap(addr, size);
   close(fd);
 
-  {
-    std::lock_guard<std::mutex> lock(registry_mutex());
-    registry().erase(shm_name);
-  }
-
   return true;
 }
 
 std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
-    const std::string& shm_name) {
+    const std::string& shm_name,
+    const PublisherInstanceId& publisher_instance_id) {
+  if (is_nil(publisher_instance_id)) {
+    return nullptr;
+  }
   std::lock_guard<std::mutex> lock(registry_mutex());
   auto& map = registry();
   if (auto it = map.find(shm_name); it != map.end()) {
+    if (it->second->publisher_instance_id != publisher_instance_id) {
+      RCLCPP_WARN(lease_logger(),
+                  "lease:attach cached publisher instance mismatch name=%s",
+                  shm_name.c_str());
+      return nullptr;
+    }
     return it->second;
   }
 
@@ -212,6 +225,12 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
     close(fd);
     return nullptr;
   }
+  if (st.st_size < static_cast<off_t>(sizeof(ShmHeader))) {
+    RCLCPP_WARN(lease_logger(), "lease:attach segment too small name=%s",
+                shm_name.c_str());
+    close(fd);
+    return nullptr;
+  }
 
   void* addr =
       mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
@@ -225,10 +244,21 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
   close(fd);
 
   auto header = static_cast<ShmHeader*>(addr);
-  if (header->magic != kShmMagic || header->layout_version != kLayoutVersion) {
+  if (header->magic != kShmMagic || header->layout_version != kLayoutVersion ||
+      header->publisher_instance_id != publisher_instance_id) {
     RCLCPP_WARN(lease_logger(),
-                "lease:attach header mismatch name=%s magic=%u ver=%u",
+                "lease:attach header or publisher instance mismatch "
+                "name=%s magic=%u ver=%u",
                 shm_name.c_str(), header->magic, header->layout_version);
+    munmap(addr, st.st_size);
+    return nullptr;
+  }
+  const size_t expected_size =
+      sizeof(ShmHeader) +
+      static_cast<size_t>(header->capacity) * sizeof(SlotMeta);
+  if (expected_size > static_cast<size_t>(st.st_size)) {
+    RCLCPP_WARN(lease_logger(), "lease:attach truncated layout name=%s",
+                shm_name.c_str());
     munmap(addr, st.st_size);
     return nullptr;
   }
@@ -239,6 +269,7 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
   mapping->mapped_size = st.st_size;
   mapping->addr = addr;
   mapping->header = header;
+  mapping->publisher_instance_id = header->publisher_instance_id;
   mapping->slots = reinterpret_cast<SlotMeta*>(header + 1);
 
   map[shm_name] = mapping;
@@ -246,8 +277,9 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
 }
 
 std::optional<uint32_t> LeaseHandle::current_generation(
-    const std::string& shm_name, uint32_t slot_id) {
-  auto mapping = attach(shm_name);
+    const std::string& shm_name,
+    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id) {
+  auto mapping = attach(shm_name, publisher_instance_id);
   if (!mapping || slot_id >= mapping->capacity) {
     return std::nullopt;
   }
@@ -256,8 +288,9 @@ std::optional<uint32_t> LeaseHandle::current_generation(
 }
 
 std::optional<uint32_t> LeaseHandle::current_refcount(
-    const std::string& shm_name, uint32_t slot_id) {
-  auto mapping = attach(shm_name);
+    const std::string& shm_name,
+    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id) {
+  auto mapping = attach(shm_name, publisher_instance_id);
   if (!mapping || slot_id >= mapping->capacity) {
     return std::nullopt;
   }
@@ -266,8 +299,9 @@ std::optional<uint32_t> LeaseHandle::current_refcount(
 }
 
 std::optional<uint32_t> LeaseHandle::current_pending(
-    const std::string& shm_name, uint32_t slot_id) {
-  auto mapping = attach(shm_name);
+    const std::string& shm_name,
+    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id) {
+  auto mapping = attach(shm_name, publisher_instance_id);
   if (!mapping || slot_id >= mapping->capacity) {
     return std::nullopt;
   }
@@ -276,9 +310,10 @@ std::optional<uint32_t> LeaseHandle::current_pending(
 }
 
 std::optional<LeaseHandle::PublisherReservation>
-LeaseHandle::reserve_for_publish(const std::string& shm_name,
-                                 uint32_t pending_count) {
-  auto mapping = attach(shm_name);
+LeaseHandle::reserve_for_publish(
+    const std::string& shm_name,
+    const PublisherInstanceId& publisher_instance_id, uint32_t pending_count) {
+  auto mapping = attach(shm_name, publisher_instance_id);
   if (!mapping || mapping->capacity == 0) {
     return std::nullopt;
   }
@@ -324,9 +359,10 @@ LeaseHandle::reserve_for_publish(const std::string& shm_name,
   return std::nullopt;
 }
 
-bool LeaseHandle::force_clear_pending(const std::string& shm_name,
-                                      uint32_t slot_id) {
-  auto mapping = attach(shm_name);
+bool LeaseHandle::force_clear_pending(
+    const std::string& shm_name,
+    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id) {
+  auto mapping = attach(shm_name, publisher_instance_id);
   if (!mapping || slot_id >= mapping->capacity) {
     return false;
   }
@@ -356,9 +392,10 @@ bool LeaseHandle::force_clear_pending(const std::string& shm_name,
   return true;
 }
 
-bool LeaseHandle::cancel_pending(const std::string& shm_name, uint32_t slot_id,
-                                 uint32_t generation) {
-  auto mapping = attach(shm_name);
+bool LeaseHandle::cancel_pending(
+    const std::string& shm_name, uint32_t slot_id, uint32_t generation,
+    const PublisherInstanceId& publisher_instance_id) {
+  auto mapping = attach(shm_name, publisher_instance_id);
   if (!mapping || slot_id >= mapping->capacity) {
     return false;
   }
@@ -392,9 +429,11 @@ bool LeaseHandle::cancel_pending(const std::string& shm_name, uint32_t slot_id,
   return true;
 }
 
-LeaseHandle LeaseHandle::acquire(const std::string& shm_name, uint32_t slot_id,
-                                 uint32_t generation) {
-  auto mapping = attach(shm_name);
+LeaseHandle LeaseHandle::acquire(
+    const std::string& shm_name,
+    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id,
+    uint32_t generation) {
+  auto mapping = attach(shm_name, publisher_instance_id);
   if (!mapping || slot_id >= mapping->capacity) {
     return LeaseHandle{};
   }
