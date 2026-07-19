@@ -28,10 +28,23 @@ struct SlotMeta {
 /// values are weak_ptrs).
 class LeaseMapping {
  public:
+  /// Create and map a new shared-memory lease pool exclusively.
+  ///
+  /// @param shm_name POSIX shared-memory name.
+  /// @param instance_id Publisher instance identity stored in the header.
+  /// @param capacity Number of slots to allocate.
+  /// @return Owning mapping, or nullptr when creation or initialization fails.
   static std::shared_ptr<LeaseMapping> create(
       const std::string& shm_name, const PublisherInstanceId& instance_id,
       uint32_t capacity);
 
+  /// Open and map an existing shared-memory lease pool.
+  ///
+  /// The header's publisher instance identity must match the expected value.
+  ///
+  /// @param shm_name POSIX shared-memory name.
+  /// @param expected_instance_id Publisher identity expected in the header.
+  /// @return Owning mapping, or nullptr when opening or validation fails.
   static std::shared_ptr<LeaseMapping> attach(
       const std::string& shm_name,
       const PublisherInstanceId& expected_instance_id);

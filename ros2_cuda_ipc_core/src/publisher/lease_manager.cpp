@@ -175,14 +175,8 @@ bool LeaseManager::cancel(const Reservation& reservation) noexcept {
   if (reservation.slot_id >= slot_count_) {
     return false;
   }
-  const bool cancelled =
-      reservation.mapping
-          ? lease::LeaseHandle::cancel_pending(reservation.mapping,
-                                               reservation.slot_id,
-                                               reservation.generation)
-          : lease::LeaseHandle::cancel_pending(
-                reservation.shm_name, reservation.slot_id,
-                reservation.generation, reservation.publisher_instance_id);
+  const bool cancelled = lease::LeaseHandle::cancel_pending(
+      reservation.mapping, reservation.slot_id, reservation.generation);
   if (!cancelled) {
     RCLCPP_ERROR(logger_, "Failed to cancel reservation slot=%u generation=%u",
                  reservation.slot_id, reservation.generation);

@@ -213,12 +213,6 @@ LeaseHandle& LeaseHandle::operator=(LeaseHandle&& other) noexcept {
 
 LeaseHandle::~LeaseHandle() { release(); }
 
-std::shared_ptr<LeaseMapping> LeaseHandle::attach(
-    const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id) {
-  return LeaseMapping::attach(shm_name, publisher_instance_id);
-}
-
 void LeaseHandle::release() noexcept {
   if (!slot_meta_) return;
   auto& ref = as_atomic(slot_meta_->refcnt);
@@ -233,24 +227,11 @@ void LeaseHandle::release() noexcept {
   mapping_.reset();
 }
 
-bool LeaseHandle::init(const std::string& shm_name,
-                       const PublisherInstanceId& publisher_instance_id,
-                       uint32_t capacity) {
-  return LeaseMapping::create(shm_name, publisher_instance_id, capacity) !=
-         nullptr;
-}
-
 std::optional<uint32_t> LeaseHandle::current_generation(
     const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
   if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
   return as_atomic(mapping->slot(slot_id)->generation)
       .load(std::memory_order_acquire);
-}
-
-std::optional<uint32_t> LeaseHandle::current_generation(
-    const std::string& shm_name, const PublisherInstanceId& instance_id,
-    uint32_t slot_id) {
-  return current_generation(attach(shm_name, instance_id), slot_id);
 }
 
 std::optional<uint32_t> LeaseHandle::current_refcount(
@@ -260,23 +241,11 @@ std::optional<uint32_t> LeaseHandle::current_refcount(
       .load(std::memory_order_acquire);
 }
 
-std::optional<uint32_t> LeaseHandle::current_refcount(
-    const std::string& shm_name, const PublisherInstanceId& instance_id,
-    uint32_t slot_id) {
-  return current_refcount(attach(shm_name, instance_id), slot_id);
-}
-
 std::optional<uint32_t> LeaseHandle::current_pending(
     const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
   if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
   return as_atomic(mapping->slot(slot_id)->pending)
       .load(std::memory_order_acquire);
-}
-
-std::optional<uint32_t> LeaseHandle::current_pending(
-    const std::string& shm_name, const PublisherInstanceId& instance_id,
-    uint32_t slot_id) {
-  return current_pending(attach(shm_name, instance_id), slot_id);
 }
 
 std::optional<LeaseHandle::PublisherReservation>
@@ -316,13 +285,6 @@ LeaseHandle::reserve_for_publish(const std::shared_ptr<LeaseMapping>& mapping,
   return std::nullopt;
 }
 
-std::optional<LeaseHandle::PublisherReservation>
-LeaseHandle::reserve_for_publish(const std::string& shm_name,
-                                 const PublisherInstanceId& instance_id,
-                                 uint32_t pending_count) {
-  return reserve_for_publish(attach(shm_name, instance_id), pending_count);
-}
-
 bool LeaseHandle::force_clear_pending(
     const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
   if (!mapping || slot_id >= mapping->capacity()) return false;
@@ -344,12 +306,6 @@ bool LeaseHandle::force_clear_pending(
   pending.store(0, std::memory_order_release);
   reserved.store(0, std::memory_order_release);
   return true;
-}
-
-bool LeaseHandle::force_clear_pending(const std::string& shm_name,
-                                      const PublisherInstanceId& instance_id,
-                                      uint32_t slot_id) {
-  return force_clear_pending(attach(shm_name, instance_id), slot_id);
 }
 
 bool LeaseHandle::cancel_pending(const std::shared_ptr<LeaseMapping>& mapping,
@@ -382,12 +338,6 @@ bool LeaseHandle::cancel_pending(const std::shared_ptr<LeaseMapping>& mapping,
   as_atomic(slot.pending).store(0, std::memory_order_release);
   reserved.store(0, std::memory_order_release);
   return true;
-}
-
-bool LeaseHandle::cancel_pending(const std::string& shm_name, uint32_t slot_id,
-                                 uint32_t generation,
-                                 const PublisherInstanceId& instance_id) {
-  return cancel_pending(attach(shm_name, instance_id), slot_id, generation);
 }
 
 LeaseHandle LeaseHandle::acquire(const std::shared_ptr<LeaseMapping>& mapping,
@@ -424,12 +374,6 @@ LeaseHandle LeaseHandle::acquire(const std::shared_ptr<LeaseMapping>& mapping,
       break;
   }
   return LeaseHandle(mapping, slot, slot_id, generation);
-}
-
-LeaseHandle LeaseHandle::acquire(const std::string& shm_name,
-                                 const PublisherInstanceId& instance_id,
-                                 uint32_t slot_id, uint32_t generation) {
-  return acquire(attach(shm_name, instance_id), slot_id, generation);
 }
 
 }  // namespace ros2_cuda_ipc_core::lease

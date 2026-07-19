@@ -120,9 +120,11 @@ TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   const auto instance_id = manager.publisher_instance_id();
   auto slot = manager.acquire_for_publish(1);
   ASSERT_TRUE(slot.has_value());
+  auto mapping =
+      ros2_cuda_ipc_core::lease::LeaseMapping::attach(actual_name, instance_id);
+  ASSERT_TRUE(mapping);
   const auto pending_before =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(actual_name,
-                                                              instance_id, 0);
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(mapping, 0);
   ASSERT_TRUE(pending_before.has_value());
   ASSERT_EQ(*pending_before, 1u);
 
