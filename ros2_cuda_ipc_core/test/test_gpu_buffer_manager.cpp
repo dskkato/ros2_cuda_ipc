@@ -131,8 +131,12 @@ TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   manager.reset();
   slot.reset();
 
-  // The reservation retained its mapping long enough to cancel after reset;
-  // the name itself is nevertheless gone immediately after manager reset.
+  const auto pending_after =
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(mapping, 0);
+  ASSERT_TRUE(pending_after.has_value());
+  EXPECT_EQ(*pending_after, 0u);
+
+  // The name itself is nevertheless gone immediately after manager reset.
   const int fd = ::shm_open(actual_name.c_str(), O_RDWR, 0660);
   EXPECT_EQ(fd, -1);
   if (fd != -1) {
