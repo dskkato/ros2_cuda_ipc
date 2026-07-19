@@ -68,8 +68,9 @@ bool LeaseManager::initialise() {
     return false;
   }
   std::vector<Clock::time_point> pending_deadlines(slot_count_);
-  if (!lease::LeaseHandle::init(instance_name, instance_id,
-                                static_cast<uint32_t>(slot_count_))) {
+  auto mapping = lease::LeaseMapping::create(
+      instance_name, instance_id, static_cast<uint32_t>(slot_count_));
+  if (!mapping) {
     return false;
   }
   {
@@ -77,6 +78,7 @@ bool LeaseManager::initialise() {
     shm_name_ = std::move(instance_name);
     publisher_instance_id_ = instance_id;
     pending_deadlines_ = std::move(pending_deadlines);
+    mapping_ = std::move(mapping);
     initialised_ = true;
   }
   return true;
@@ -84,13 +86,16 @@ bool LeaseManager::initialise() {
 
 void LeaseManager::reset() noexcept {
   std::string owned_name;
+  std::shared_ptr<lease::LeaseMapping> owned_mapping;
   {
     std::lock_guard<std::mutex> lock(deadlines_mutex_);
     if (initialised_) {
       owned_name = std::move(shm_name_);
+      owned_mapping = std::move(mapping_);
     }
     shm_name_.clear();
     publisher_instance_id_ = {};
+    mapping_.reset();
     pending_deadlines_.clear();
     initialised_ = false;
   }
@@ -98,6 +103,8 @@ void LeaseManager::reset() noexcept {
     RCLCPP_WARN(logger_, "Failed to unlink lease shared memory name=%s",
                 owned_name.c_str());
   }
+  // Keep the mapping alive until after unlink. Reservations may still own it.
+  owned_mapping.reset();
 }
 
 bool LeaseManager::is_initialised() const noexcept {
@@ -109,6 +116,7 @@ std::optional<LeaseManager::Reservation> LeaseManager::reserve_for_publish(
     uint32_t pending_count) {
   std::string shm_name;
   PublisherInstanceId instance_id{};
+  std::shared_ptr<lease::LeaseMapping> mapping;
   {
     std::lock_guard<std::mutex> lock(deadlines_mutex_);
     if (!initialised_) {
@@ -116,9 +124,10 @@ std::optional<LeaseManager::Reservation> LeaseManager::reserve_for_publish(
     }
     shm_name = shm_name_;
     instance_id = publisher_instance_id_;
+    mapping = mapping_;
   }
-  const auto reservation = lease::LeaseHandle::reserve_for_publish(
-      shm_name, instance_id, pending_count);
+  const auto reservation =
+      lease::LeaseHandle::reserve_for_publish(mapping, pending_count);
   if (!reservation) {
     return std::nullopt;
   }
@@ -128,7 +137,7 @@ std::optional<LeaseManager::Reservation> LeaseManager::reserve_for_publish(
                  "slot=%u configured_count=%zu",
                  reservation->slot_id, slot_count_);
     const bool rolled_back = lease::LeaseHandle::cancel_pending(
-        shm_name, reservation->slot_id, reservation->generation, instance_id);
+        reservation->mapping, reservation->slot_id, reservation->generation);
     if (!rolled_back) {
       RCLCPP_ERROR(logger_,
                    "Failed to roll back out-of-range reservation slot=%u "
@@ -147,13 +156,13 @@ std::optional<LeaseManager::Reservation> LeaseManager::reserve_for_publish(
       } else {
         pending_deadlines_[reservation->slot_id] = {};
       }
-      return Reservation{reservation->slot_id, reservation->generation,
-                         shm_name, instance_id};
+      return Reservation{reservation->mapping, reservation->slot_id,
+                         reservation->generation, shm_name, instance_id};
     }
   }
 
   const bool rolled_back = lease::LeaseHandle::cancel_pending(
-      shm_name, reservation->slot_id, reservation->generation, instance_id);
+      reservation->mapping, reservation->slot_id, reservation->generation);
   if (!rolled_back) {
     RCLCPP_ERROR(logger_,
                  "Failed to roll back reservation slot=%u generation=%u",
@@ -166,9 +175,14 @@ bool LeaseManager::cancel(const Reservation& reservation) noexcept {
   if (reservation.slot_id >= slot_count_) {
     return false;
   }
-  const bool cancelled = lease::LeaseHandle::cancel_pending(
-      reservation.shm_name, reservation.slot_id, reservation.generation,
-      reservation.publisher_instance_id);
+  const bool cancelled =
+      reservation.mapping
+          ? lease::LeaseHandle::cancel_pending(reservation.mapping,
+                                               reservation.slot_id,
+                                               reservation.generation)
+          : lease::LeaseHandle::cancel_pending(
+                reservation.shm_name, reservation.slot_id,
+                reservation.generation, reservation.publisher_instance_id);
   if (!cancelled) {
     RCLCPP_ERROR(logger_, "Failed to cancel reservation slot=%u generation=%u",
                  reservation.slot_id, reservation.generation);
@@ -195,8 +209,7 @@ void LeaseManager::reclaim_stale_pending() {
     if (!deadline_reached(deadline, now)) {
       continue;
     }
-    const auto pending = lease::LeaseHandle::current_pending(
-        shm_name_, publisher_instance_id_, slot_id);
+    const auto pending = lease::LeaseHandle::current_pending(mapping_, slot_id);
     if (!pending) {
       continue;
     }
@@ -204,8 +217,7 @@ void LeaseManager::reclaim_stale_pending() {
       deadline = {};
       continue;
     }
-    if (lease::LeaseHandle::force_clear_pending(
-            shm_name_, publisher_instance_id_, slot_id)) {
+    if (lease::LeaseHandle::force_clear_pending(mapping_, slot_id)) {
       RCLCPP_WARN(logger_,
                   "Force-cleared pending lease slot=%u after %lld ms timeout",
                   slot_id, static_cast<long long>(pending_ttl_.count()));

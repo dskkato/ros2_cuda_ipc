@@ -10,12 +10,11 @@
 
 #include <atomic>
 #include <cerrno>
-#include <cstring>
-#include <mutex>
+#include <cstdint>
+#include <limits>
 #include <optional>
 #include <rclcpp/logging.hpp>
 #include <thread>
-#include <unordered_map>
 
 namespace ros2_cuda_ipc_core::lease {
 namespace {
@@ -24,8 +23,6 @@ constexpr uint32_t kShmMagic = 0x4C534531;  // 'LSE1'
 constexpr uint32_t kLayoutVersion = 3;
 constexpr uint32_t kCancelReservationAttempts = 1024;
 
-/// Shared memory header structure stored at the start of the shared-memory
-/// segment.
 struct ShmHeader {
   uint32_t magic;
   uint32_t layout_version;
@@ -34,151 +31,81 @@ struct ShmHeader {
   PublisherInstanceId publisher_instance_id;
 };
 
-/// Treat a `uint32_t` reference as an `std::atomic<uint32_t>` to apply atomic
-/// operations without altering the POD layout.
-///
-/// @param value Reference to a slot field inside shared memory.
-/// @return std::atomic<uint32_t>& alias to the given reference.
 inline std::atomic<uint32_t>& as_atomic(uint32_t& value) {
   return reinterpret_cast<std::atomic<uint32_t>&>(value);
 }
 
-/// Lazily instantiate and return the logger used by LeaseHandle operations.
 rclcpp::Logger lease_logger() {
   static rclcpp::Logger logger =
       rclcpp::get_logger("ros2_cuda_ipc_core.LeaseHandle");
   return logger;
 }
 
+bool valid_layout(const struct stat& st, const ShmHeader& header,
+                  std::size_t* expected_size) {
+  if (st.st_size < static_cast<off_t>(sizeof(ShmHeader)) ||
+      header.capacity == 0 ||
+      header.capacity >
+          (std::numeric_limits<std::size_t>::max() - sizeof(ShmHeader)) /
+              sizeof(SlotMeta)) {
+    return false;
+  }
+  *expected_size = sizeof(ShmHeader) +
+                   static_cast<std::size_t>(header.capacity) * sizeof(SlotMeta);
+  return *expected_size <= static_cast<std::size_t>(st.st_size);
+}
+
 }  // namespace
 
-struct LeaseHandle::SlotMeta {
-  uint32_t generation;
-  uint32_t refcnt;
-  uint32_t pending;
-  uint32_t reserved;
-};
-
-struct LeaseHandle::Mapping {
-  std::string name;
-  uint32_t capacity = 0;
-  size_t mapped_size = 0;
-  void* addr = nullptr;
-  SlotMeta* slots = nullptr;
-  ShmHeader* header = nullptr;
-  PublisherInstanceId publisher_instance_id{};
-  std::atomic<uint32_t> next_slot{0};
-
-  ~Mapping() {
-    if (addr && mapped_size) {
-      munmap(addr, mapped_size);
-    }
+LeaseMapping::~LeaseMapping() {
+  if (addr_ != nullptr && mapped_size_ != 0) {
+    munmap(addr_, mapped_size_);
   }
-};
-
-LeaseHandle::LeaseHandle(std::shared_ptr<Mapping> mapping, SlotMeta* slot,
-                         uint32_t slot_id, uint32_t generation)
-    : mapping_(std::move(mapping)),
-      slot_meta_(slot),
-      slot_id_(slot_id),
-      generation_(generation) {}
-
-LeaseHandle::LeaseHandle(LeaseHandle&& other) noexcept {
-  *this = std::move(other);
 }
 
-LeaseHandle& LeaseHandle::operator=(LeaseHandle&& other) noexcept {
-  if (this == &other) {
-    return *this;
+std::shared_ptr<LeaseMapping> LeaseMapping::create(
+    const std::string& shm_name, const PublisherInstanceId& instance_id,
+    uint32_t capacity) {
+  if (capacity == 0 || is_nil(instance_id)) {
+    return nullptr;
   }
-
-  release();
-
-  mapping_ = std::move(other.mapping_);
-  slot_meta_ = other.slot_meta_;
-  slot_id_ = other.slot_id_;
-  generation_ = other.generation_;
-
-  other.slot_meta_ = nullptr;
-  other.slot_id_ = 0;
-  other.generation_ = 0;
-
-  return *this;
-}
-
-LeaseHandle::~LeaseHandle() { release(); }
-
-std::mutex& LeaseHandle::registry_mutex() {
-  static std::mutex mtx;
-  return mtx;
-}
-
-std::unordered_map<std::string, std::shared_ptr<LeaseHandle::Mapping>>&
-LeaseHandle::registry() {
-  static std::unordered_map<std::string, std::shared_ptr<Mapping>> map;
-  return map;
-}
-
-void LeaseHandle::release() noexcept {
-  if (!slot_meta_) {
-    return;
+  if (capacity > (std::numeric_limits<std::size_t>::max() - sizeof(ShmHeader)) /
+                     sizeof(SlotMeta)) {
+    return nullptr;
   }
-
-  auto& ref = as_atomic(slot_meta_->refcnt);
-  const uint32_t previous = ref.fetch_sub(1, std::memory_order_acq_rel);
-  if (previous == 0) {
-    RCLCPP_ERROR(lease_logger(), "lease:refcnt_underflow slot=%u", slot_id_);
-    ref.store(0, std::memory_order_release);
-  }
-
-  slot_meta_ = nullptr;
-  slot_id_ = 0;
-  generation_ = 0;
-  mapping_.reset();
-}
-
-bool LeaseHandle::init(const std::string& shm_name,
-                       const PublisherInstanceId& publisher_instance_id,
-                       uint32_t capacity) {
-  if (capacity == 0 || is_nil(publisher_instance_id)) {
-    RCLCPP_ERROR(lease_logger(),
-                 "lease:init capacity must be >0 and instance ID non-nil");
-    return false;
-  }
-
-  const size_t size =
-      sizeof(ShmHeader) + static_cast<size_t>(capacity) * sizeof(SlotMeta);
+  const std::size_t size =
+      sizeof(ShmHeader) + static_cast<std::size_t>(capacity) * sizeof(SlotMeta);
   const int fd = shm_open(shm_name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0660);
   if (fd < 0) {
-    RCLCPP_ERROR(lease_logger(), "lease:init shm_open failed name=%s errno=%d",
+    RCLCPP_ERROR(lease_logger(),
+                 "lease:create shm_open failed name=%s errno=%d",
                  shm_name.c_str(), errno);
-    return false;
+    return nullptr;
   }
-
-  if (ftruncate(fd, size) != 0) {
-    RCLCPP_ERROR(lease_logger(), "lease:init ftruncate failed name=%s errno=%d",
+  if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
+    RCLCPP_ERROR(lease_logger(),
+                 "lease:create ftruncate failed name=%s errno=%d",
                  shm_name.c_str(), errno);
     close(fd);
     shm_unlink(shm_name.c_str());
-    return false;
+    return nullptr;
   }
-
   void* addr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (addr == MAP_FAILED) {
-    RCLCPP_ERROR(lease_logger(), "lease:init mmap failed name=%s errno=%d",
+    RCLCPP_ERROR(lease_logger(), "lease:create mmap failed name=%s errno=%d",
                  shm_name.c_str(), errno);
     close(fd);
     shm_unlink(shm_name.c_str());
-    return false;
+    return nullptr;
   }
+  close(fd);
 
   auto* header = static_cast<ShmHeader*>(addr);
   header->magic = kShmMagic;
   header->layout_version = kLayoutVersion;
   header->capacity = capacity;
   header->consumer_count = 0;
-  header->publisher_instance_id = publisher_instance_id;
-
+  header->publisher_instance_id = instance_id;
   auto* slots = reinterpret_cast<SlotMeta*>(header + 1);
   for (uint32_t i = 0; i < capacity; ++i) {
     as_atomic(slots[i].generation).store(0u, std::memory_order_relaxed);
@@ -187,37 +114,28 @@ bool LeaseHandle::init(const std::string& shm_name,
     as_atomic(slots[i].reserved).store(0u, std::memory_order_relaxed);
   }
 
-  munmap(addr, size);
-  close(fd);
-
-  return true;
+  auto mapping = std::shared_ptr<LeaseMapping>(new LeaseMapping);
+  mapping->shm_name_ = shm_name;
+  mapping->publisher_instance_id_ = instance_id;
+  mapping->capacity_ = capacity;
+  mapping->mapped_size_ = size;
+  mapping->addr_ = addr;
+  mapping->slots_ = slots;
+  return mapping;
 }
 
-std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
+std::shared_ptr<LeaseMapping> LeaseMapping::attach(
     const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id) {
-  if (is_nil(publisher_instance_id)) {
+    const PublisherInstanceId& expected_instance_id) {
+  if (is_nil(expected_instance_id)) {
     return nullptr;
   }
-  std::lock_guard<std::mutex> lock(registry_mutex());
-  auto& map = registry();
-  if (auto it = map.find(shm_name); it != map.end()) {
-    if (it->second->publisher_instance_id != publisher_instance_id) {
-      RCLCPP_WARN(lease_logger(),
-                  "lease:attach cached publisher instance mismatch name=%s",
-                  shm_name.c_str());
-      return nullptr;
-    }
-    return it->second;
-  }
-
   const int fd = shm_open(shm_name.c_str(), O_RDWR, 0660);
   if (fd < 0) {
     RCLCPP_WARN(lease_logger(), "lease:attach shm_open failed name=%s errno=%d",
                 shm_name.c_str(), errno);
     return nullptr;
   }
-
   struct stat st{};
   if (fstat(fd, &st) != 0) {
     RCLCPP_WARN(lease_logger(), "lease:attach fstat failed name=%s errno=%d",
@@ -231,7 +149,6 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
     close(fd);
     return nullptr;
   }
-
   void* addr =
       mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (addr == MAP_FAILED) {
@@ -240,187 +157,225 @@ std::shared_ptr<LeaseHandle::Mapping> LeaseHandle::attach(
     close(fd);
     return nullptr;
   }
-
   close(fd);
 
-  auto header = static_cast<ShmHeader*>(addr);
+  auto* header = static_cast<ShmHeader*>(addr);
+  std::size_t expected_size = 0;
   if (header->magic != kShmMagic || header->layout_version != kLayoutVersion ||
-      header->publisher_instance_id != publisher_instance_id) {
+      header->publisher_instance_id != expected_instance_id) {
     RCLCPP_WARN(lease_logger(),
-                "lease:attach header or publisher instance mismatch "
-                "name=%s magic=%u ver=%u",
+                "lease:attach header or publisher instance mismatch name=%s "
+                "magic=%u ver=%u",
                 shm_name.c_str(), header->magic, header->layout_version);
     munmap(addr, st.st_size);
     return nullptr;
   }
-  const size_t expected_size =
-      sizeof(ShmHeader) +
-      static_cast<size_t>(header->capacity) * sizeof(SlotMeta);
-  if (expected_size > static_cast<size_t>(st.st_size)) {
-    RCLCPP_WARN(lease_logger(), "lease:attach truncated layout name=%s",
+  if (!valid_layout(st, *header, &expected_size)) {
+    RCLCPP_WARN(lease_logger(), "lease:attach invalid layout name=%s",
                 shm_name.c_str());
     munmap(addr, st.st_size);
     return nullptr;
   }
 
-  auto mapping = std::shared_ptr<Mapping>(new Mapping);
-  mapping->name = shm_name;
-  mapping->capacity = header->capacity;
-  mapping->mapped_size = st.st_size;
-  mapping->addr = addr;
-  mapping->header = header;
-  mapping->publisher_instance_id = header->publisher_instance_id;
-  mapping->slots = reinterpret_cast<SlotMeta*>(header + 1);
-
-  map[shm_name] = mapping;
+  auto mapping = std::shared_ptr<LeaseMapping>(new LeaseMapping);
+  mapping->shm_name_ = shm_name;
+  mapping->publisher_instance_id_ = header->publisher_instance_id;
+  mapping->capacity_ = header->capacity;
+  mapping->mapped_size_ = static_cast<std::size_t>(st.st_size);
+  mapping->addr_ = addr;
+  mapping->slots_ = reinterpret_cast<SlotMeta*>(header + 1);
   return mapping;
 }
 
-std::optional<uint32_t> LeaseHandle::current_generation(
+LeaseHandle::LeaseHandle(std::shared_ptr<LeaseMapping> mapping, SlotMeta* slot,
+                         uint32_t slot_id, uint32_t generation)
+    : mapping_(std::move(mapping)),
+      slot_meta_(slot),
+      slot_id_(slot_id),
+      generation_(generation) {}
+
+LeaseHandle::LeaseHandle(LeaseHandle&& other) noexcept {
+  *this = std::move(other);
+}
+
+LeaseHandle& LeaseHandle::operator=(LeaseHandle&& other) noexcept {
+  if (this == &other) return *this;
+  release();
+  mapping_ = std::move(other.mapping_);
+  slot_meta_ = other.slot_meta_;
+  slot_id_ = other.slot_id_;
+  generation_ = other.generation_;
+  other.slot_meta_ = nullptr;
+  other.slot_id_ = 0;
+  other.generation_ = 0;
+  return *this;
+}
+
+LeaseHandle::~LeaseHandle() { release(); }
+
+std::shared_ptr<LeaseMapping> LeaseHandle::attach(
     const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id) {
-  auto mapping = attach(shm_name, publisher_instance_id);
-  if (!mapping || slot_id >= mapping->capacity) {
-    return std::nullopt;
+    const PublisherInstanceId& publisher_instance_id) {
+  return LeaseMapping::attach(shm_name, publisher_instance_id);
+}
+
+void LeaseHandle::release() noexcept {
+  if (!slot_meta_) return;
+  auto& ref = as_atomic(slot_meta_->refcnt);
+  const uint32_t previous = ref.fetch_sub(1, std::memory_order_acq_rel);
+  if (previous == 0) {
+    RCLCPP_ERROR(lease_logger(), "lease:refcnt_underflow slot=%u", slot_id_);
+    ref.store(0, std::memory_order_release);
   }
-  auto& gen = as_atomic(mapping->slots[slot_id].generation);
-  return gen.load(std::memory_order_acquire);
+  slot_meta_ = nullptr;
+  slot_id_ = 0;
+  generation_ = 0;
+  mapping_.reset();
+}
+
+bool LeaseHandle::init(const std::string& shm_name,
+                       const PublisherInstanceId& publisher_instance_id,
+                       uint32_t capacity) {
+  return LeaseMapping::create(shm_name, publisher_instance_id, capacity) !=
+         nullptr;
+}
+
+std::optional<uint32_t> LeaseHandle::current_generation(
+    const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
+  if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
+  return as_atomic(mapping->slot(slot_id)->generation)
+      .load(std::memory_order_acquire);
+}
+
+std::optional<uint32_t> LeaseHandle::current_generation(
+    const std::string& shm_name, const PublisherInstanceId& instance_id,
+    uint32_t slot_id) {
+  return current_generation(attach(shm_name, instance_id), slot_id);
 }
 
 std::optional<uint32_t> LeaseHandle::current_refcount(
-    const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id) {
-  auto mapping = attach(shm_name, publisher_instance_id);
-  if (!mapping || slot_id >= mapping->capacity) {
-    return std::nullopt;
-  }
-  auto& ref = as_atomic(mapping->slots[slot_id].refcnt);
-  return ref.load(std::memory_order_acquire);
+    const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
+  if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
+  return as_atomic(mapping->slot(slot_id)->refcnt)
+      .load(std::memory_order_acquire);
+}
+
+std::optional<uint32_t> LeaseHandle::current_refcount(
+    const std::string& shm_name, const PublisherInstanceId& instance_id,
+    uint32_t slot_id) {
+  return current_refcount(attach(shm_name, instance_id), slot_id);
 }
 
 std::optional<uint32_t> LeaseHandle::current_pending(
-    const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id) {
-  auto mapping = attach(shm_name, publisher_instance_id);
-  if (!mapping || slot_id >= mapping->capacity) {
-    return std::nullopt;
-  }
-  auto& pending = as_atomic(mapping->slots[slot_id].pending);
-  return pending.load(std::memory_order_acquire);
+    const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
+  if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
+  return as_atomic(mapping->slot(slot_id)->pending)
+      .load(std::memory_order_acquire);
+}
+
+std::optional<uint32_t> LeaseHandle::current_pending(
+    const std::string& shm_name, const PublisherInstanceId& instance_id,
+    uint32_t slot_id) {
+  return current_pending(attach(shm_name, instance_id), slot_id);
 }
 
 std::optional<LeaseHandle::PublisherReservation>
-LeaseHandle::reserve_for_publish(
-    const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id, uint32_t pending_count) {
-  auto mapping = attach(shm_name, publisher_instance_id);
-  if (!mapping || mapping->capacity == 0) {
-    return std::nullopt;
-  }
-
-  const uint32_t capacity = mapping->capacity;
+LeaseHandle::reserve_for_publish(const std::shared_ptr<LeaseMapping>& mapping,
+                                 uint32_t pending_count) {
+  if (!mapping || mapping->capacity() == 0) return std::nullopt;
+  const uint32_t capacity = mapping->capacity();
   const uint32_t start =
-      mapping->next_slot.fetch_add(1, std::memory_order_relaxed) % capacity;
+      mapping->next_slot().fetch_add(1, std::memory_order_relaxed) % capacity;
   for (uint32_t offset = 0; offset < capacity; ++offset) {
     const uint32_t slot_id = (start + offset) % capacity;
-    SlotMeta& slot = mapping->slots[slot_id];
+    SlotMeta& slot = *mapping->slot(slot_id);
     auto& ref = as_atomic(slot.refcnt);
     auto& pending = as_atomic(slot.pending);
-    // Avoid taking the inter-process reservation for an obviously busy slot.
-    // The values are checked again after the CAS to close the race.
     if (ref.load(std::memory_order_acquire) != 0 ||
-        pending.load(std::memory_order_acquire) != 0) {
+        pending.load(std::memory_order_acquire) != 0)
       continue;
-    }
-
     auto& reserved = as_atomic(slot.reserved);
     uint32_t expected = 0;
-    if (!reserved.compare_exchange_strong(expected, 1,
-                                          std::memory_order_acq_rel,
-                                          std::memory_order_acquire)) {
+    if (!reserved.compare_exchange_strong(
+            expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
       continue;
-    }
-
     if (ref.load(std::memory_order_acquire) != 0 ||
         pending.load(std::memory_order_acquire) != 0) {
       reserved.store(0, std::memory_order_release);
       continue;
     }
-
     auto& generation = as_atomic(slot.generation);
     const uint32_t next = generation.load(std::memory_order_relaxed) + 1;
     generation.store(next, std::memory_order_release);
     pending.store(pending_count, std::memory_order_release);
     reserved.store(0, std::memory_order_release);
-    mapping->next_slot.store((slot_id + 1) % capacity,
-                             std::memory_order_relaxed);
-    return PublisherReservation{slot_id, next};
+    mapping->next_slot().store((slot_id + 1) % capacity,
+                               std::memory_order_relaxed);
+    return PublisherReservation{mapping, slot_id, next};
   }
   return std::nullopt;
 }
 
-bool LeaseHandle::force_clear_pending(
-    const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id) {
-  auto mapping = attach(shm_name, publisher_instance_id);
-  if (!mapping || slot_id >= mapping->capacity) {
-    return false;
-  }
+std::optional<LeaseHandle::PublisherReservation>
+LeaseHandle::reserve_for_publish(const std::string& shm_name,
+                                 const PublisherInstanceId& instance_id,
+                                 uint32_t pending_count) {
+  return reserve_for_publish(attach(shm_name, instance_id), pending_count);
+}
 
-  SlotMeta* slot = &mapping->slots[slot_id];
+bool LeaseHandle::force_clear_pending(
+    const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
+  if (!mapping || slot_id >= mapping->capacity()) return false;
+  SlotMeta* slot = mapping->slot(slot_id);
   auto& reserved = as_atomic(slot->reserved);
   uint32_t expected = 0;
   if (!reserved.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
-                                        std::memory_order_acquire)) {
+                                        std::memory_order_acquire))
     return false;
-  }
   auto& pending = as_atomic(slot->pending);
-  const uint32_t observed_pending = pending.load(std::memory_order_acquire);
-  if (observed_pending == 0) {
+  if (pending.load(std::memory_order_acquire) == 0) {
     reserved.store(0, std::memory_order_release);
     return true;
   }
-
-  auto& ref = as_atomic(slot->refcnt);
-  if (ref.load(std::memory_order_acquire) != 0) {
+  if (as_atomic(slot->refcnt).load(std::memory_order_acquire) != 0) {
     reserved.store(0, std::memory_order_release);
     return false;
   }
-
   pending.store(0, std::memory_order_release);
   reserved.store(0, std::memory_order_release);
   return true;
 }
 
-bool LeaseHandle::cancel_pending(
-    const std::string& shm_name, uint32_t slot_id, uint32_t generation,
-    const PublisherInstanceId& publisher_instance_id) {
-  auto mapping = attach(shm_name, publisher_instance_id);
-  if (!mapping || slot_id >= mapping->capacity) {
-    return false;
-  }
-  SlotMeta& slot = mapping->slots[slot_id];
+bool LeaseHandle::force_clear_pending(const std::string& shm_name,
+                                      const PublisherInstanceId& instance_id,
+                                      uint32_t slot_id) {
+  return force_clear_pending(attach(shm_name, instance_id), slot_id);
+}
+
+bool LeaseHandle::cancel_pending(const std::shared_ptr<LeaseMapping>& mapping,
+                                 uint32_t slot_id, uint32_t generation) {
+  if (!mapping || slot_id >= mapping->capacity()) return false;
+  SlotMeta& slot = *mapping->slot(slot_id);
   auto& reserved = as_atomic(slot.reserved);
-  bool reservation_acquired = false;
+  bool acquired = false;
   for (uint32_t attempt = 0; attempt < kCancelReservationAttempts; ++attempt) {
     uint32_t expected = 0;
     if (reserved.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
                                          std::memory_order_acquire)) {
-      reservation_acquired = true;
+      acquired = true;
       break;
     }
     std::this_thread::yield();
   }
-  if (!reservation_acquired) {
+  if (!acquired) {
     RCLCPP_ERROR(lease_logger(),
                  "lease:cancel_reservation_contention slot=%u gen=%u", slot_id,
                  generation);
     return false;
   }
-  auto& current_generation = as_atomic(slot.generation);
-  auto& ref = as_atomic(slot.refcnt);
-  if (current_generation.load(std::memory_order_acquire) != generation ||
-      ref.load(std::memory_order_acquire) != 0) {
+  if (as_atomic(slot.generation).load(std::memory_order_acquire) !=
+          generation ||
+      as_atomic(slot.refcnt).load(std::memory_order_acquire) != 0) {
     reserved.store(0, std::memory_order_release);
     return false;
   }
@@ -429,65 +384,52 @@ bool LeaseHandle::cancel_pending(
   return true;
 }
 
-LeaseHandle LeaseHandle::acquire(
-    const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id, uint32_t slot_id,
-    uint32_t generation) {
-  auto mapping = attach(shm_name, publisher_instance_id);
-  if (!mapping || slot_id >= mapping->capacity) {
-    return LeaseHandle{};
-  }
-  SlotMeta* slot = &mapping->slots[slot_id];
+bool LeaseHandle::cancel_pending(const std::string& shm_name, uint32_t slot_id,
+                                 uint32_t generation,
+                                 const PublisherInstanceId& instance_id) {
+  return cancel_pending(attach(shm_name, instance_id), slot_id, generation);
+}
+
+LeaseHandle LeaseHandle::acquire(const std::shared_ptr<LeaseMapping>& mapping,
+                                 uint32_t slot_id, uint32_t generation) {
+  if (!mapping || slot_id >= mapping->capacity()) return LeaseHandle{};
+  SlotMeta* slot = mapping->slot(slot_id);
   auto& gen = as_atomic(slot->generation);
   auto& ref = as_atomic(slot->refcnt);
   auto& pending = as_atomic(slot->pending);
   auto& reserved = as_atomic(slot->reserved);
-
-  if (reserved.load(std::memory_order_acquire) != 0) {
+  if (reserved.load(std::memory_order_acquire) != 0 ||
+      gen.load(std::memory_order_acquire) != generation)
     return LeaseHandle{};
-  }
-
-  const uint32_t observed_gen = gen.load(std::memory_order_acquire);
-  if (observed_gen != generation) {
-    RCLCPP_DEBUG(lease_logger(),
-                 "lease:gen_mismatch slot=%u expected=%u observed=%u", slot_id,
-                 generation, observed_gen);
-    return LeaseHandle{};
-  }
 
   uint32_t observed_ref = ref.load(std::memory_order_acquire);
   while (true) {
-    if (observed_ref == UINT32_MAX) {
-      RCLCPP_ERROR(lease_logger(), "lease:ref_overflow slot=%u", slot_id);
-      return LeaseHandle{};
-    }
+    if (observed_ref == UINT32_MAX) return LeaseHandle{};
     if (ref.compare_exchange_weak(observed_ref, observed_ref + 1,
                                   std::memory_order_acq_rel,
-                                  std::memory_order_acquire)) {
+                                  std::memory_order_acquire))
       break;
-    }
   }
-
   const uint32_t recheck_gen = gen.load(std::memory_order_acquire);
   if (reserved.load(std::memory_order_acquire) != 0 ||
       recheck_gen != generation) {
     ref.fetch_sub(1, std::memory_order_acq_rel);
-    RCLCPP_DEBUG(lease_logger(),
-                 "lease:gen_race slot=%u expected=%u observed=%u", slot_id,
-                 generation, recheck_gen);
     return LeaseHandle{};
   }
-
   uint32_t observed_pending = pending.load(std::memory_order_acquire);
   while (observed_pending != 0) {
     if (pending.compare_exchange_weak(observed_pending, observed_pending - 1,
                                       std::memory_order_acq_rel,
-                                      std::memory_order_acquire)) {
+                                      std::memory_order_acquire))
       break;
-    }
   }
+  return LeaseHandle(mapping, slot, slot_id, generation);
+}
 
-  return LeaseHandle(std::move(mapping), slot, slot_id, generation);
+LeaseHandle LeaseHandle::acquire(const std::string& shm_name,
+                                 const PublisherInstanceId& instance_id,
+                                 uint32_t slot_id, uint32_t generation) {
+  return acquire(attach(shm_name, instance_id), slot_id, generation);
 }
 
 }  // namespace ros2_cuda_ipc_core::lease

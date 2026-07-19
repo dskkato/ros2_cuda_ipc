@@ -138,20 +138,43 @@ TEST(LeaseHandleTest, SameSlotAndGenerationAreSeparatedByInstance) {
   ::shm_unlink(second_name.c_str());
 }
 
-TEST(LeaseHandleTest, CachedMappingRejectsReusedNameWithNewInstance) {
+TEST(LeaseHandleTest, ExplicitMappingSeparatesReusedNameByInstance) {
   const std::string shm_name = make_unique_shm_name("lease_cached_instance");
   const auto old_id = test::publisher_instance_id(shm_name + "_old");
   const auto new_id = test::publisher_instance_id(shm_name + "_new");
-  ASSERT_TRUE(lease::LeaseHandle::init(shm_name, old_id, 1));
-  ASSERT_TRUE(
-      lease::LeaseHandle::current_generation(shm_name, old_id, 0).has_value());
+  auto old_mapping = lease::LeaseMapping::create(shm_name, old_id, 1);
+  ASSERT_TRUE(old_mapping);
   ASSERT_EQ(::shm_unlink(shm_name.c_str()), 0);
-  ASSERT_TRUE(lease::LeaseHandle::init(shm_name, new_id, 1));
+  auto new_mapping = lease::LeaseMapping::create(shm_name, new_id, 1);
+  ASSERT_TRUE(new_mapping);
 
-  // Slot zero and generation zero are valid in the new layout, but the cache
-  // still owns the old mapping for this locator.
-  EXPECT_FALSE(lease::LeaseHandle::acquire(shm_name, new_id, 0, 0).valid());
+  EXPECT_TRUE(lease::LeaseHandle::acquire(new_mapping, 0, 0).valid());
+  // The old mapping remains usable because its owner still holds it; the new
+  // instance is a separate mapping even though the POSIX name was reused.
+  EXPECT_TRUE(lease::LeaseHandle::acquire(old_mapping, 0, 0).valid());
+  old_mapping.reset();
+  new_mapping.reset();
   ::shm_unlink(shm_name.c_str());
+}
+
+TEST(LeaseHandleTest, MappingLifetimeFollowsUsersAfterUnlink) {
+  const std::string shm_name = make_unique_shm_name("lease_lifetime");
+  const auto instance_id = test::publisher_instance_id(shm_name);
+  auto mapping = lease::LeaseMapping::create(shm_name, instance_id, 1);
+  ASSERT_TRUE(mapping);
+  std::weak_ptr<lease::LeaseMapping> weak_mapping = mapping;
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+  ASSERT_TRUE(reservation);
+  {
+    auto lease = lease::LeaseHandle::acquire(mapping, reservation->slot_id,
+                                             reservation->generation);
+    ASSERT_TRUE(lease.valid());
+    ASSERT_EQ(::shm_unlink(shm_name.c_str()), 0);
+    mapping.reset();
+    EXPECT_FALSE(weak_mapping.expired());
+  }
+  reservation.reset();
+  EXPECT_TRUE(weak_mapping.expired());
 }
 
 TEST(LeaseHandleTest, PendingPreventsSlotReuse) {

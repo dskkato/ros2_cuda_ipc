@@ -37,8 +37,38 @@ BufferViewMapper& default_buffer_view_mapper() {
 
 }  // namespace
 
+std::size_t LeaseMappingCache::KeyHash::operator()(
+    const Key& key) const noexcept {
+  std::size_t hash = std::hash<std::string>{}(key.shm_name);
+  for (const uint8_t byte : key.publisher_instance_id) {
+    hash ^= static_cast<std::size_t>(byte) +
+            static_cast<std::size_t>(0x9e3779b9) + (hash << 6) + (hash >> 2);
+  }
+  return hash;
+}
+
+std::shared_ptr<lease::LeaseMapping> LeaseMappingCache::get_or_attach(
+    const std::string& shm_name,
+    const PublisherInstanceId& publisher_instance_id) const {
+  const Key key{shm_name, publisher_instance_id};
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = mappings_.find(key);
+  if (it != mappings_.end()) {
+    if (auto mapping = it->second.lock()) {
+      return mapping;
+    }
+    mappings_.erase(it);
+  }
+  auto mapping = lease::LeaseMapping::attach(shm_name, publisher_instance_id);
+  if (mapping) {
+    mappings_.emplace(key, mapping);
+  }
+  return mapping;
+}
+
 BufferViewMapper::BufferViewMapper(BufferViewMapperOptions options)
-    : options_(std::move(options)) {}
+    : options_(std::move(options)),
+      mapping_cache_(std::make_shared<LeaseMappingCache>()) {}
 
 BufferView BufferViewMapper::map(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) const {
@@ -54,8 +84,9 @@ BufferView BufferViewMapper::map(
     return {};
   }
 
-  auto lease = lease::LeaseHandle::acquire(msg.shm_name, instance_id,
-                                           msg.slot_id, msg.generation);
+  auto mapping = mapping_cache_->get_or_attach(msg.shm_name, instance_id);
+  auto lease =
+      lease::LeaseHandle::acquire(mapping, msg.slot_id, msg.generation);
   if (!lease.valid()) {
     RCLCPP_WARN(options_.logger,
                 "Failed to acquire lease shm=%s slot=%u gen=%u",

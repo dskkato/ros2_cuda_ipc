@@ -5,22 +5,22 @@
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
-#include <unordered_map>
 
+#include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
 #include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
 
 namespace ros2_cuda_ipc_core::lease {
 
-/// LeaseHandle manages the lifetime of a shared-memory slot using process-wide
-/// reference counting and generation checks.
+/// LeaseHandle manages the lifetime of a shared-memory slot using reference
+/// counting and generation checks.
 class LeaseHandle {
  public:
   struct PublisherReservation {
-    uint32_t slot_id;
-    uint32_t generation;
+    std::shared_ptr<LeaseMapping> mapping;
+    uint32_t slot_id = 0;
+    uint32_t generation = 0;
   };
 
   /// Exclusively create the shared-memory layout for a lease pool.
@@ -41,6 +41,8 @@ class LeaseHandle {
   static std::optional<uint32_t> current_generation(
       const std::string& shm_name,
       const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
+  static std::optional<uint32_t> current_generation(
+      const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id);
 
   /// Read the current reference count for a slot.
   ///
@@ -51,17 +53,23 @@ class LeaseHandle {
   static std::optional<uint32_t> current_refcount(
       const std::string& shm_name,
       const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
+  static std::optional<uint32_t> current_refcount(
+      const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id);
 
   /// Atomically claim an idle slot against concurrent Publisher reservations
   /// and Subscriber acquisitions, then advance generation and seed pending.
   static std::optional<PublisherReservation> reserve_for_publish(
       const std::string& shm_name,
       const PublisherInstanceId& publisher_instance_id, uint32_t pending);
+  static std::optional<PublisherReservation> reserve_for_publish(
+      const std::shared_ptr<LeaseMapping>& mapping, uint32_t pending);
 
   /// Read the current pending count for a slot.
   static std::optional<uint32_t> current_pending(
       const std::string& shm_name,
       const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
+  static std::optional<uint32_t> current_pending(
+      const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id);
 
   /// Forcefully reset the pending counter for a slot when the publisher decides
   /// the payload has expired (e.g., TTL elapsed).
@@ -71,11 +79,15 @@ class LeaseHandle {
   static bool force_clear_pending(
       const std::string& shm_name,
       const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
+  static bool force_clear_pending(const std::shared_ptr<LeaseMapping>& mapping,
+                                  uint32_t slot_id);
 
   /// Clear pending only when the slot still belongs to the given generation.
   static bool cancel_pending(const std::string& shm_name, uint32_t slot_id,
                              uint32_t generation,
                              const PublisherInstanceId& publisher_instance_id);
+  static bool cancel_pending(const std::shared_ptr<LeaseMapping>& mapping,
+                             uint32_t slot_id, uint32_t generation);
 
   /// Acquire a lease for a slot if the generation matches and increment its
   /// reference count.
@@ -87,6 +99,8 @@ class LeaseHandle {
   /// (empty) handle.
   static LeaseHandle acquire(const std::string& shm_name,
                              const PublisherInstanceId& publisher_instance_id,
+                             uint32_t slot_id, uint32_t generation);
+  static LeaseHandle acquire(const std::shared_ptr<LeaseMapping>& mapping,
                              uint32_t slot_id, uint32_t generation);
 
   /// Release any held lease on destruction.
@@ -108,25 +122,20 @@ class LeaseHandle {
   uint32_t generation() const noexcept { return generation_; }
 
  private:
-  struct Mapping;
-  struct SlotMeta;
-
   LeaseHandle() = default;
-  LeaseHandle(std::shared_ptr<Mapping> mapping, SlotMeta* slot,
+  LeaseHandle(std::shared_ptr<LeaseMapping> mapping, SlotMeta* slot,
               uint32_t slot_id, uint32_t generation);
 
   void release() noexcept;
 
-  std::shared_ptr<Mapping> mapping_;
+  std::shared_ptr<LeaseMapping> mapping_;
   SlotMeta* slot_meta_ = nullptr;
   uint32_t slot_id_ = 0;
   uint32_t generation_ = 0;
 
-  static std::shared_ptr<Mapping> attach(
+  static std::shared_ptr<LeaseMapping> attach(
       const std::string& shm_name,
       const PublisherInstanceId& publisher_instance_id);
-  static std::mutex& registry_mutex();
-  static std::unordered_map<std::string, std::shared_ptr<Mapping>>& registry();
 };
 
 }  // namespace ros2_cuda_ipc_core::lease

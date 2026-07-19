@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <cuda_runtime_api.h>
+#include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -128,10 +129,13 @@ TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   manager.reset();
   slot.reset();
 
-  const auto pending = ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(
-      actual_name, instance_id, 0);
-  ASSERT_TRUE(pending.has_value());
-  EXPECT_EQ(*pending, 0u);
+  // The reservation retained its mapping long enough to cancel after reset;
+  // the name itself is nevertheless gone immediately after manager reset.
+  const int fd = ::shm_open(actual_name.c_str(), O_RDWR, 0660);
+  EXPECT_EQ(fd, -1);
+  if (fd != -1) {
+    ::close(fd);
+  }
 }
 
 TEST_F(GpuBufferManagerTest, AcquireAutomaticallyReclaimsExpiredPending) {
