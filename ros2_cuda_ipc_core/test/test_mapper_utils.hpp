@@ -88,12 +88,12 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(
     const std::string& prefix, uint8_t key_seed) {
   const std::string shm_name = make_unique_shm_name(prefix);
   const auto instance_id = publisher_instance_id(shm_name);
-  if (!lease::LeaseHandle::init(shm_name, instance_id, 1)) {
-    ADD_FAILURE() << "LeaseHandle::init failed for " << shm_name;
+  auto mapping = lease::LeaseMapping::create(shm_name, instance_id, 1);
+  if (!mapping) {
+    ADD_FAILURE() << "LeaseMapping::create failed for " << shm_name;
     return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }
-  auto reservation =
-      lease::LeaseHandle::reserve_for_publish(shm_name, instance_id, 1);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
   if (!reservation.has_value()) {
     ADD_FAILURE() << "LeaseHandle::reserve_for_publish failed for " << shm_name;
     return ros2_cuda_ipc_msgs::msg::BufferCore{};

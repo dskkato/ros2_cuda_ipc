@@ -5,88 +5,87 @@
 
 #include <cstdint>
 #include <memory>
-#include <mutex>
 #include <optional>
-#include <string>
-#include <unordered_map>
 
-#include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
+#include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
 
 namespace ros2_cuda_ipc_core::lease {
 
-/// LeaseHandle manages the lifetime of a shared-memory slot using process-wide
-/// reference counting and generation checks.
+/// LeaseHandle manages the lifetime of a shared-memory slot using reference
+/// counting and generation checks.
 class LeaseHandle {
  public:
+  /// Holds the mapping needed to cancel a Publisher reservation later.
   struct PublisherReservation {
-    uint32_t slot_id;
-    uint32_t generation;
+    std::shared_ptr<LeaseMapping> mapping;
+    uint32_t slot_id = 0;
+    uint32_t generation = 0;
   };
-
-  /// Exclusively create the shared-memory layout for a lease pool.
-  ///
-  /// @param shm_name Shared-memory name (POSIX shm_open identifier).
-  /// @param capacity Number of slots to allocate in the pool.
-  /// @return true when the memory is initialized successfully.
-  static bool init(const std::string& shm_name,
-                   const PublisherInstanceId& publisher_instance_id,
-                   uint32_t capacity);
 
   /// Read the current generation value for a slot.
   ///
-  /// @param shm_name Shared-memory name to query.
-  /// @param slot_id Slot index inside the pool.
-  /// @return generation number; std::nullopt if attachment fails or the slot is
-  /// out of range.
+  /// @param mapping Shared-memory mapping containing the slot metadata.
+  /// @param slot_id Slot index inside the mapping.
+  /// @return Generation number, or std::nullopt when the mapping is null or
+  /// the slot is out of range.
   static std::optional<uint32_t> current_generation(
-      const std::string& shm_name,
-      const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
+      const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id);
 
   /// Read the current reference count for a slot.
   ///
-  /// @param shm_name Shared-memory name to query.
-  /// @param slot_id Slot index inside the pool.
-  /// @return reference count; std::nullopt if attachment fails or the slot is
-  /// out of range.
+  /// @param mapping Shared-memory mapping containing the slot metadata.
+  /// @param slot_id Slot index inside the mapping.
+  /// @return Reference count, or std::nullopt when the mapping is null or the
+  /// slot is out of range.
   static std::optional<uint32_t> current_refcount(
-      const std::string& shm_name,
-      const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
+      const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id);
 
-  /// Atomically claim an idle slot against concurrent Publisher reservations
-  /// and Subscriber acquisitions, then advance generation and seed pending.
+  /// Atomically claim an idle slot, advance its generation, and seed pending.
+  ///
+  /// The returned reservation retains the mapping so it can be cancelled even
+  /// after the Publisher's current mapping has been reset.
+  ///
+  /// @param mapping Shared-memory mapping on which to reserve a slot.
+  /// @param pending Number of expected Subscriber acquisitions.
+  /// @return Reservation when a slot is available; std::nullopt otherwise.
   static std::optional<PublisherReservation> reserve_for_publish(
-      const std::string& shm_name,
-      const PublisherInstanceId& publisher_instance_id, uint32_t pending);
+      const std::shared_ptr<LeaseMapping>& mapping, uint32_t pending);
 
   /// Read the current pending count for a slot.
-  static std::optional<uint32_t> current_pending(
-      const std::string& shm_name,
-      const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
-
-  /// Forcefully reset the pending counter for a slot when the publisher decides
-  /// the payload has expired (e.g., TTL elapsed).
   ///
-  /// The counter is only cleared when the reference count is zero to avoid
-  /// interfering with active consumers.
-  static bool force_clear_pending(
-      const std::string& shm_name,
-      const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
+  /// @param mapping Shared-memory mapping containing the slot metadata.
+  /// @param slot_id Slot index inside the mapping.
+  /// @return Pending count, or std::nullopt when the mapping is null or the
+  /// slot is out of range.
+  static std::optional<uint32_t> current_pending(
+      const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id);
+
+  /// Clear pending when the slot is idle and has no active references.
+  ///
+  /// @param mapping Shared-memory mapping containing the slot metadata.
+  /// @param slot_id Slot index inside the mapping.
+  /// @return true when pending was cleared or was already zero.
+  static bool force_clear_pending(const std::shared_ptr<LeaseMapping>& mapping,
+                                  uint32_t slot_id);
 
   /// Clear pending only when the slot still belongs to the given generation.
-  static bool cancel_pending(const std::string& shm_name, uint32_t slot_id,
-                             uint32_t generation,
-                             const PublisherInstanceId& publisher_instance_id);
+  ///
+  /// @param mapping Shared-memory mapping containing the slot metadata.
+  /// @param slot_id Slot index inside the mapping.
+  /// @param generation Expected generation for the reservation.
+  /// @return true when the reservation was cancelled.
+  static bool cancel_pending(const std::shared_ptr<LeaseMapping>& mapping,
+                             uint32_t slot_id, uint32_t generation);
 
-  /// Acquire a lease for a slot if the generation matches and increment its
+  /// Acquire a lease when the slot generation matches and increment its
   /// reference count.
   ///
-  /// @param shm_name Shared-memory name containing the slot metadata.
+  /// @param mapping Shared-memory mapping containing the slot metadata.
   /// @param slot_id Slot index that should be leased.
   /// @param generation Expected generation for the slot.
   /// @return Valid LeaseHandle when the slot is obtained; otherwise an invalid
-  /// (empty) handle.
-  static LeaseHandle acquire(const std::string& shm_name,
-                             const PublisherInstanceId& publisher_instance_id,
+  /// handle.
+  static LeaseHandle acquire(const std::shared_ptr<LeaseMapping>& mapping,
                              uint32_t slot_id, uint32_t generation);
 
   /// Release any held lease on destruction.
@@ -108,25 +107,16 @@ class LeaseHandle {
   uint32_t generation() const noexcept { return generation_; }
 
  private:
-  struct Mapping;
-  struct SlotMeta;
-
   LeaseHandle() = default;
-  LeaseHandle(std::shared_ptr<Mapping> mapping, SlotMeta* slot,
+  LeaseHandle(std::shared_ptr<LeaseMapping> mapping, SlotMeta* slot,
               uint32_t slot_id, uint32_t generation);
 
   void release() noexcept;
 
-  std::shared_ptr<Mapping> mapping_;
+  std::shared_ptr<LeaseMapping> mapping_;
   SlotMeta* slot_meta_ = nullptr;
   uint32_t slot_id_ = 0;
   uint32_t generation_ = 0;
-
-  static std::shared_ptr<Mapping> attach(
-      const std::string& shm_name,
-      const PublisherInstanceId& publisher_instance_id);
-  static std::mutex& registry_mutex();
-  static std::unordered_map<std::string, std::shared_ptr<Mapping>>& registry();
 };
 
 }  // namespace ros2_cuda_ipc_core::lease

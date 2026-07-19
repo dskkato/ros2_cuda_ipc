@@ -25,8 +25,9 @@ class BufferViewMapperTest : public ::testing::Test {
 
 TEST_F(BufferViewMapperTest, LeaseFailureReturnsInvalid) {
   const std::string shm_name = test::make_unique_shm_name("buffer_mapper_fail");
-  ASSERT_TRUE(lease::LeaseHandle::init(
-      shm_name, test::publisher_instance_id(shm_name), 1));
+  auto mapping = lease::LeaseMapping::create(
+      shm_name, test::publisher_instance_id(shm_name), 1);
+  ASSERT_TRUE(mapping);
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
@@ -48,9 +49,9 @@ TEST_F(BufferViewMapperTest, PublisherInstanceMismatchRejectsMessage) {
   const std::string shm_name =
       test::make_unique_shm_name("buffer_mapper_instance");
   const auto owner_id = test::publisher_instance_id(shm_name);
-  ASSERT_TRUE(lease::LeaseHandle::init(shm_name, owner_id, 1));
-  auto reservation =
-      lease::LeaseHandle::reserve_for_publish(shm_name, owner_id, 1);
+  auto mapping = lease::LeaseMapping::create(shm_name, owner_id, 1);
+  ASSERT_TRUE(mapping);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
   ASSERT_TRUE(reservation.has_value());
 
   auto msg = test::make_cached_buffer_core_message(
@@ -59,7 +60,7 @@ TEST_F(BufferViewMapperTest, PublisherInstanceMismatchRejectsMessage) {
       test::publisher_instance_id(shm_name + "_different");
   BufferViewMapper mapper;
   EXPECT_FALSE(mapper.map(msg).valid());
-  auto refcnt = lease::LeaseHandle::current_refcount(shm_name, owner_id, 0);
+  auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
   ASSERT_TRUE(refcnt.has_value());
   EXPECT_EQ(*refcnt, 0u);
   ::shm_unlink(shm_name.c_str());
@@ -68,10 +69,10 @@ TEST_F(BufferViewMapperTest, PublisherInstanceMismatchRejectsMessage) {
 TEST_F(BufferViewMapperTest, UnsupportedBackendReturnsInvalid) {
   const std::string shm_name =
       test::make_unique_shm_name("buffer_mapper_backend");
-  ASSERT_TRUE(lease::LeaseHandle::init(
-      shm_name, test::publisher_instance_id(shm_name), 1));
-  auto reservation = lease::LeaseHandle::reserve_for_publish(
-      shm_name, test::publisher_instance_id(shm_name), 0);
+  auto mapping = lease::LeaseMapping::create(
+      shm_name, test::publisher_instance_id(shm_name), 1);
+  ASSERT_TRUE(mapping);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 0);
   ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -87,8 +88,7 @@ TEST_F(BufferViewMapperTest, UnsupportedBackendReturnsInvalid) {
   auto view = mapper.map(msg);
   EXPECT_FALSE(view.valid());
 
-  auto refcnt = lease::LeaseHandle::current_refcount(
-      shm_name, test::publisher_instance_id(shm_name), 0);
+  auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
   ASSERT_TRUE(refcnt.has_value());
   EXPECT_EQ(refcnt.value(), 0u);
 
@@ -98,10 +98,10 @@ TEST_F(BufferViewMapperTest, UnsupportedBackendReturnsInvalid) {
 TEST_F(BufferViewMapperTest, InvalidVmmPayloadReturnsInvalid) {
   const std::string shm_name =
       test::make_unique_shm_name("buffer_mapper_vmm_payload");
-  ASSERT_TRUE(lease::LeaseHandle::init(
-      shm_name, test::publisher_instance_id(shm_name), 1));
-  auto reservation = lease::LeaseHandle::reserve_for_publish(
+  auto mapping = lease::LeaseMapping::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
+  ASSERT_TRUE(mapping);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
   ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -119,8 +119,7 @@ TEST_F(BufferViewMapperTest, InvalidVmmPayloadReturnsInvalid) {
   auto view = mapper.map(msg);
   EXPECT_FALSE(view.valid());
 
-  auto refcnt = lease::LeaseHandle::current_refcount(
-      shm_name, test::publisher_instance_id(shm_name), 0);
+  auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
   ASSERT_TRUE(refcnt.has_value());
   EXPECT_EQ(refcnt.value(), 0u);
 
@@ -130,10 +129,10 @@ TEST_F(BufferViewMapperTest, InvalidVmmPayloadReturnsInvalid) {
 TEST_F(BufferViewMapperTest, MissingVmmSocketReturnsInvalidAndReleasesLease) {
   const std::string shm_name =
       test::make_unique_shm_name("buffer_mapper_vmm_sock");
-  ASSERT_TRUE(lease::LeaseHandle::init(
-      shm_name, test::publisher_instance_id(shm_name), 1));
-  auto reservation = lease::LeaseHandle::reserve_for_publish(
+  auto mapping = lease::LeaseMapping::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
+  ASSERT_TRUE(mapping);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
   ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -152,8 +151,7 @@ TEST_F(BufferViewMapperTest, MissingVmmSocketReturnsInvalidAndReleasesLease) {
   auto view = mapper.map(msg);
   EXPECT_FALSE(view.valid());
 
-  auto refcnt = lease::LeaseHandle::current_refcount(
-      shm_name, test::publisher_instance_id(shm_name), 0);
+  auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
   ASSERT_TRUE(refcnt.has_value());
   EXPECT_EQ(refcnt.value(), 0u);
 

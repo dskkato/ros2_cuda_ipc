@@ -18,8 +18,9 @@ class ImageViewMapperTest : public ::testing::Test {
 TEST_F(ImageViewMapperTest, InvalidCoreReturnsDefaultImageView) {
   const std::string shm_name =
       test::make_unique_shm_name("image_mapper_invalid");
-  ASSERT_TRUE(lease::LeaseHandle::init(
-      shm_name, test::publisher_instance_id(shm_name), 1));
+  auto mapping = lease::LeaseMapping::create(
+      shm_name, test::publisher_instance_id(shm_name), 1);
+  ASSERT_TRUE(mapping);
 
   ros2_cuda_ipc_msgs::msg::GpuImage msg;
   msg.header.frame_id = "frame";
@@ -54,16 +55,17 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
   msg.encoding = "mono16";
   msg.core = core;
 
-  auto before = lease::LeaseHandle::current_refcount(
-      core.shm_name, core.publisher_instance_id, core.slot_id);
+  auto mapping =
+      lease::LeaseMapping::attach(core.shm_name, core.publisher_instance_id);
+  ASSERT_TRUE(mapping);
+  auto before = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(before.has_value());
   EXPECT_EQ(before.value(), 0u);
 
   image::ImageViewMapper mapper;
   auto view = mapper.map(msg);
   ASSERT_TRUE(view.core.valid());
-  auto during = lease::LeaseHandle::current_refcount(
-      core.shm_name, core.publisher_instance_id, core.slot_id);
+  auto during = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(during.has_value());
   EXPECT_EQ(during.value(), 1u);
   EXPECT_EQ(view.header.frame_id, "camera_frame");
@@ -73,8 +75,7 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
   EXPECT_EQ(view.encoding, "mono16");
 
   view.core.reset();
-  auto after = lease::LeaseHandle::current_refcount(
-      core.shm_name, core.publisher_instance_id, core.slot_id);
+  auto after = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after.value(), 0u);
   ::shm_unlink(core.shm_name.c_str());

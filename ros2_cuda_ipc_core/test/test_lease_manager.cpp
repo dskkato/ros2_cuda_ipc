@@ -35,9 +35,6 @@ TEST(LeaseManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
         prefix, 1, std::chrono::milliseconds(100),
         rclcpp::get_logger("LeaseManagerTest"));
     ASSERT_TRUE(manager.initialise());
-    const std::string shm_name = manager.shm_name();
-    const auto instance_id = manager.publisher_instance_id();
-
     std::atomic<bool> start{false};
     std::optional<ros2_cuda_ipc_core::publisher::LeaseManager::Reservation>
         reservation;
@@ -62,7 +59,7 @@ TEST(LeaseManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
       manager.cancel(*reservation);
       const auto pending =
           ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(
-              shm_name, instance_id, 0);
+              reservation->mapping, 0);
       ASSERT_TRUE(pending.has_value());
       EXPECT_EQ(*pending, 0u);
     }

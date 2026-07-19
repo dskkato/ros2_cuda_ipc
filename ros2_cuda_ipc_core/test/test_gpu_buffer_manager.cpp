@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <cuda_runtime_api.h>
+#include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -119,19 +120,28 @@ TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   const auto instance_id = manager.publisher_instance_id();
   auto slot = manager.acquire_for_publish(1);
   ASSERT_TRUE(slot.has_value());
+  auto mapping =
+      ros2_cuda_ipc_core::lease::LeaseMapping::attach(actual_name, instance_id);
+  ASSERT_TRUE(mapping);
   const auto pending_before =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(actual_name,
-                                                              instance_id, 0);
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(mapping, 0);
   ASSERT_TRUE(pending_before.has_value());
   ASSERT_EQ(*pending_before, 1u);
 
   manager.reset();
   slot.reset();
 
-  const auto pending = ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(
-      actual_name, instance_id, 0);
-  ASSERT_TRUE(pending.has_value());
-  EXPECT_EQ(*pending, 0u);
+  const auto pending_after =
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(mapping, 0);
+  ASSERT_TRUE(pending_after.has_value());
+  EXPECT_EQ(*pending_after, 0u);
+
+  // The name itself is nevertheless gone immediately after manager reset.
+  const int fd = ::shm_open(actual_name.c_str(), O_RDWR, 0660);
+  EXPECT_EQ(fd, -1);
+  if (fd != -1) {
+    ::close(fd);
+  }
 }
 
 TEST_F(GpuBufferManagerTest, AcquireAutomaticallyReclaimsExpiredPending) {

@@ -36,6 +36,7 @@ add_library(${PROJECT_NAME}
   src/image/image_view.cpp
   src/pointcloud2/pointcloud2_view.cpp
   src/subscriber/ipc_handle_cache.cpp
+  src/lease/lease_mapping.cpp
   src/lease/lease_handle.cpp
   src/publisher/lease_manager.cpp
   src/subscriber/buffer_view_mapper.cpp
