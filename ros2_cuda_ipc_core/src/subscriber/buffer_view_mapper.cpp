@@ -51,18 +51,31 @@ std::shared_ptr<lease::LeaseMapping> LeaseMappingCache::get_or_attach(
     const std::string& shm_name,
     const PublisherInstanceId& publisher_instance_id) const {
   const Key key{shm_name, publisher_instance_id};
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = mappings_.find(key);
+    if (it != mappings_.end()) {
+      if (auto mapping = it->second.lock()) {
+        return mapping;
+      }
+      mappings_.erase(it);
+    }
+  }
+
+  auto mapping = lease::LeaseMapping::attach(shm_name, publisher_instance_id);
+  if (!mapping) {
+    return nullptr;
+  }
+
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = mappings_.find(key);
   if (it != mappings_.end()) {
-    if (auto mapping = it->second.lock()) {
-      return mapping;
+    if (auto existing = it->second.lock()) {
+      return existing;
     }
     mappings_.erase(it);
   }
-  auto mapping = lease::LeaseMapping::attach(shm_name, publisher_instance_id);
-  if (mapping) {
-    mappings_.emplace(key, mapping);
-  }
+  mappings_.emplace(key, mapping);
   return mapping;
 }
 

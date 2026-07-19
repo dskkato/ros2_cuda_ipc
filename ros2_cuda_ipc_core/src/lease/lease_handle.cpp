@@ -354,7 +354,10 @@ LeaseHandle LeaseHandle::acquire(const std::shared_ptr<LeaseMapping>& mapping,
 
   uint32_t observed_ref = ref.load(std::memory_order_acquire);
   while (true) {
-    if (observed_ref == UINT32_MAX) return LeaseHandle{};
+    if (observed_ref == UINT32_MAX) {
+      RCLCPP_ERROR(lease_logger(), "lease:ref_overflow slot=%u", slot_id);
+      return LeaseHandle{};
+    }
     if (ref.compare_exchange_weak(observed_ref, observed_ref + 1,
                                   std::memory_order_acq_rel,
                                   std::memory_order_acquire))
