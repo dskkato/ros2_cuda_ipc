@@ -93,7 +93,11 @@ TEST(LeaseManagerTest, ResetUnlinksAndReinitialiseChangesIdentity) {
   manager.reset();
   EXPECT_TRUE(manager.shm_name().empty());
   EXPECT_TRUE(ros2_cuda_ipc_core::is_nil(manager.publisher_instance_id()));
-  EXPECT_EQ(::shm_open(old_name.c_str(), O_RDWR, 0660), -1);
+  const int fd = ::shm_open(old_name.c_str(), O_RDWR, 0660);
+  if (fd != -1) {
+    ::close(fd);
+  }
+  EXPECT_EQ(fd, -1);
 
   ASSERT_TRUE(manager.initialise());
   EXPECT_NE(manager.shm_name(), old_name);

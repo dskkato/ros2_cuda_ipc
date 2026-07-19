@@ -53,8 +53,11 @@ LeaseManager::~LeaseManager() { reset(); }
 
 bool LeaseManager::initialise() {
   reset();
-  if (slot_count_ == 0 || slot_count_ > std::numeric_limits<uint32_t>::max() ||
-      !valid_prefix(shm_name_prefix_)) {
+  if (slot_count_ == 0 || slot_count_ > std::numeric_limits<uint32_t>::max()) {
+    RCLCPP_ERROR(logger_, "Invalid slot_count: %zu", slot_count_);
+    return false;
+  }
+  if (!valid_prefix(shm_name_prefix_)) {
     RCLCPP_ERROR(logger_, "Invalid shared-memory name prefix: %s",
                  shm_name_prefix_.c_str());
     return false;
