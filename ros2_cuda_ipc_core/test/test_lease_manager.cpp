@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
+#include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -11,7 +12,6 @@
 #include <sstream>
 #include <string>
 #include <thread>
-#include <utility>
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
@@ -26,28 +26,17 @@ std::string make_unique_shm_name() {
   return out.str();
 }
 
-class ShmUnlinkGuard {
- public:
-  explicit ShmUnlinkGuard(std::string name) : name_(std::move(name)) {}
-  ~ShmUnlinkGuard() { ::shm_unlink(name_.c_str()); }
-
-  ShmUnlinkGuard(const ShmUnlinkGuard&) = delete;
-  ShmUnlinkGuard& operator=(const ShmUnlinkGuard&) = delete;
-
- private:
-  std::string name_;
-};
-
 }  // namespace
 
 TEST(LeaseManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
   for (int iteration = 0; iteration < 1000; ++iteration) {
-    const std::string shm_name = make_unique_shm_name();
-    const ShmUnlinkGuard shm_guard(shm_name);
+    const std::string prefix = make_unique_shm_name();
     ros2_cuda_ipc_core::publisher::LeaseManager manager(
-        shm_name, 1, std::chrono::milliseconds(100),
+        prefix, 1, std::chrono::milliseconds(100),
         rclcpp::get_logger("LeaseManagerTest"));
     ASSERT_TRUE(manager.initialise());
+    const std::string shm_name = manager.shm_name();
+    const auto instance_id = manager.publisher_instance_id();
 
     std::atomic<bool> start{false};
     std::optional<ros2_cuda_ipc_core::publisher::LeaseManager::Reservation>
@@ -71,37 +60,51 @@ TEST(LeaseManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
 
     if (reservation) {
       manager.cancel(*reservation);
+      const auto pending =
+          ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(
+              shm_name, instance_id, 0);
+      ASSERT_TRUE(pending.has_value());
+      EXPECT_EQ(*pending, 0u);
     }
-    const auto pending =
-        ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(shm_name, 0);
-    ASSERT_TRUE(pending.has_value());
-    EXPECT_EQ(*pending, 0u);
   }
 }
 
-TEST(LeaseManagerTest, CapacityMismatchRollsBackOutOfRangeReservation) {
-  const std::string shm_name = make_unique_shm_name();
-  const ShmUnlinkGuard shm_guard(shm_name);
+TEST(LeaseManagerTest, SamePrefixProducesDistinctInstances) {
+  const std::string prefix = make_unique_shm_name();
+  ros2_cuda_ipc_core::publisher::LeaseManager first(
+      prefix, 1, std::chrono::milliseconds(100),
+      rclcpp::get_logger("LeaseManagerTest"));
+  ros2_cuda_ipc_core::publisher::LeaseManager second(
+      prefix, 2, std::chrono::milliseconds(100),
+      rclcpp::get_logger("LeaseManagerTest"));
+  ASSERT_TRUE(first.initialise());
+  ASSERT_TRUE(second.initialise());
+  EXPECT_NE(first.shm_name(), second.shm_name());
+  EXPECT_NE(first.publisher_instance_id(), second.publisher_instance_id());
+}
+
+TEST(LeaseManagerTest, ResetUnlinksAndReinitialiseChangesIdentity) {
   ros2_cuda_ipc_core::publisher::LeaseManager manager(
-      shm_name, 1, std::chrono::milliseconds(100),
+      make_unique_shm_name(), 1, std::chrono::milliseconds(100),
       rclcpp::get_logger("LeaseManagerTest"));
   ASSERT_TRUE(manager.initialise());
+  const std::string old_name = manager.shm_name();
+  const auto old_id = manager.publisher_instance_id();
+  manager.reset();
+  EXPECT_TRUE(manager.shm_name().empty());
+  EXPECT_TRUE(ros2_cuda_ipc_core::is_nil(manager.publisher_instance_id()));
+  EXPECT_EQ(::shm_open(old_name.c_str(), O_RDWR, 0660), -1);
 
-  // Simulate an unsupported second Publisher reinitialising the same name
-  // with a different capacity, then occupy slot 0 so the local manager
-  // observes an out-of-range reservation for slot 1.
-  ASSERT_TRUE(ros2_cuda_ipc_core::lease::LeaseHandle::init(shm_name, 2));
-  const auto occupied =
-      ros2_cuda_ipc_core::lease::LeaseHandle::reserve_for_publish(shm_name, 1);
-  ASSERT_TRUE(occupied.has_value());
-  ASSERT_EQ(occupied->slot_id, 0u);
+  ASSERT_TRUE(manager.initialise());
+  EXPECT_NE(manager.shm_name(), old_name);
+  EXPECT_NE(manager.publisher_instance_id(), old_id);
+}
 
-  EXPECT_FALSE(manager.reserve_for_publish(1).has_value());
-  const auto out_of_range_pending =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(shm_name, 1);
-  ASSERT_TRUE(out_of_range_pending.has_value());
-  EXPECT_EQ(*out_of_range_pending, 0u);
-
-  EXPECT_TRUE(ros2_cuda_ipc_core::lease::LeaseHandle::cancel_pending(
-      shm_name, occupied->slot_id, occupied->generation));
+TEST(LeaseManagerTest, InvalidPrefixFailsClosed) {
+  ros2_cuda_ipc_core::publisher::LeaseManager manager(
+      "/invalid/prefix", 1, std::chrono::milliseconds(100),
+      rclcpp::get_logger("LeaseManagerTest"));
+  EXPECT_FALSE(manager.initialise());
+  EXPECT_TRUE(manager.shm_name().empty());
+  EXPECT_TRUE(ros2_cuda_ipc_core::is_nil(manager.publisher_instance_id()));
 }

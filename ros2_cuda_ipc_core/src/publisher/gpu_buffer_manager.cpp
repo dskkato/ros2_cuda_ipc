@@ -82,8 +82,10 @@ GpuBufferManager::GpuBufferManager(Config config, rclcpp::Logger logger)
       logger_(std::move(logger)),
       buffer_pool_(config_.slot_count, config_.backend,
                    logger_.get_child("GpuBufferPool")),
-      lease_manager_(config_.shm_name, config_.slot_count, config_.pending_ttl,
-                     logger_.get_child("LeaseManager")) {}
+      lease_manager_(config_.shm_name_prefix, config_.slot_count,
+                     config_.pending_ttl, logger_.get_child("LeaseManager")) {}
+
+GpuBufferManager::~GpuBufferManager() { reset(); }
 
 bool GpuBufferManager::initialise() {
   reset();
@@ -106,6 +108,14 @@ bool GpuBufferManager::is_initialised() const noexcept {
   return buffer_pool_.is_initialised() && lease_manager_.is_initialised();
 }
 
+std::string GpuBufferManager::shm_name() const {
+  return lease_manager_.shm_name();
+}
+
+PublisherInstanceId GpuBufferManager::publisher_instance_id() const {
+  return lease_manager_.publisher_instance_id();
+}
+
 std::optional<PublishSlot> GpuBufferManager::acquire_for_publish(
     uint32_t pending_count) {
   if (!is_initialised()) {
@@ -125,12 +135,22 @@ void GpuBufferManager::reclaim_stale_pending() {
 
 void* GpuBufferManager::device_ptr(
     const LeaseManager::Reservation& reservation) const noexcept {
+  if (reservation.shm_name != lease_manager_.shm_name() ||
+      reservation.publisher_instance_id !=
+          lease_manager_.publisher_instance_id()) {
+    return nullptr;
+  }
   return buffer_pool_.device_ptr(reservation.slot_id);
 }
 
 cudaError_t GpuBufferManager::record_ready(
     const LeaseManager::Reservation& reservation,
     cudaStream_t stream) noexcept {
+  if (reservation.shm_name != lease_manager_.shm_name() ||
+      reservation.publisher_instance_id !=
+          lease_manager_.publisher_instance_id()) {
+    return cudaErrorInvalidResourceHandle;
+  }
   return buffer_pool_.record_ready(reservation.slot_id, stream);
 }
 
@@ -140,8 +160,14 @@ std::optional<transport::BufferDescriptor> GpuBufferManager::descriptor(
   if (resources == nullptr) {
     return std::nullopt;
   }
+  if (reservation.shm_name != lease_manager_.shm_name() ||
+      reservation.publisher_instance_id !=
+          lease_manager_.publisher_instance_id()) {
+    return std::nullopt;
+  }
   transport::BufferDescriptor result;
-  result.lease_shm_name = config_.shm_name;
+  result.lease_shm_name = reservation.shm_name;
+  result.publisher_instance_id = reservation.publisher_instance_id;
   result.slot_id = reservation.slot_id;
   result.generation = reservation.generation;
   result.device_id = config_.device_index;

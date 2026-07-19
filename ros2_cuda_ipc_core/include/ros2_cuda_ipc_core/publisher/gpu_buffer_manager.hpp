@@ -95,8 +95,8 @@ class GpuBufferManager {
  public:
   /// Configuration for a GPU buffer manager.
   struct Config {
-    /// Shared-memory name used for slot lease metadata.
-    std::string shm_name;
+    /// Prefix used to create a publisher-instance-specific shared-memory name.
+    std::string shm_name_prefix;
 
     /// Number of reusable GPU buffer slots.
     std::size_t slot_count = 0;
@@ -119,7 +119,7 @@ class GpuBufferManager {
   GpuBufferManager(Config config, rclcpp::Logger logger);
 
   /// Release manager-owned resources.
-  ~GpuBufferManager() = default;
+  ~GpuBufferManager();
 
   GpuBufferManager(const GpuBufferManager&) = delete;
   GpuBufferManager& operator=(const GpuBufferManager&) = delete;
@@ -136,6 +136,12 @@ class GpuBufferManager {
 
   /// Check whether both the lease pool and buffer pool are initialized.
   bool is_initialised() const noexcept;
+
+  /// Return the current instance-specific shared-memory name.
+  std::string shm_name() const;
+
+  /// Return the current publisher instance identity.
+  PublisherInstanceId publisher_instance_id() const;
 
   /// Reserve a slot for a new publish attempt.
   ///

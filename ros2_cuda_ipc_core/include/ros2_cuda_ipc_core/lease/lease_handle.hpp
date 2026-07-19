@@ -10,6 +10,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
+
 namespace ros2_cuda_ipc_core::lease {
 
 /// LeaseHandle manages the lifetime of a shared-memory slot using process-wide
@@ -21,12 +23,14 @@ class LeaseHandle {
     uint32_t generation;
   };
 
-  /// Create or reset the shared-memory layout for a lease pool.
+  /// Exclusively create the shared-memory layout for a lease pool.
   ///
   /// @param shm_name Shared-memory name (POSIX shm_open identifier).
   /// @param capacity Number of slots to allocate in the pool.
   /// @return true when the memory is initialized successfully.
-  static bool init(const std::string& shm_name, uint32_t capacity);
+  static bool init(const std::string& shm_name,
+                   const PublisherInstanceId& publisher_instance_id,
+                   uint32_t capacity);
 
   /// Read the current generation value for a slot.
   ///
@@ -34,8 +38,9 @@ class LeaseHandle {
   /// @param slot_id Slot index inside the pool.
   /// @return generation number; std::nullopt if attachment fails or the slot is
   /// out of range.
-  static std::optional<uint32_t> current_generation(const std::string& shm_name,
-                                                    uint32_t slot_id);
+  static std::optional<uint32_t> current_generation(
+      const std::string& shm_name,
+      const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
 
   /// Read the current reference count for a slot.
   ///
@@ -43,29 +48,34 @@ class LeaseHandle {
   /// @param slot_id Slot index inside the pool.
   /// @return reference count; std::nullopt if attachment fails or the slot is
   /// out of range.
-  static std::optional<uint32_t> current_refcount(const std::string& shm_name,
-                                                  uint32_t slot_id);
+  static std::optional<uint32_t> current_refcount(
+      const std::string& shm_name,
+      const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
 
   /// Atomically claim an idle slot against concurrent Publisher reservations
   /// and Subscriber acquisitions, then advance generation and seed pending.
   static std::optional<PublisherReservation> reserve_for_publish(
-      const std::string& shm_name, uint32_t pending);
+      const std::string& shm_name,
+      const PublisherInstanceId& publisher_instance_id, uint32_t pending);
 
   /// Read the current pending count for a slot.
-  static std::optional<uint32_t> current_pending(const std::string& shm_name,
-                                                 uint32_t slot_id);
+  static std::optional<uint32_t> current_pending(
+      const std::string& shm_name,
+      const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
 
   /// Forcefully reset the pending counter for a slot when the publisher decides
   /// the payload has expired (e.g., TTL elapsed).
   ///
   /// The counter is only cleared when the reference count is zero to avoid
   /// interfering with active consumers.
-  static bool force_clear_pending(const std::string& shm_name,
-                                  uint32_t slot_id);
+  static bool force_clear_pending(
+      const std::string& shm_name,
+      const PublisherInstanceId& publisher_instance_id, uint32_t slot_id);
 
   /// Clear pending only when the slot still belongs to the given generation.
   static bool cancel_pending(const std::string& shm_name, uint32_t slot_id,
-                             uint32_t generation);
+                             uint32_t generation,
+                             const PublisherInstanceId& publisher_instance_id);
 
   /// Acquire a lease for a slot if the generation matches and increment its
   /// reference count.
@@ -75,8 +85,9 @@ class LeaseHandle {
   /// @param generation Expected generation for the slot.
   /// @return Valid LeaseHandle when the slot is obtained; otherwise an invalid
   /// (empty) handle.
-  static LeaseHandle acquire(const std::string& shm_name, uint32_t slot_id,
-                             uint32_t generation);
+  static LeaseHandle acquire(const std::string& shm_name,
+                             const PublisherInstanceId& publisher_instance_id,
+                             uint32_t slot_id, uint32_t generation);
 
   /// Release any held lease on destruction.
   ~LeaseHandle();
@@ -111,7 +122,9 @@ class LeaseHandle {
   uint32_t slot_id_ = 0;
   uint32_t generation_ = 0;
 
-  static std::shared_ptr<Mapping> attach(const std::string& shm_name);
+  static std::shared_ptr<Mapping> attach(
+      const std::string& shm_name,
+      const PublisherInstanceId& publisher_instance_id);
   static std::mutex& registry_mutex();
   static std::unordered_map<std::string, std::shared_ptr<Mapping>>& registry();
 };

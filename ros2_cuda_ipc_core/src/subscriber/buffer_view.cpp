@@ -26,6 +26,7 @@ BufferView& BufferView::operator=(const BufferView& other) {
   slot_id = other.slot_id;
   generation = other.generation;
   shm_name = other.shm_name;
+  publisher_instance_id = other.publisher_instance_id;
   lease = other.lease;
   mem_payload_ = other.mem_payload_;
   event_handle_ = other.event_handle_;
@@ -53,6 +54,7 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
   slot_id = other.slot_id;
   generation = other.generation;
   shm_name = std::move(other.shm_name);
+  publisher_instance_id = other.publisher_instance_id;
   lease = std::move(other.lease);
   mem_payload_ = other.mem_payload_;
   event_handle_ = other.event_handle_;
@@ -64,6 +66,7 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
   other.slot_id = 0;
   other.generation = 0;
   other.shm_name.clear();
+  other.publisher_instance_id = {};
   other.handles_ready_ = false;
 
   return *this;
@@ -84,6 +87,7 @@ void BufferView::reset() noexcept {
   slot_id = 0;
   generation = 0;
   shm_name.clear();
+  publisher_instance_id = {};
   handles_ready_ = false;
   backend_ = transport::MemoryBackendKind::CUDA_IPC;
   lease.reset();

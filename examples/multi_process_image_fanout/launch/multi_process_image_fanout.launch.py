@@ -33,7 +33,9 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("frame_id", default_value="fanout_camera_frame"),
         DeclareLaunchArgument("slot_count", default_value="4"),
         DeclareLaunchArgument("pending_ttl_ms", default_value="300"),
-        DeclareLaunchArgument("shm_name", default_value="/ros2_cuda_ipc_fanout"),
+        DeclareLaunchArgument(
+            "shm_name_prefix", default_value="/ros2_cuda_ipc_fanout"
+        ),
         DeclareLaunchArgument("preview_copy_every_n", default_value="1"),
         DeclareLaunchArgument("log_every_n", default_value="30"),
         DeclareLaunchArgument("encoder_downscale", default_value="2"),
@@ -105,7 +107,7 @@ def launch_setup(context) -> List[Node]:
                 "frame_id": value("frame_id"),
                 "slot_count": slot_count,
                 "pending_ttl_ms": pending_ttl_ms,
-                "shm_name": value("shm_name"),
+                "shm_name_prefix": value("shm_name_prefix"),
                 "device_index": device_index,
                 "memory_backend": memory_backend,
             }

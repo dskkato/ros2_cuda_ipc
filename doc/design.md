@@ -15,6 +15,7 @@
 * メモリ共有方式の識別子（CUDA IPC / VMM + FD）
 * CUDA IPC ハンドル (mem_handle, event_handle)
 * 参照カウント用共有メモリ名 (shm_name)
+* Publisher instance ID (`publisher_instance_id`)
 * 識別情報 (device_id, slot_id, generation)
 * バイトサイズ (byte_size)
 * これだけで GPU バッファの受け渡しが可能。
@@ -33,6 +34,7 @@ uint8[64] event_handle      # cudaIpcEventHandle_t
 
 # Shared memory for reference counting
 string shm_name
+uint8[16] publisher_instance_id
 
 # Identification
 uint32 device_id
@@ -113,6 +115,7 @@ struct BufferView {
   uint32_t slot_id = 0;
   uint32_t generation = 0;
   std::string shm_name;                // LeaseHandle のキー
+  PublisherInstanceId publisher_instance_id;
   std::shared_ptr<LeaseHandle> lease;  // 共有メモリrefcntのRAIIハンドル
 
   // === ライフサイクル ===

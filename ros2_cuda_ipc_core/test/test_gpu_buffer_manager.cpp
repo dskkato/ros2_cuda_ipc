@@ -44,11 +44,6 @@ class GpuBufferManagerTest : public ::testing::Test {
     }
     shm_name_ = unique_name();
   }
-  void TearDown() override {
-    if (!shm_name_.empty()) {
-      ::shm_unlink(shm_name_.c_str());
-    }
-  }
   GpuBufferManager make_manager(
       std::chrono::milliseconds pending_ttl = std::chrono::milliseconds(100)) {
     return GpuBufferManager(
@@ -62,6 +57,7 @@ class GpuBufferManagerTest : public ::testing::Test {
 TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
+  const auto instance_id = manager.publisher_instance_id();
   auto slot = manager.acquire_for_publish(1);
   ASSERT_TRUE(slot.has_value());
   EXPECT_EQ(slot->descriptor(), std::nullopt);
@@ -69,7 +65,9 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   auto descriptor = slot->descriptor();
   ASSERT_TRUE(descriptor.has_value());
   EXPECT_EQ(descriptor->slot_id, 0u);
-  EXPECT_EQ(descriptor->lease_shm_name, shm_name_);
+  EXPECT_NE(descriptor->lease_shm_name, shm_name_);
+  EXPECT_EQ(descriptor->lease_shm_name, manager.shm_name());
+  EXPECT_EQ(descriptor->publisher_instance_id, instance_id);
   EXPECT_EQ(descriptor->byte_size, 1024u);
   EXPECT_NE(slot->record_ready(nullptr), cudaSuccess);
   slot->commit_publish();
@@ -117,18 +115,21 @@ TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
 TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
+  const std::string actual_name = manager.shm_name();
+  const auto instance_id = manager.publisher_instance_id();
   auto slot = manager.acquire_for_publish(1);
   ASSERT_TRUE(slot.has_value());
   const auto pending_before =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(shm_name_, 0);
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(actual_name,
+                                                              instance_id, 0);
   ASSERT_TRUE(pending_before.has_value());
   ASSERT_EQ(*pending_before, 1u);
 
   manager.reset();
   slot.reset();
 
-  const auto pending =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(shm_name_, 0);
+  const auto pending = ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(
+      actual_name, instance_id, 0);
   ASSERT_TRUE(pending.has_value());
   EXPECT_EQ(*pending, 0u);
 }

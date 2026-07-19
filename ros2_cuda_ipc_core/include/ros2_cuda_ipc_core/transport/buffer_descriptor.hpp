@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 
+#include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
@@ -17,6 +18,7 @@ namespace ros2_cuda_ipc_core::transport {
 // does not own GPU resources and does not acquire or release a lease.
 struct BufferDescriptor {
   std::string lease_shm_name;
+  PublisherInstanceId publisher_instance_id{};
   uint32_t slot_id = 0;
   uint32_t generation = 0;
   int device_id = -1;

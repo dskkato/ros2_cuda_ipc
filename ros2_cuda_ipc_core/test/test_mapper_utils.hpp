@@ -16,6 +16,7 @@
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
+#include "test_instance_id.hpp"
 
 namespace ros2_cuda_ipc_core::test {
 
@@ -46,6 +47,7 @@ class RclcppScope {
 inline subscriber::IpcHandleKey make_key(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
   subscriber::IpcHandleKey key{};
+  key.publisher_instance_id = msg.publisher_instance_id;
   key.backend = static_cast<uint8_t>(msg.backend);
   key.mem = msg.mem_handle;
   std::memcpy(key.event.data(), msg.event_handle.data(),
@@ -60,6 +62,7 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_cached_buffer_core_message(
         transport::MemoryBackendKind::CUDA_IPC) {
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
+  msg.publisher_instance_id = publisher_instance_id(shm_name);
   msg.device_id = 0;
   msg.slot_id = slot_id;
   msg.generation = generation;
@@ -84,11 +87,13 @@ inline void seed_cache_for_message(
 inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(
     const std::string& prefix, uint8_t key_seed) {
   const std::string shm_name = make_unique_shm_name(prefix);
-  if (!lease::LeaseHandle::init(shm_name, 1)) {
+  const auto instance_id = publisher_instance_id(shm_name);
+  if (!lease::LeaseHandle::init(shm_name, instance_id, 1)) {
     ADD_FAILURE() << "LeaseHandle::init failed for " << shm_name;
     return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }
-  auto reservation = lease::LeaseHandle::reserve_for_publish(shm_name, 1);
+  auto reservation =
+      lease::LeaseHandle::reserve_for_publish(shm_name, instance_id, 1);
   if (!reservation.has_value()) {
     ADD_FAILURE() << "LeaseHandle::reserve_for_publish failed for " << shm_name;
     return ros2_cuda_ipc_msgs::msg::BufferCore{};

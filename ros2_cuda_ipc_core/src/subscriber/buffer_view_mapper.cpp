@@ -48,8 +48,14 @@ BufferView BufferViewMapper::map(
     return {};
   }
 
-  auto lease =
-      lease::LeaseHandle::acquire(msg.shm_name, msg.slot_id, msg.generation);
+  const PublisherInstanceId instance_id = msg.publisher_instance_id;
+  if (is_nil(instance_id)) {
+    RCLCPP_WARN(options_.logger, "BufferCore publisher_instance_id is nil");
+    return {};
+  }
+
+  auto lease = lease::LeaseHandle::acquire(msg.shm_name, instance_id,
+                                           msg.slot_id, msg.generation);
   if (!lease.valid()) {
     RCLCPP_WARN(options_.logger,
                 "Failed to acquire lease shm=%s slot=%u gen=%u",
@@ -61,6 +67,7 @@ BufferView BufferViewMapper::map(
   const cudaIpcEventHandle_t event_handle = to_cuda_event_handle(msg);
 
   IpcHandleKey key{};
+  key.publisher_instance_id = instance_id;
   key.backend = static_cast<uint8_t>(msg.backend);
   key.mem = msg.mem_handle;
   std::memcpy(key.event.data(), &event_handle, sizeof(event_handle));
@@ -88,6 +95,7 @@ BufferView BufferViewMapper::map(
   view.slot_id = msg.slot_id;
   view.generation = msg.generation;
   view.shm_name = msg.shm_name;
+  view.publisher_instance_id = instance_id;
   view.lease = std::move(lease_ptr);
   view.set_ipc_handles(
       transport::backend_from_byte(static_cast<uint8_t>(msg.backend)),

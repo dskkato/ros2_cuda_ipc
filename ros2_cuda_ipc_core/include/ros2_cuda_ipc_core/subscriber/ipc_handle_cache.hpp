@@ -14,17 +14,20 @@
 #include <unordered_map>
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber {
 
 struct IpcHandleKey {
+  PublisherInstanceId publisher_instance_id{};
   uint8_t backend = 0;
   transport::MemoryHandlePayload mem{};
   std::array<uint8_t, sizeof(cudaIpcEventHandle_t)> event{};
 
   bool operator==(const IpcHandleKey& other) const noexcept {
-    return backend == other.backend && mem == other.mem && event == other.event;
+    return publisher_instance_id == other.publisher_instance_id &&
+           backend == other.backend && mem == other.mem && event == other.event;
   }
 };
 
