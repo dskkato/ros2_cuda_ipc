@@ -7,6 +7,17 @@ This repository provides CUDA-backed message types, mapping utilities, and a
 small multi-process demo that shows one GPU image publisher feeding preview,
 encoder-like, and inference-like consumers.
 
+> [!NOTE]
+> **ROS 2 Lyrical users**
+>
+> ROS 2 Lyrical introduced the new `rosidl::Buffer` abstraction together with the CUDA buffer backend, which provides functionality similar to this project.
+>
+> If you are starting a new project on ROS 2 Lyrical or later, I recommend evaluating the upstream implementation first, as it is the long-term supported solution within the ROS 2 ecosystem.
+>
+> This repository was developed before I became aware of the upstream effort, and it independently arrived at a very similar design. It is still useful as a reference implementation and for understanding the design trade-offs behind CUDA IPC-based zero-copy communication.
+>
+> See https://docs.ros.org/en/lyrical/Releases/Release-Lyrical-Luth.html#publish-messages-without-copying-data-using-rosidl-buffer
+
 ## What You Can Try
 
 The main demo is `multi_process_image_fanout`.
