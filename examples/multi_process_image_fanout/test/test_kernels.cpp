@@ -191,7 +191,9 @@ TEST(KernelSmokeTest, ProducesExpectedOutputs) {
   }
 
   const InferenceStats cpu_stats = cpu_inference_stats(cpu_gray);
-  EXPECT_NEAR(host_stats.mean, cpu_stats.mean, 1e-6f);
+  // The GPU uses unordered float atomic additions while the reference uses a
+  // deterministic double-precision accumulation.
+  EXPECT_NEAR(host_stats.mean, cpu_stats.mean, 5e-6f);
   EXPECT_NEAR(host_stats.min, cpu_stats.min, 1e-6f);
   EXPECT_NEAR(host_stats.max, cpu_stats.max, 1e-6f);
   EXPECT_EQ(host_stats.checksum, cpu_stats.checksum);

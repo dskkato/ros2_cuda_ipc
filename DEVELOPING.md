@@ -79,7 +79,7 @@ colcon build --symlink-install --packages-up-to cuda_ipc_poc
 source install/setup.bash
 
 ros2 launch cuda_ipc_poc cuda_ipc.launch.py
-ros2 launch cuda_ipc_poc vmm.launch.py
+ros2 launch cuda_ipc_poc vmm_fd.launch.py
 ```
 
 See [utils/cuda_ipc_poc/README.md](utils/cuda_ipc_poc/README.md).
