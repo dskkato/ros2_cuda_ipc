@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 project(multi_process_image_fanout)
 
+# Leave architecture selection to the CUDA toolchain unless a build or release
+# configuration explicitly supplies CMAKE_CUDA_ARCHITECTURES.
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES OFF)
+endif()
+
 enable_language(CUDA)
 
 set(CMAKE_CXX_STANDARD 17)

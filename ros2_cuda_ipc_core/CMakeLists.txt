@@ -101,5 +101,5 @@ endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
-ament_export_dependencies(rclcpp rcpputils ros2_cuda_ipc_msgs rosidl_default_runtime sensor_msgs std_msgs)
+ament_export_dependencies(CUDAToolkit rclcpp rcpputils ros2_cuda_ipc_msgs rosidl_default_runtime sensor_msgs std_msgs)
 ament_package()
