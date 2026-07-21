@@ -25,6 +25,7 @@ endif()
 
 add_library(${PROJECT_NAME}
   src/detail/cuda_util.cpp
+  src/detail/cuda_context.cpp
   src/publisher/gpu_buffer_manager.cpp
   src/publisher/gpu_buffer_pool.cpp
   src/backend/memory_importer.cpp

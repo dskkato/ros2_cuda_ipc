@@ -21,6 +21,9 @@ struct ImportedMemory {
   CUdeviceptr vmm_address = 0;
   CUmemGenericAllocationHandle vmm_allocation = 0;
   std::size_t allocation_size = 0;
+  // Identity needed to restore the import context during cleanup.
+  CUdevice device = -1;
+  CUcontext context = nullptr;
 };
 
 class MemoryImporter {

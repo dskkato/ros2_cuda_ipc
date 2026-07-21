@@ -5,11 +5,18 @@
 
 #include "ros2_cuda_ipc_core/backend/cuda_ipc/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_context.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend {
 
 void release_imported_memory(const ImportedMemory& imported) noexcept {
+  CUresult context_result = CUDA_SUCCESS;
+  auto context =
+      detail::CudaContextGuard::for_context(imported.context, &context_result);
+  if (!context) {
+    return;
+  }
   if (imported.vmm_address != 0 && imported.allocation_size != 0) {
     cuMemUnmap(imported.vmm_address, imported.allocation_size);
     cuMemAddressFree(imported.vmm_address, imported.allocation_size);

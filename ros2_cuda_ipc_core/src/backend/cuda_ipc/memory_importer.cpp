@@ -6,6 +6,8 @@
 #include <cstring>
 
 #include "rclcpp/logging.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_context.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend::cuda_ipc {
@@ -26,6 +28,17 @@ std::optional<ImportedMemory> MemoryImporter::import(
     const cudaIpcEventHandle_t& event_handle,
     const rclcpp::Logger& logger) const {
   ImportedMemory imported;
+  CUresult context_result = CUDA_SUCCESS;
+  auto context = detail::CudaContextGuard::for_device(
+      static_cast<int>(msg.device_id), &context_result);
+  if (!context) {
+    RCLCPP_WARN(logger, "Unable to make device %u context current: %s",
+                msg.device_id,
+                detail::cu_result_to_string(context_result).c_str());
+    return std::nullopt;
+  }
+  imported.device = static_cast<CUdevice>(msg.device_id);
+  imported.context = context.context();
 
   auto err = cudaIpcOpenEventHandle(&imported.event, event_handle);
   if (err != cudaSuccess) {

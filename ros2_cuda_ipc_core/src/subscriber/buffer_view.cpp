@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "ros2_cuda_ipc_core/detail/cuda_context.hpp"
+
 namespace ros2_cuda_ipc_core::subscriber {
 
 BufferView::~BufferView() { reset(); }
@@ -76,6 +78,12 @@ cudaError_t BufferView::enqueue_ready_event(
     cudaStream_t stream) const noexcept {
   if (!ready_evt) {
     return cudaSuccess;
+  }
+  CUresult context_result = CUDA_SUCCESS;
+  auto context =
+      detail::CudaContextGuard::for_device(device_id, &context_result);
+  if (!context) {
+    return cudaErrorUnknown;
   }
   return cudaStreamWaitEvent(stream, ready_evt, 0);
 }
