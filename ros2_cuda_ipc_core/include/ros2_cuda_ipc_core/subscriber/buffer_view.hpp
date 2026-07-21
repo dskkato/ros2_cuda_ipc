@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <cuda_runtime_api.h>
+#include <cuda.h>
 
 #include <cstdint>
 #include <memory>
@@ -17,7 +17,7 @@ namespace ros2_cuda_ipc_core::subscriber {
 
 struct BufferView {
   void* dev_ptr = nullptr;
-  cudaEvent_t ready_evt = nullptr;
+  CUevent ready_evt = nullptr;
   int device_id = 0;
   uint64_t byte_size = 0;
   uint32_t slot_id = 0;
@@ -40,17 +40,17 @@ struct BufferView {
 
   bool valid() const noexcept { return dev_ptr != nullptr; }
 
-  cudaError_t enqueue_ready_event(cudaStream_t stream) const noexcept;
+  CUresult enqueue_ready_event(CUstream stream) const noexcept;
 
   void reset() noexcept;
 
   void set_ipc_handles(transport::MemoryBackendKind backend,
                        const uint8_t* payload_bytes, std::size_t payload_size,
-                       const cudaIpcEventHandle_t& evt) noexcept;
+                       const CUipcEventHandle& evt) noexcept;
   const transport::MemoryHandlePayload& mem_payload() const noexcept {
     return mem_payload_;
   }
-  const cudaIpcEventHandle_t& event_handle() const noexcept {
+  const CUipcEventHandle& event_handle() const noexcept {
     return event_handle_;
   }
   transport::MemoryBackendKind backend() const noexcept { return backend_; }
@@ -58,7 +58,7 @@ struct BufferView {
 
  private:
   transport::MemoryHandlePayload mem_payload_{};
-  cudaIpcEventHandle_t event_handle_{};
+  CUipcEventHandle event_handle_{};
   transport::MemoryBackendKind backend_ =
       transport::MemoryBackendKind::CUDA_IPC;
   bool handles_ready_ = false;

@@ -23,14 +23,10 @@ if(NOT UUID_LIB)
   message(FATAL_ERROR "Failed to find libuuid (uuid)")
 endif()
 
-add_library(${PROJECT_NAME}
+add_library(${PROJECT_NAME} SHARED
   src/detail/cuda_util.cpp
-  src/publisher/gpu_buffer_manager.cpp
-  src/publisher/gpu_buffer_pool.cpp
   src/backend/memory_importer.cpp
-  src/backend/cuda_ipc/memory_backend.cpp
   src/backend/cuda_ipc/memory_importer.cpp
-  src/backend/vmm_fd/memory_backend.cpp
   src/backend/vmm_fd/memory_importer.cpp
   src/subscriber/buffer_view.cpp
   src/image/image_view.cpp
@@ -58,12 +54,28 @@ target_link_libraries(${PROJECT_NAME}
     ${ros2_cuda_ipc_msgs_TARGETS}
     ${sensor_msgs_TARGETS}
     ${std_msgs_TARGETS}
-    CUDA::cudart
+  PRIVATE
     CUDA::cuda_driver
     ${UUID_LIB}
 )
 
-install(TARGETS ${PROJECT_NAME}
+
+add_library(${PROJECT_NAME}_publisher SHARED
+  src/detail/cuda_runtime_util.cpp
+  src/publisher/gpu_buffer_manager.cpp
+  src/publisher/gpu_buffer_pool.cpp
+  src/backend/cuda_ipc/memory_backend.cpp
+  src/backend/vmm_fd/memory_backend.cpp
+)
+target_link_libraries(${PROJECT_NAME}_publisher
+  PUBLIC
+    ${PROJECT_NAME}
+  PRIVATE
+    CUDA::cudart
+    CUDA::cuda_driver
+)
+
+install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_publisher
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -92,11 +104,18 @@ if(BUILD_TESTING)
   target_link_libraries(test_publisher_messages ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_manager
                   test/test_gpu_buffer_manager.cpp)
-  target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME})
+  target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME}_publisher)
   ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
-  target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
+  target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME}_publisher)
   ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
   target_link_libraries(test_lease_manager ${PROJECT_NAME})
+
+  add_test(NAME check_core_cuda_dependencies
+    COMMAND ${CMAKE_COMMAND} -Dbinary=$<TARGET_FILE:${PROJECT_NAME}>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_cuda_dependencies.cmake)
+  add_test(NAME check_subscriber_cuda_dependencies
+    COMMAND ${CMAKE_COMMAND} -Dbinary=$<TARGET_FILE:test_buffer_view_mapper>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_cuda_dependencies.cmake)
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

@@ -3,13 +3,12 @@
 
 #pragma once
 
-#include <cuda.h>
+#include <cuda_runtime_api.h>
 
 #include <string>
 
 namespace ros2_cuda_ipc_core::detail {
 
-/// Convert a CUDA Driver API result into "<name>: <message>".
-std::string cu_result_to_string(CUresult result);
+std::string cuda_error_to_string(cudaError_t error);
 
 }  // namespace ros2_cuda_ipc_core::detail

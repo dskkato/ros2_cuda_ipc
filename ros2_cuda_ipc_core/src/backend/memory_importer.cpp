@@ -18,10 +18,10 @@ void release_imported_memory(const ImportedMemory& imported) noexcept {
     cuMemRelease(imported.vmm_allocation);
   }
   if (imported.vmm_address == 0 && imported.dev_ptr != nullptr) {
-    cudaIpcCloseMemHandle(imported.dev_ptr);
+    cuIpcCloseMemHandle(reinterpret_cast<CUdeviceptr>(imported.dev_ptr));
   }
   if (imported.event != nullptr) {
-    cudaEventDestroy(imported.event);
+    cuEventDestroy(imported.event);
   }
 }
 

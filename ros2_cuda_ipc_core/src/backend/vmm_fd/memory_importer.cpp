@@ -130,8 +130,7 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
 
 std::optional<ImportedMemory> MemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
-    const cudaIpcEventHandle_t& event_handle,
-    const rclcpp::Logger& logger) const {
+    const CUipcEventHandle& event_handle, const rclcpp::Logger& logger) const {
   const auto meta = parse_vmm_payload(msg.mem_handle, logger);
   if (!meta.has_value()) {
     return std::nullopt;
@@ -227,10 +226,10 @@ std::optional<ImportedMemory> MemoryImporter::import(
     return std::nullopt;
   }
 
-  auto err = cudaIpcOpenEventHandle(&imported.event, event_handle);
-  if (err != cudaSuccess) {
-    RCLCPP_WARN(logger, "cudaIpcOpenEventHandle failed: %s",
-                cudaGetErrorString(err));
+  auto err = cuIpcOpenEventHandle(&imported.event, event_handle);
+  if (err != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuIpcOpenEventHandle failed: %s",
+                ros2_cuda_ipc_core::detail::cu_result_to_string(err).c_str());
     cuMemUnmap(imported.vmm_address, imported.allocation_size);
     cuMemAddressFree(imported.vmm_address, imported.allocation_size);
     cuMemRelease(imported.vmm_allocation);
