@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cuda.h>
-#include <cuda_runtime_api.h>
 
 #include <cstddef>
 #include <optional>
@@ -16,8 +15,8 @@
 namespace ros2_cuda_ipc_core::backend {
 
 struct ImportedMemory {
-  void* dev_ptr = nullptr;
-  cudaEvent_t event = nullptr;
+  CUdeviceptr dev_ptr = 0;
+  CUevent event = nullptr;
   CUdeviceptr vmm_address = 0;
   CUmemGenericAllocationHandle vmm_allocation = 0;
   std::size_t allocation_size = 0;
@@ -29,7 +28,6 @@ class MemoryImporter {
 
   virtual std::optional<ImportedMemory> import(
       const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
-      const cudaIpcEventHandle_t& event_handle,
       const rclcpp::Logger& logger) const = 0;
 };
 

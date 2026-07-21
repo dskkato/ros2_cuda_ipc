@@ -10,18 +10,20 @@
 namespace ros2_cuda_ipc_core::backend {
 
 void release_imported_memory(const ImportedMemory& imported) noexcept {
+  // VMM imports must be dismantled in mapping dependency order.
   if (imported.vmm_address != 0 && imported.allocation_size != 0) {
-    cuMemUnmap(imported.vmm_address, imported.allocation_size);
-    cuMemAddressFree(imported.vmm_address, imported.allocation_size);
+    (void)cuMemUnmap(imported.vmm_address, imported.allocation_size);
+    (void)cuMemAddressFree(imported.vmm_address, imported.allocation_size);
   }
   if (imported.vmm_allocation != 0) {
-    cuMemRelease(imported.vmm_allocation);
+    (void)cuMemRelease(imported.vmm_allocation);
   }
-  if (imported.vmm_address == 0 && imported.dev_ptr != nullptr) {
-    cudaIpcCloseMemHandle(imported.dev_ptr);
-  }
+  // CUDA IPC imports own an event and memory mapping independently.
   if (imported.event != nullptr) {
-    cudaEventDestroy(imported.event);
+    (void)cuEventDestroy(imported.event);
+  }
+  if (imported.vmm_address == 0 && imported.dev_ptr != 0) {
+    (void)cuIpcCloseMemHandle(imported.dev_ptr);
   }
 }
 

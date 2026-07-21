@@ -11,7 +11,6 @@ class MemoryImporter final : public backend::MemoryImporter {
  public:
   std::optional<ImportedMemory> import(
       const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
-      const cudaIpcEventHandle_t& event_handle,
       const rclcpp::Logger& logger) const override;
 };
 

@@ -24,6 +24,12 @@ namespace ros2_cuda_ipc_core::backend::vmm_fd {
 
 namespace {
 
+using BufferCoreMessage = ros2_cuda_ipc_msgs::msg::BufferCore;
+
+static_assert(sizeof(BufferCoreMessage::_event_handle_type) ==
+                  sizeof(CUipcEventHandle),
+              "BufferCore.event_handle must match CUipcEventHandle");
+
 std::size_t align_up_size(std::size_t value, std::size_t alignment) {
   if (alignment == 0) {
     return value;
@@ -57,6 +63,26 @@ std::optional<std::string> parse_vmm_payload(
     return std::nullopt;
   }
   return uuid;
+}
+
+CUipcEventHandle to_ipc_event_handle(
+    const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
+  CUipcEventHandle handle{};
+  std::memcpy(&handle, msg.event_handle.data(), sizeof(handle));
+  return handle;
+}
+
+void rollback_vmm_import(const ImportedMemory& imported) noexcept {
+  if (imported.event != nullptr) {
+    (void)cuEventDestroy(imported.event);
+  }
+  if (imported.vmm_address != 0 && imported.allocation_size != 0) {
+    (void)cuMemUnmap(imported.vmm_address, imported.allocation_size);
+    (void)cuMemAddressFree(imported.vmm_address, imported.allocation_size);
+  }
+  if (imported.vmm_allocation != 0) {
+    (void)cuMemRelease(imported.vmm_allocation);
+  }
 }
 
 std::optional<int> request_fd_from_publisher(const std::string& path,
@@ -130,7 +156,6 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
 
 std::optional<ImportedMemory> MemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
-    const cudaIpcEventHandle_t& event_handle,
     const rclcpp::Logger& logger) const {
   const auto meta = parse_vmm_payload(msg.mem_handle, logger);
   if (!meta.has_value()) {
@@ -156,9 +181,19 @@ std::optional<ImportedMemory> MemoryImporter::import(
 
   ImportedMemory imported;
 
+  CUresult cu_res =
+      cuIpcOpenEventHandle(&imported.event, to_ipc_event_handle(msg));
+  if (cu_res != CUDA_SUCCESS) {
+    RCLCPP_WARN(
+        logger, "cuIpcOpenEventHandle failed: %s",
+        ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
+    ::close(fd_opt.value());
+    return std::nullopt;
+  }
+
   void* os_handle =
       reinterpret_cast<void*>(static_cast<intptr_t>(fd_opt.value()));
-  CUresult cu_res =
+  cu_res =
       cuMemImportFromShareableHandle(&imported.vmm_allocation, os_handle,
                                      CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR);
   ::close(fd_opt.value());
@@ -166,6 +201,7 @@ std::optional<ImportedMemory> MemoryImporter::import(
     RCLCPP_WARN(
         logger, "cuMemImportFromShareableHandle failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
+    rollback_vmm_import(imported);
     return std::nullopt;
   }
 
@@ -181,7 +217,7 @@ std::optional<ImportedMemory> MemoryImporter::import(
     RCLCPP_WARN(
         logger, "cuMemGetAllocationGranularity failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
-    cuMemRelease(imported.vmm_allocation);
+    rollback_vmm_import(imported);
     return std::nullopt;
   }
 
@@ -197,7 +233,7 @@ std::optional<ImportedMemory> MemoryImporter::import(
     RCLCPP_WARN(
         logger, "cuMemAddressReserve failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
-    cuMemRelease(imported.vmm_allocation);
+    rollback_vmm_import(imported);
     return std::nullopt;
   }
 
@@ -207,8 +243,7 @@ std::optional<ImportedMemory> MemoryImporter::import(
     RCLCPP_WARN(
         logger, "cuMemMap failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
-    cuMemAddressFree(imported.vmm_address, imported.allocation_size);
-    cuMemRelease(imported.vmm_allocation);
+    rollback_vmm_import(imported);
     return std::nullopt;
   }
 
@@ -221,23 +256,11 @@ std::optional<ImportedMemory> MemoryImporter::import(
     RCLCPP_WARN(
         logger, "cuMemSetAccess failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
-    cuMemUnmap(imported.vmm_address, imported.allocation_size);
-    cuMemAddressFree(imported.vmm_address, imported.allocation_size);
-    cuMemRelease(imported.vmm_allocation);
+    rollback_vmm_import(imported);
     return std::nullopt;
   }
 
-  auto err = cudaIpcOpenEventHandle(&imported.event, event_handle);
-  if (err != cudaSuccess) {
-    RCLCPP_WARN(logger, "cudaIpcOpenEventHandle failed: %s",
-                cudaGetErrorString(err));
-    cuMemUnmap(imported.vmm_address, imported.allocation_size);
-    cuMemAddressFree(imported.vmm_address, imported.allocation_size);
-    cuMemRelease(imported.vmm_allocation);
-    return std::nullopt;
-  }
-
-  imported.dev_ptr = reinterpret_cast<void*>(imported.vmm_address);
+  imported.dev_ptr = imported.vmm_address;
   return imported;
 }
 

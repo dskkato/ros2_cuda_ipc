@@ -78,8 +78,8 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_cached_buffer_core_message(
 inline void seed_cache_for_message(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg, uintptr_t ptr_seed) {
   backend::ImportedMemory imported;
-  imported.dev_ptr = reinterpret_cast<void*>(ptr_seed);
-  imported.event = reinterpret_cast<cudaEvent_t>(ptr_seed + 1U);
+  imported.dev_ptr = static_cast<CUdeviceptr>(ptr_seed);
+  imported.event = reinterpret_cast<CUevent>(ptr_seed + 1U);
   subscriber::IpcHandleCache::instance().insert_or_discard_duplicate(
       make_key(msg), imported);
 }

@@ -123,7 +123,7 @@ BufferView BufferViewMapper::map(
   } else {
     const auto& importer =
         backend::get_memory_importer(static_cast<uint8_t>(msg.backend));
-    auto opened = importer.import(msg, event_handle, options_.logger);
+    auto opened = importer.import(msg, options_.logger);
     if (!opened.has_value()) {
       return {};
     }
@@ -132,8 +132,8 @@ BufferView BufferViewMapper::map(
   }
 
   BufferView view;
-  view.dev_ptr = imported.dev_ptr;
-  view.ready_evt = imported.event;
+  view.dev_ptr = reinterpret_cast<void*>(imported.dev_ptr);
+  view.ready_evt = reinterpret_cast<cudaEvent_t>(imported.event);
   view.device_id = static_cast<int>(msg.device_id);
   view.byte_size = msg.byte_size;
   view.slot_id = msg.slot_id;
