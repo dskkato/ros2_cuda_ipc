@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "rclcpp/logging.hpp"
-#include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_runtime_util.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 

@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <cuda_runtime_api.h>
+#include <cuda.h>
 
 #include <array>
 #include <cstddef>
@@ -23,7 +23,7 @@ struct IpcHandleKey {
   PublisherInstanceId publisher_instance_id{};
   uint8_t backend = 0;
   transport::MemoryHandlePayload mem{};
-  std::array<uint8_t, sizeof(cudaIpcEventHandle_t)> event{};
+  std::array<uint8_t, sizeof(CUipcEventHandle)> event{};
 
   bool operator==(const IpcHandleKey& other) const noexcept {
     return publisher_instance_id == other.publisher_instance_id &&

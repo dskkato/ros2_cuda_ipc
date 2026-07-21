@@ -6,7 +6,7 @@
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/backend/cuda_ipc/memory_backend.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/memory_backend.hpp"
-#include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_runtime_util.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 namespace {

@@ -72,12 +72,11 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
   return *this;
 }
 
-cudaError_t BufferView::enqueue_ready_event(
-    cudaStream_t stream) const noexcept {
+CUresult BufferView::enqueue_ready_event(CUstream stream) const noexcept {
   if (!ready_evt) {
-    return cudaSuccess;
+    return CUDA_SUCCESS;
   }
-  return cudaStreamWaitEvent(stream, ready_evt, 0);
+  return cuStreamWaitEvent(stream, ready_evt, 0);
 }
 
 void BufferView::reset() noexcept {
@@ -96,7 +95,7 @@ void BufferView::reset() noexcept {
 void BufferView::set_ipc_handles(transport::MemoryBackendKind backend,
                                  const uint8_t* payload_bytes,
                                  std::size_t payload_size,
-                                 const cudaIpcEventHandle_t& evt) noexcept {
+                                 const CUipcEventHandle& evt) noexcept {
   backend_ = backend;
   std::memset(mem_payload_.data(), 0, mem_payload_.size());
   if (payload_bytes != nullptr && payload_size > 0) {
