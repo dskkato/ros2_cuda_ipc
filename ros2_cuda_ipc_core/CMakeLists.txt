@@ -25,6 +25,7 @@ endif()
 
 add_library(${PROJECT_NAME}
   src/detail/cuda_util.cpp
+  src/detail/primary_context_guard.cpp
   src/publisher/gpu_buffer_manager.cpp
   src/publisher/gpu_buffer_pool.cpp
   src/backend/memory_importer.cpp
@@ -58,7 +59,6 @@ target_link_libraries(${PROJECT_NAME}
     ${ros2_cuda_ipc_msgs_TARGETS}
     ${sensor_msgs_TARGETS}
     ${std_msgs_TARGETS}
-    CUDA::cudart
     CUDA::cuda_driver
     ${UUID_LIB}
 )
@@ -97,6 +97,14 @@ if(BUILD_TESTING)
   target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
   ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
   target_link_libraries(test_lease_manager ${PROJECT_NAME})
+  ament_add_gtest(test_driver_ipc_interop test/test_driver_ipc_interop.cpp)
+  target_link_libraries(test_driver_ipc_interop ${PROJECT_NAME} CUDA::cudart CUDA::cuda_driver)
+  # Keep the core library usable beside applications which choose their own
+  # CUDA Runtime version (e.g. PyTorch): it must not acquire libcudart itself.
+  add_test(NAME test_core_has_no_cudart_dependency
+    COMMAND ${CMAKE_COMMAND}
+      -DLIBRARY=$<TARGET_FILE:${PROJECT_NAME}>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/test/check_no_cudart_dependency.cmake)
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

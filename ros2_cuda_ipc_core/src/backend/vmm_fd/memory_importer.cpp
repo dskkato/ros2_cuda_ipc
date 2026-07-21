@@ -18,6 +18,7 @@
 #include "ros2_cuda_ipc_core/backend/vmm_fd/payload.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
+#include "ros2_cuda_ipc_core/detail/primary_context_guard.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend::vmm_fd {
@@ -130,8 +131,7 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
 
 std::optional<ImportedMemory> MemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
-    const cudaIpcEventHandle_t& event_handle,
-    const rclcpp::Logger& logger) const {
+    const CUipcEventHandle& event_handle, const rclcpp::Logger& logger) const {
   const auto meta = parse_vmm_payload(msg.mem_handle, logger);
   if (!meta.has_value()) {
     return std::nullopt;
@@ -154,7 +154,16 @@ std::optional<ImportedMemory> MemoryImporter::import(
     return std::nullopt;
   }
 
+  detail::PrimaryContextGuard context(static_cast<int>(msg.device_id));
+  if (!context.ok()) {
+    RCLCPP_WARN(logger, "Unable to make primary context current: %s",
+                detail::cu_result_to_string(context.result()).c_str());
+    ::close(fd_opt.value());
+    return std::nullopt;
+  }
+
   ImportedMemory imported;
+  imported.device_id = static_cast<int>(msg.device_id);
 
   void* os_handle =
       reinterpret_cast<void*>(static_cast<intptr_t>(fd_opt.value()));
@@ -227,10 +236,10 @@ std::optional<ImportedMemory> MemoryImporter::import(
     return std::nullopt;
   }
 
-  auto err = cudaIpcOpenEventHandle(&imported.event, event_handle);
-  if (err != cudaSuccess) {
-    RCLCPP_WARN(logger, "cudaIpcOpenEventHandle failed: %s",
-                cudaGetErrorString(err));
+  auto err = cuIpcOpenEventHandle(&imported.event, event_handle);
+  if (err != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuIpcOpenEventHandle failed: %s",
+                ros2_cuda_ipc_core::detail::cu_result_to_string(err).c_str());
     cuMemUnmap(imported.vmm_address, imported.allocation_size);
     cuMemAddressFree(imported.vmm_address, imported.allocation_size);
     cuMemRelease(imported.vmm_allocation);

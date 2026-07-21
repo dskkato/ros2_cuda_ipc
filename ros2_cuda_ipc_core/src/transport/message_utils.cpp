@@ -15,8 +15,8 @@ static_assert(sizeof(BufferCoreMessage::_mem_handle_type) ==
                   sizeof(MemoryHandlePayload),
               "BufferCore.mem_handle must match MemoryHandlePayload");
 static_assert(sizeof(BufferCoreMessage::_event_handle_type) ==
-                  sizeof(cudaIpcEventHandle_t),
-              "BufferCore.event_handle must match cudaIpcEventHandle_t");
+                  sizeof(CUipcEventHandle),
+              "BufferCore.event_handle must match CUipcEventHandle");
 
 }  // namespace
 

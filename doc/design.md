@@ -507,3 +507,21 @@ void on_message(const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
    * ROS msg を受信 → Mapper が View を返す
    * `cudaStreamWaitEvent(my_stream, view.ready_evt, 0)`
    * カーネル呼び出しで view.dev_ptr を利用
+
+## Subscriber CUDA API policy
+
+Subscriber の import と解放は CUDA Driver API で実装する。具体的には
+`CUipcMemHandle` / `CUipcEventHandle` を message bytes から復元し、
+`cuIpcOpenMemHandle`、`cuIpcOpenEventHandle`、`cuIpcCloseMemHandle`、
+`cuEventDestroy` を使用する。失敗後に event または memory が部分的に open された場合は、
+その場で rollback する。
+
+各操作は device の primary context を current にする guard の中で行い、guard は呼出し元
+thread の current context を必ず復元する。このため Runtime API を使う PyTorch 等と同じ
+プロセスに置いても、Runtime と Driver は同一 primary context を共有できる。core library 自体は
+`libcudart` に link しない（CTest の `ldd` check で検証する）。
+
+公開 `BufferView::enqueue_ready_event(cudaStream_t)` は Runtime API で作成または取得した
+stream を受け取れる。実装はその stream を `CUstream` として Driver API の
+`cuStreamWaitEvent` に渡し、Publisher が IPC で export した ready event への wait を enqueue
+する。Runtime stream を使う側は、buffer の消費より前にこの API を呼ぶ。

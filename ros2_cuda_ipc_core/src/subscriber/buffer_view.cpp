@@ -77,7 +77,9 @@ cudaError_t BufferView::enqueue_ready_event(
   if (!ready_evt) {
     return cudaSuccess;
   }
-  return cudaStreamWaitEvent(stream, ready_evt, 0);
+  const CUresult result =
+      cuStreamWaitEvent(reinterpret_cast<CUstream>(stream), ready_evt, 0);
+  return result == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
 }
 
 void BufferView::reset() noexcept {
@@ -96,7 +98,7 @@ void BufferView::reset() noexcept {
 void BufferView::set_ipc_handles(transport::MemoryBackendKind backend,
                                  const uint8_t* payload_bytes,
                                  std::size_t payload_size,
-                                 const cudaIpcEventHandle_t& evt) noexcept {
+                                 const CUipcEventHandle& evt) noexcept {
   backend_ = backend;
   std::memset(mem_payload_.data(), 0, mem_payload_.size());
   if (payload_bytes != nullptr && payload_size > 0) {

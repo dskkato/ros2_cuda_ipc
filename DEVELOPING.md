@@ -111,6 +111,22 @@ colcon test-result --verbose
 CUDA-dependent tests may skip when no CUDA device is available or when the
 platform does not support the selected CUDA memory sharing feature.
 
+### CUDA API and Runtime Interoperability
+
+Subscriber-side IPC imports use the CUDA **Driver API** (`CUipcMemHandle`,
+`CUipcEventHandle`, `cuIpcCloseMemHandle`, and `cuEventDestroy`).  Before an
+import or release, the subscriber makes the target device's primary context
+current with a guard that restores the calling thread's previous context.
+Consequently the core library does not link `libcudart`; the CTest suite checks
+its ELF dependencies with `ldd`.
+
+This is intentional for embedding in processes that already use the Runtime
+API, including PyTorch.  CUDA Runtime and Driver API objects on a device share
+the primary context. `BufferView::enqueue_ready_event(cudaStream_t)` accepts a
+Runtime-created or Runtime-obtained stream and submits `cuStreamWaitEvent` for
+the imported publisher event. The caller remains responsible for placing that
+wait before consuming the buffer.
+
 ## Profiling
 
 The fanout launch file can wrap each process with Nsight Systems:

@@ -16,9 +16,9 @@ namespace ros2_cuda_ipc_core::subscriber {
 
 namespace {
 
-cudaIpcEventHandle_t to_cuda_event_handle(
+CUipcEventHandle to_cuda_event_handle(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
-  cudaIpcEventHandle_t handle{};
+  CUipcEventHandle handle{};
   std::memcpy(&handle, msg.event_handle.data(), sizeof(handle));
   return handle;
 }
@@ -108,7 +108,7 @@ BufferView BufferViewMapper::map(
   }
 
   auto lease_ptr = std::make_shared<lease::LeaseHandle>(std::move(lease));
-  const cudaIpcEventHandle_t event_handle = to_cuda_event_handle(msg);
+  const CUipcEventHandle event_handle = to_cuda_event_handle(msg);
 
   IpcHandleKey key{};
   key.publisher_instance_id = instance_id;

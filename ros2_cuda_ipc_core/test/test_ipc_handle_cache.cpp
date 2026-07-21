@@ -47,11 +47,11 @@ TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
 
   backend::ImportedMemory first;
   first.dev_ptr = reinterpret_cast<void*>(0x1010);
-  first.event = reinterpret_cast<cudaEvent_t>(0x2020);
+  first.event = reinterpret_cast<CUevent>(0x2020);
 
   backend::ImportedMemory duplicate;
   duplicate.dev_ptr = reinterpret_cast<void*>(0x3030);
-  duplicate.event = reinterpret_cast<cudaEvent_t>(0x4040);
+  duplicate.event = reinterpret_cast<CUevent>(0x4040);
 
   auto inserted = cache.insert_or_discard_duplicate(key, first);
   auto second = cache.insert_or_discard_duplicate(key, duplicate);
@@ -73,11 +73,11 @@ TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
 
   backend::ImportedMemory first;
   first.dev_ptr = reinterpret_cast<void*>(0x5050);
-  first.event = reinterpret_cast<cudaEvent_t>(0x6060);
+  first.event = reinterpret_cast<CUevent>(0x6060);
 
   backend::ImportedMemory duplicate;
   duplicate.dev_ptr = reinterpret_cast<void*>(0x7070);
-  duplicate.event = reinterpret_cast<cudaEvent_t>(0x8080);
+  duplicate.event = reinterpret_cast<CUevent>(0x8080);
 
   cache.insert_or_discard_duplicate(key, first);
   cache.insert_or_discard_duplicate(key, duplicate);
