@@ -11,6 +11,7 @@
 
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
+#include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber {
@@ -25,6 +26,8 @@ struct BufferView {
   std::string shm_name;
   PublisherInstanceId publisher_instance_id{};
   std::shared_ptr<lease::LeaseHandle> lease;
+  // Shares imported IPC/VMM memory lifetime with IpcHandleCache.
+  IpcHandleCache::ImportedMemoryResource imported_memory;
 
   BufferView() = default;
   ~BufferView();

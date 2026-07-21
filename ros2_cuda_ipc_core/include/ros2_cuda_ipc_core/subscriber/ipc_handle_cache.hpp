@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -38,23 +39,32 @@ struct IpcHandleKeyHash {
 class IpcHandleCache {
  public:
   using ReleaseFn = std::function<void(const backend::ImportedMemory&)>;
+  // Cache entries and BufferViews share this object.  Releasing a cache entry
+  // therefore cannot close an IPC handle while a view still references it.
+  using ImportedMemoryResource = std::shared_ptr<const backend::ImportedMemory>;
 
   explicit IpcHandleCache(
       ReleaseFn release_fn = backend::release_imported_memory);
 
   static IpcHandleCache& instance();
 
-  std::optional<backend::ImportedMemory> find(const IpcHandleKey& key) const;
+  ~IpcHandleCache();
 
-  backend::ImportedMemory insert_or_discard_duplicate(
+  std::optional<ImportedMemoryResource> find(const IpcHandleKey& key) const;
+
+  ImportedMemoryResource insert_or_discard_duplicate(
       const IpcHandleKey& key, backend::ImportedMemory imported);
+
+  // Removes cached ownership. Resources retained by BufferViews are released
+  // only after their leases have been released.
+  void clear();
 
   std::size_t size() const;
 
  private:
   ReleaseFn release_fn_;
   mutable std::mutex mutex_;
-  std::unordered_map<IpcHandleKey, backend::ImportedMemory, IpcHandleKeyHash>
+  std::unordered_map<IpcHandleKey, ImportedMemoryResource, IpcHandleKeyHash>
       cache_;
 };
 

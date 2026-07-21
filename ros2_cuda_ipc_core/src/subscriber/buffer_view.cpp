@@ -28,6 +28,7 @@ BufferView& BufferView::operator=(const BufferView& other) {
   shm_name = other.shm_name;
   publisher_instance_id = other.publisher_instance_id;
   lease = other.lease;
+  imported_memory = other.imported_memory;
   mem_payload_ = other.mem_payload_;
   event_handle_ = other.event_handle_;
   backend_ = other.backend_;
@@ -56,6 +57,7 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
   shm_name = std::move(other.shm_name);
   publisher_instance_id = other.publisher_instance_id;
   lease = std::move(other.lease);
+  imported_memory = std::move(other.imported_memory);
   mem_payload_ = other.mem_payload_;
   event_handle_ = other.event_handle_;
   backend_ = other.backend_;
@@ -90,7 +92,10 @@ void BufferView::reset() noexcept {
   publisher_instance_id = {};
   handles_ready_ = false;
   backend_ = transport::MemoryBackendKind::CUDA_IPC;
+  // The publisher observes the lease release before an imported IPC/VMM
+  // resource can be closed.
   lease.reset();
+  imported_memory.reset();
 }
 
 void BufferView::set_ipc_handles(transport::MemoryBackendKind backend,

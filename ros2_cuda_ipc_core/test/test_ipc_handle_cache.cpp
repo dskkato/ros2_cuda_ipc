@@ -5,6 +5,7 @@
 
 #include <atomic>
 
+#include "ros2_cuda_ipc_core/subscriber/buffer_view.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "test_instance_id.hpp"
 
@@ -56,33 +57,110 @@ TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
   auto inserted = cache.insert_or_discard_duplicate(key, first);
   auto second = cache.insert_or_discard_duplicate(key, duplicate);
 
-  EXPECT_EQ(inserted.dev_ptr, first.dev_ptr);
-  EXPECT_EQ(second.dev_ptr, first.dev_ptr);
-  EXPECT_EQ(second.event, first.event);
+  EXPECT_EQ(inserted->dev_ptr, first.dev_ptr);
+  EXPECT_EQ(second->dev_ptr, first.dev_ptr);
+  EXPECT_EQ(second->event, first.event);
   EXPECT_EQ(cache.size(), 1u);
 }
 
-TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
+TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHookOnce) {
+  std::atomic<int> released{0};
+  {
+    subscriber::IpcHandleCache cache(
+        [&released](const backend::ImportedMemory&) { released.fetch_add(1); });
+    subscriber::IpcHandleKey key{};
+    key.backend = 1;
+    key.mem[0] = 17;
+    key.event[0] = 19;
+
+    backend::ImportedMemory first;
+    first.dev_ptr = reinterpret_cast<void*>(0x5050);
+    backend::ImportedMemory duplicate;
+    duplicate.dev_ptr = reinterpret_cast<void*>(0x7070);
+
+    auto resource = cache.insert_or_discard_duplicate(key, first);
+    cache.insert_or_discard_duplicate(key, duplicate);
+    EXPECT_EQ(released.load(), 1);
+    resource.reset();
+  }
+  EXPECT_EQ(released.load(), 2);
+}
+
+TEST(IpcHandleCacheTest, ClearReleasesUnreferencedEntriesExactlyOnce) {
   std::atomic<int> released{0};
   subscriber::IpcHandleCache cache(
       [&released](const backend::ImportedMemory&) { released.fetch_add(1); });
   subscriber::IpcHandleKey key{};
-  key.backend = 1;
-  key.mem[0] = 17;
-  key.event[0] = 19;
+  key.mem[0] = 1;
 
-  backend::ImportedMemory first;
-  first.dev_ptr = reinterpret_cast<void*>(0x5050);
-  first.event = reinterpret_cast<cudaEvent_t>(0x6060);
+  cache.insert_or_discard_duplicate(key, {});
+  cache.clear();
 
-  backend::ImportedMemory duplicate;
-  duplicate.dev_ptr = reinterpret_cast<void*>(0x7070);
-  duplicate.event = reinterpret_cast<cudaEvent_t>(0x8080);
-
-  cache.insert_or_discard_duplicate(key, first);
-  cache.insert_or_discard_duplicate(key, duplicate);
-
+  EXPECT_EQ(cache.size(), 0u);
   EXPECT_EQ(released.load(), 1);
+}
+
+TEST(IpcHandleCacheTest, DestructorReleasesEntriesExactlyOnce) {
+  std::atomic<int> released{0};
+  {
+    subscriber::IpcHandleCache cache(
+        [&released](const backend::ImportedMemory&) { released.fetch_add(1); });
+    subscriber::IpcHandleKey key{};
+    key.mem[0] = 2;
+    cache.insert_or_discard_duplicate(key, {});
+  }
+  EXPECT_EQ(released.load(), 1);
+}
+
+TEST(IpcHandleCacheTest, ClearDefersVmmResourceReleaseUntilViewReleasesIt) {
+  std::atomic<int> released{0};
+  subscriber::IpcHandleCache cache(
+      [&released](const backend::ImportedMemory& imported) {
+        EXPECT_EQ(imported.vmm_address, 0x1234u);
+        EXPECT_EQ(imported.vmm_allocation, 0x5678u);
+        released.fetch_add(1);
+      });
+  subscriber::IpcHandleKey key{};
+  key.backend = 2;
+  key.mem[0] = 3;
+
+  backend::ImportedMemory vmm;
+  vmm.vmm_address = 0x1234;
+  vmm.vmm_allocation = 0x5678;
+  subscriber::BufferView view;
+  view.imported_memory = cache.insert_or_discard_duplicate(key, vmm);
+
+  cache.clear();
+  EXPECT_EQ(released.load(), 0);
+  view.reset();
+  EXPECT_EQ(released.load(), 1);
+}
+
+TEST(IpcHandleCacheTest, ReleaseCallbacksCanReenterCache) {
+  std::atomic<int> released{0};
+  std::atomic<std::size_t> expected_size{0};
+  subscriber::IpcHandleCache* cache_ptr = nullptr;
+  subscriber::IpcHandleCache cache(
+      [&released, &expected_size, &cache_ptr](const backend::ImportedMemory&) {
+        EXPECT_EQ(cache_ptr->size(), expected_size.load());
+        released.fetch_add(1);
+      });
+  cache_ptr = &cache;
+  subscriber::IpcHandleKey key{};
+  key.mem[0] = 4;
+
+  cache.insert_or_discard_duplicate(key, {});
+  cache.clear();
+  EXPECT_EQ(released.load(), 1);
+
+  cache.insert_or_discard_duplicate(key, {});
+  expected_size.store(1);
+  cache.insert_or_discard_duplicate(key, {});
+  EXPECT_EQ(released.load(), 2);
+
+  expected_size.store(0);
+  cache.clear();
+  EXPECT_EQ(released.load(), 3);
 }
 
 }  // namespace ros2_cuda_ipc_core

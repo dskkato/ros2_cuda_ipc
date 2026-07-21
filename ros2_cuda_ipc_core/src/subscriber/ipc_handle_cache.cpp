@@ -24,12 +24,14 @@ std::size_t IpcHandleKeyHash::operator()(
 IpcHandleCache::IpcHandleCache(ReleaseFn release_fn)
     : release_fn_(std::move(release_fn)) {}
 
+IpcHandleCache::~IpcHandleCache() { clear(); }
+
 IpcHandleCache& IpcHandleCache::instance() {
   static IpcHandleCache cache;
   return cache;
 }
 
-std::optional<backend::ImportedMemory> IpcHandleCache::find(
+std::optional<IpcHandleCache::ImportedMemoryResource> IpcHandleCache::find(
     const IpcHandleKey& key) const {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = cache_.find(key);
@@ -39,15 +41,41 @@ std::optional<backend::ImportedMemory> IpcHandleCache::find(
   return it->second;
 }
 
-backend::ImportedMemory IpcHandleCache::insert_or_discard_duplicate(
-    const IpcHandleKey& key, backend::ImportedMemory imported) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto [it, inserted] = cache_.emplace(key, imported);
-  if (!inserted) {
-    release_fn_(imported);
-    return it->second;
+IpcHandleCache::ImportedMemoryResource
+IpcHandleCache::insert_or_discard_duplicate(const IpcHandleKey& key,
+                                            backend::ImportedMemory imported) {
+  ImportedMemoryResource existing;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = cache_.find(key);
+    if (it != cache_.end()) {
+      existing = it->second;
+    } else {
+      auto resource = ImportedMemoryResource(
+          new backend::ImportedMemory(std::move(imported)),
+          [release_fn = release_fn_](const backend::ImportedMemory* memory) {
+            release_fn(*memory);
+            delete memory;
+          });
+      cache_.emplace(key, resource);
+      return resource;
+    }
   }
-  return imported;
+
+  // A duplicate is never shared with a view, so it can be released promptly.
+  // This is intentionally outside mutex_ because the callback may enter cache.
+  release_fn_(imported);
+  return existing;
+}
+
+void IpcHandleCache::clear() {
+  decltype(cache_) entries;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries.swap(cache_);
+  }
+  // Resource deleters may invoke CUDA/Driver API calls, so destroy entries only
+  // after releasing mutex_. Views can retain resources past this point.
 }
 
 std::size_t IpcHandleCache::size() const {

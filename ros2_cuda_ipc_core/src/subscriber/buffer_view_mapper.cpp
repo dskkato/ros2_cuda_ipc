@@ -116,7 +116,7 @@ BufferView BufferViewMapper::map(
   key.mem = msg.mem_handle;
   std::memcpy(key.event.data(), &event_handle, sizeof(event_handle));
 
-  backend::ImportedMemory imported;
+  IpcHandleCache::ImportedMemoryResource imported;
   auto cached = IpcHandleCache::instance().find(key);
   if (cached.has_value()) {
     imported = *cached;
@@ -132,8 +132,8 @@ BufferView BufferViewMapper::map(
   }
 
   BufferView view;
-  view.dev_ptr = imported.dev_ptr;
-  view.ready_evt = imported.event;
+  view.dev_ptr = imported->dev_ptr;
+  view.ready_evt = imported->event;
   view.device_id = static_cast<int>(msg.device_id);
   view.byte_size = msg.byte_size;
   view.slot_id = msg.slot_id;
@@ -141,6 +141,7 @@ BufferView BufferViewMapper::map(
   view.shm_name = msg.shm_name;
   view.publisher_instance_id = instance_id;
   view.lease = std::move(lease_ptr);
+  view.imported_memory = std::move(imported);
   view.set_ipc_handles(
       transport::backend_from_byte(static_cast<uint8_t>(msg.backend)),
       msg.mem_handle.data(), msg.mem_handle.size(), event_handle);
