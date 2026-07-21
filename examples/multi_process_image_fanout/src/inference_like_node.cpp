@@ -144,10 +144,10 @@ class InferenceLikeNode : public rclcpp::Node {
       // Wait on the publisher's ready event before reading the shared input
       // slot from this node's stream.
       NvtxScopedRange wait_range("InferenceLikeNode::wait_input_event");
-      const cudaError_t err = view.enqueue_ready_event(stream_);
-      if (err != cudaSuccess) {
-        RCLCPP_WARN(get_logger(), "cudaStreamWaitEvent failed: %s",
-                    cuda_error_to_string(err).c_str());
+      const CUresult wait_result = view.enqueue_ready_event(stream_);
+      if (wait_result != CUDA_SUCCESS) {
+        RCLCPP_WARN(get_logger(), "cuStreamWaitEvent failed: %d",
+                    static_cast<int>(wait_result));
         cudaEventDestroy(kernel_start);
         cudaEventDestroy(kernel_stop);
         return;

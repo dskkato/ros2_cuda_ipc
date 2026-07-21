@@ -3,7 +3,8 @@
 
 #pragma once
 
-#include <cuda_runtime_api.h>
+#include <cuda.h>
+#include <driver_types.h>
 
 #include <cstdint>
 #include <memory>
@@ -17,7 +18,9 @@ namespace ros2_cuda_ipc_core::subscriber {
 
 struct BufferView {
   void* dev_ptr = nullptr;
-  cudaEvent_t ready_evt = nullptr;
+  // The event is retained as a Driver API handle so consumers can wait on it
+  // without dispatching through the CUDA Runtime API.
+  CUevent ready_evt = nullptr;
   int device_id = 0;
   uint64_t byte_size = 0;
   uint32_t slot_id = 0;
@@ -40,7 +43,11 @@ struct BufferView {
 
   bool valid() const noexcept { return dev_ptr != nullptr; }
 
-  cudaError_t enqueue_ready_event(cudaStream_t stream) const noexcept;
+  // cudaStream_t is kept in the public API for Runtime API callers.  CUDA
+  // stream and event handles are ABI-compatible with their Driver API
+  // counterparts, so the implementation converts stream to CUstream and
+  // returns the unmodified CUresult from cuStreamWaitEvent.
+  CUresult enqueue_ready_event(cudaStream_t stream) const noexcept;
 
   void reset() noexcept;
 

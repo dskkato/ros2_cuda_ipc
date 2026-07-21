@@ -107,7 +107,7 @@ memo:
 struct BufferView {
   // === リソース（必ず有効時は同一 device 上） ===
   void*       dev_ptr = nullptr;     // デバイス先頭
-  cudaEvent_t ready_evt = nullptr;   // "書き終わり" を示すイベント（他プロセス発行）
+  CUevent      ready_evt = nullptr;  // "書き終わり" を示すイベント（他プロセス発行）
   int         device_id = 0;
   uint64_t    byte_size = 0;
 
@@ -131,8 +131,9 @@ struct BufferView {
   bool valid() const noexcept { return dev_ptr != nullptr; }
 
   // 自分のストリームに書き終わりイベントを依存として積む
-  cudaError_t enqueue_ready_event(cudaStream_t s) const noexcept {
-    return ready_evt ? cudaStreamWaitEvent(s, ready_evt, 0) : cudaSuccess;
+  CUresult enqueue_ready_event(cudaStream_t s) const noexcept {
+    return ready_evt ? cuStreamWaitEvent(reinterpret_cast<CUstream>(s), ready_evt, 0)
+                     : CUDA_SUCCESS;
   }
 
   void reset() noexcept;             // dev_ptr/evt をリセットし lease を解放
@@ -290,7 +291,7 @@ struct ImageView {
   }
 
   // 同期依存の登録（必要なら呼ぶ。どのストリームで待つかは呼び手が決める）
-  cudaError_t enqueue_ready_event(cudaStream_t s) const noexcept {
+  CUresult enqueue_ready_event(cudaStream_t s) const noexcept {
     return core.enqueue_ready_event(s);
   }
 
@@ -388,7 +389,7 @@ struct PointCloud2View {
   }
 
   size_t num_points() const noexcept { return static_cast<size_t>(width) * height; }
-  cudaError_t enqueue_ready_event(cudaStream_t s) const noexcept {
+  CUresult enqueue_ready_event(cudaStream_t s) const noexcept {
     return core.enqueue_ready_event(s);
   }
 };

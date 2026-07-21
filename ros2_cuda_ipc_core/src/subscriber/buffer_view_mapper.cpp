@@ -133,7 +133,7 @@ BufferView BufferViewMapper::map(
 
   BufferView view;
   view.dev_ptr = imported.dev_ptr;
-  view.ready_evt = imported.event;
+  view.ready_evt = reinterpret_cast<CUevent>(imported.event);
   view.device_id = static_cast<int>(msg.device_id);
   view.byte_size = msg.byte_size;
   view.slot_id = msg.slot_id;
