@@ -121,25 +121,20 @@ BufferView BufferViewMapper::map(
   key.mem = msg.mem_handle;
   std::memcpy(key.event.data(), msg.event_handle.data(), key.event.size());
 
-  backend::ImportedMemory imported;
-  auto cached = IpcHandleCache::instance().find(key);
-  if (cached.has_value()) {
-    imported = *cached;
-  } else {
+  auto imported = IpcHandleCache::instance().find(key);
+  if (!imported) {
     const auto& importer =
         backend::get_memory_importer(static_cast<uint8_t>(msg.backend));
     auto opened = importer.import(msg, event_handle, options_.logger);
     if (!opened.has_value()) {
       return {};
     }
-    imported =
-        IpcHandleCache::instance().insert_or_discard_duplicate(key, *opened);
+    imported = IpcHandleCache::instance().insert_or_discard_duplicate(
+        key, std::move(*opened));
   }
 
   BufferView view;
-  view.dev_ptr = imported.dev_ptr;
-  view.ready_evt = imported.event;
-  view.context = imported.context;
+  view.set_imported_resource(imported);
   view.device_id = static_cast<int>(msg.device_id);
   view.byte_size = msg.byte_size;
   view.slot_id = msg.slot_id;

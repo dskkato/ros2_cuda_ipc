@@ -31,25 +31,46 @@ IpcHandleCache& IpcHandleCache::instance() {
   return cache;
 }
 
-std::optional<backend::ImportedMemory> IpcHandleCache::find(
-    const IpcHandleKey& key) const {
+IpcHandleCache::Entry IpcHandleCache::find(const IpcHandleKey& key) const {
   std::lock_guard<std::mutex> lock(mutex_);
   auto it = cache_.find(key);
   if (it == cache_.end()) {
-    return std::nullopt;
+    return {};
   }
   return it->second;
 }
 
-backend::ImportedMemory IpcHandleCache::insert_or_discard_duplicate(
+IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
     const IpcHandleKey& key, backend::ImportedMemory imported) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto [it, inserted] = cache_.emplace(key, imported);
-  if (!inserted) {
+  Entry candidate;
+  try {
+    ReleaseFn release = release_fn_;
+    auto deleter = [release = std::move(release)](
+                       const backend::ImportedMemory* resource) noexcept {
+      try {
+        release(*resource);
+      } catch (...) {
+        // shared_ptr deleters must not throw.
+      }
+      delete resource;
+    };
+    auto* resource = new backend::ImportedMemory(std::move(imported));
+    candidate = Entry(resource, std::move(deleter));
+  } catch (...) {
+    // Ownership was not transferred when resource construction failed.
+    // After a successful move, imported is empty and this is a no-op.
     release_fn_(imported);
-    return it->second;
+    throw;
   }
-  return imported;
+
+  Entry result;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto [it, inserted] = cache_.emplace(key, candidate);
+    result = it->second;
+  }
+  // A duplicate candidate is released here, after dropping the cache lock.
+  return result;
 }
 
 void IpcHandleCache::clear() {
@@ -58,13 +79,8 @@ void IpcHandleCache::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     entries.swap(cache_);
   }
-  for (const auto& entry : entries) {
-    try {
-      release_fn_(entry.second);
-    } catch (...) {
-      // Best-effort cleanup; keep cache clear/destruction noexcept.
-    }
-  }
+  // Dropping cache ownership does not invalidate entries still held by views.
+  entries.clear();
 }
 
 std::size_t IpcHandleCache::size() const {

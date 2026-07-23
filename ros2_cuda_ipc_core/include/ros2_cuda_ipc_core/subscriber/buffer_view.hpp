@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
@@ -51,6 +52,8 @@ struct BufferView {
   void set_ipc_handles(transport::MemoryBackendKind backend,
                        const uint8_t* payload_bytes, std::size_t payload_size,
                        const transport::EventHandlePayload& evt) noexcept;
+  void set_imported_resource(
+      std::shared_ptr<const backend::ImportedMemory> resource) noexcept;
   const transport::MemoryHandlePayload& mem_payload() const noexcept {
     return mem_payload_;
   }
@@ -61,6 +64,7 @@ struct BufferView {
   bool handles_ready() const noexcept { return handles_ready_; }
 
  private:
+  std::shared_ptr<const backend::ImportedMemory> imported_resource_;
   transport::MemoryHandlePayload mem_payload_{};
   transport::EventHandlePayload event_handle_{};
   transport::MemoryBackendKind backend_ =

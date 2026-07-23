@@ -160,7 +160,7 @@ detail::CudaResult<void> GpuBufferManager::record_ready(
 std::optional<transport::BufferDescriptor> GpuBufferManager::descriptor(
     const LeaseManager::Reservation& reservation) const {
   const auto* resources = buffer_pool_.resources(reservation.slot_id);
-  if (resources == nullptr) {
+  if (resources == nullptr || !resources->ready_event) {
     return std::nullopt;
   }
   if (reservation.shm_name != lease_manager_.shm_name() ||
@@ -177,7 +177,7 @@ std::optional<transport::BufferDescriptor> GpuBufferManager::descriptor(
   result.byte_size = config_.byte_size;
   result.backend = resources->backend;
   result.memory_handle = resources->mem_handle;
-  result.ready_event_handle = resources->event_handle;
+  result.ready_event_handle = resources->ready_event->ipc_handle();
   return result;
 }
 

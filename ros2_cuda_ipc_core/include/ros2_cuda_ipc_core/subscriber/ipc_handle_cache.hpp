@@ -36,6 +36,7 @@ struct IpcHandleKeyHash {
 class IpcHandleCache {
  public:
   using ReleaseFn = std::function<void(const backend::ImportedMemory&)>;
+  using Entry = std::shared_ptr<const backend::ImportedMemory>;
 
   explicit IpcHandleCache(
       ReleaseFn release_fn = backend::release_imported_memory);
@@ -44,10 +45,10 @@ class IpcHandleCache {
 
   static IpcHandleCache& instance();
 
-  std::optional<backend::ImportedMemory> find(const IpcHandleKey& key) const;
+  Entry find(const IpcHandleKey& key) const;
 
-  backend::ImportedMemory insert_or_discard_duplicate(
-      const IpcHandleKey& key, backend::ImportedMemory imported);
+  Entry insert_or_discard_duplicate(const IpcHandleKey& key,
+                                    backend::ImportedMemory imported);
 
   /// Release all cache-owned imported resources after detaching the map.
   void clear();
@@ -57,8 +58,7 @@ class IpcHandleCache {
  private:
   ReleaseFn release_fn_;
   mutable std::mutex mutex_;
-  std::unordered_map<IpcHandleKey, backend::ImportedMemory, IpcHandleKeyHash>
-      cache_;
+  std::unordered_map<IpcHandleKey, Entry, IpcHandleKeyHash> cache_;
 };
 
 }  // namespace ros2_cuda_ipc_core::subscriber

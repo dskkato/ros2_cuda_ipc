@@ -17,6 +17,25 @@
 namespace ros2_cuda_ipc_core::backend {
 
 struct ImportedMemory {
+  ImportedMemory() = default;
+  ImportedMemory(const ImportedMemory&) = delete;
+  ImportedMemory& operator=(const ImportedMemory&) = delete;
+  ImportedMemory& operator=(ImportedMemory&&) = delete;
+
+  ImportedMemory(ImportedMemory&& other) noexcept
+      : dev_ptr(other.dev_ptr),
+        event(other.event),
+        context(std::move(other.context)),
+        vmm_address(other.vmm_address),
+        vmm_allocation(other.vmm_allocation),
+        allocation_size(other.allocation_size) {
+    other.dev_ptr = nullptr;
+    other.event = nullptr;
+    other.vmm_address = 0;
+    other.vmm_allocation = 0;
+    other.allocation_size = 0;
+  }
+
   void* dev_ptr = nullptr;
   CUevent event = nullptr;
   std::shared_ptr<detail::CudaDeviceContext> context;
@@ -35,7 +54,7 @@ class MemoryImporter {
       const rclcpp::Logger& logger) const = 0;
 };
 
-void release_imported_memory(const ImportedMemory& imported) noexcept;
+bool release_imported_memory(const ImportedMemory& imported) noexcept;
 
 const MemoryImporter& get_memory_importer(uint8_t backend);
 
