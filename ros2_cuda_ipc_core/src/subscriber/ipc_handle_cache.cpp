@@ -24,6 +24,8 @@ std::size_t IpcHandleKeyHash::operator()(
 IpcHandleCache::IpcHandleCache(ReleaseFn release_fn)
     : release_fn_(std::move(release_fn)) {}
 
+IpcHandleCache::~IpcHandleCache() { clear(); }
+
 IpcHandleCache& IpcHandleCache::instance() {
   static IpcHandleCache cache;
   return cache;
@@ -48,6 +50,21 @@ backend::ImportedMemory IpcHandleCache::insert_or_discard_duplicate(
     return it->second;
   }
   return imported;
+}
+
+void IpcHandleCache::clear() {
+  decltype(cache_) entries;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries.swap(cache_);
+  }
+  for (const auto& entry : entries) {
+    try {
+      release_fn_(entry.second);
+    } catch (...) {
+      // Best-effort cleanup; keep cache clear/destruction noexcept.
+    }
+  }
 }
 
 std::size_t IpcHandleCache::size() const {

@@ -71,12 +71,12 @@ void GpuImageTransportNodeBase::on_image(
   cudaError_t err = cudaSuccess;
   {
     NvtxScopedRange wait_range("GpuImageTransportNodeBase::stream_wait_event");
-    err = view.enqueue_ready_event(stream_);
-  }
-  if (err != cudaSuccess) {
-    RCLCPP_ERROR(get_logger(), "cudaStreamWaitEvent failed: %s",
-                 cuda_error_to_string(err).c_str());
-    return;
+    auto result = view.enqueue_ready_event(stream_);
+    if (!result) {
+      RCLCPP_ERROR(get_logger(), "enqueue_ready_event failed: %s",
+                   result.error().to_string().c_str());
+      return;
+    }
   }
 
   const std::uint64_t bytes_to_copy = view.core.byte_size;

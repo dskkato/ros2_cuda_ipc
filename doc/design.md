@@ -107,7 +107,7 @@ memo:
 struct BufferView {
   // === リソース（必ず有効時は同一 device 上） ===
   void*       dev_ptr = nullptr;     // デバイス先頭
-  cudaEvent_t ready_evt = nullptr;   // "書き終わり" を示すイベント（他プロセス発行）
+  CUevent     ready_evt = nullptr;   // "書き終わり" を示すイベント（他プロセス発行）
   int         device_id = 0;
   uint64_t    byte_size = 0;
 
@@ -131,20 +131,18 @@ struct BufferView {
   bool valid() const noexcept { return dev_ptr != nullptr; }
 
   // 自分のストリームに書き終わりイベントを依存として積む
-  cudaError_t enqueue_ready_event(cudaStream_t s) const noexcept {
-    return ready_evt ? cudaStreamWaitEvent(s, ready_evt, 0) : cudaSuccess;
-  }
+  detail::CudaResult<void> enqueue_ready_event(cudaStream_t s) const noexcept;
 
   void reset() noexcept;             // dev_ptr/evt をリセットし lease を解放
   void set_ipc_handles(MemoryBackendKind backend,
                        const uint8_t* payload_bytes,
                        std::size_t payload_size,
-                       const cudaIpcEventHandle_t& evt) noexcept;
+                       const EventHandlePayload& evt) noexcept;
   bool handles_ready() const noexcept;
 
 private:
   MemoryHandlePayload mem_payload_{};  // Publisher から渡されたハンドル
-  cudaIpcEventHandle_t event_handle_{};
+  EventHandlePayload event_handle_{};
   bool handles_ready_ = false;
 };
 ```
@@ -173,7 +171,8 @@ Subscriber 側の import/open を抽象化する。どちらも `BufferCore.back
 MemoryBackend は「slot 用 GPU メモリの確保」「BufferCore に載せるハンドル情報の生成」
 「Publisher 側リソースのクリーンアップ」をまとめる小さなクラスである。Subscriber 側では
 `BufferViewMapper` が `backend::MemoryImporter` を通して CUDA IPC open または VMM import を呼び分ける。
-イベントハンドル（`cudaIpcEventHandle_t`）は共通実装を維持し、CUDA IPC ベースの同期を継続する。
+  イベントのwire payload（64 byte）は共通実装を維持する。library内部では
+  Driver APIの`CUipcEventHandle`/`CUevent`を使い、CUDA IPCベースの同期を継続する。
 
 ##### x86 + dGPU: 既存の cudaIpcMemHandle_t パス
 
@@ -290,7 +289,7 @@ struct ImageView {
   }
 
   // 同期依存の登録（必要なら呼ぶ。どのストリームで待つかは呼び手が決める）
-  cudaError_t enqueue_ready_event(cudaStream_t s) const noexcept {
+  detail::CudaResult<void> enqueue_ready_event(cudaStream_t s) const noexcept {
     return core.enqueue_ready_event(s);
   }
 
@@ -388,7 +387,7 @@ struct PointCloud2View {
   }
 
   size_t num_points() const noexcept { return static_cast<size_t>(width) * height; }
-  cudaError_t enqueue_ready_event(cudaStream_t s) const noexcept {
+  detail::CudaResult<void> enqueue_ready_event(cudaStream_t s) const noexcept {
     return core.enqueue_ready_event(s);
   }
 };

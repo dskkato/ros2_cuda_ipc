@@ -23,9 +23,11 @@ the same CPU thread. Guards are move-only and must not be moved to a different
 thread for destruction because CUDA context stacks are thread-local. Cleanup
 errors are logged and never thrown from the destructor.
 
-The foundation does not migrate resource operations in this change. In
-particular, it does not change CUDA Runtime streams or error types, and it does
-not reset contexts with `cuDevicePrimaryCtxReset()` or `cudaDeviceReset()`.
+Ready-event operations use this foundation: each publisher pool and imported
+subscriber event retains the device primary context, and each Driver API call
+is enclosed by a short-lived guard. CUDA Runtime-created streams remain valid
+because the public stream type is still `cudaStream_t`. The library never
+resets contexts with `cuDevicePrimaryCtxReset()` or `cudaDeviceReset()`.
 
 ## Current VMM assumptions
 
@@ -38,26 +40,24 @@ thread. The VMM backend then calls `cuMemGetAllocationGranularity`,
 context. The backend separately calls `cuInit(0)` through a local
 `std::call_once`.
 
-The VMM importer calls `cuInit(0)` before
-`cuMemImportFromShareableHandle`, allocation-granularity lookup, address
-reservation, mapping, and access setup, but does not explicitly activate the
-message's device primary context. It therefore has an implicit current-context
-precondition that should be removed during later migration.
+The VMM importer retains and activates the message's device primary context
+before `cuMemImportFromShareableHandle`, allocation-granularity lookup, address
+reservation, mapping, access setup, and Driver API event import. The retained
+context is carried with the imported resource so cleanup can establish the same
+context later.
 
 VMM slot cleanup runs from `GpuBufferPool::destroy_slots()` and the
-`VmmSlotState` destructor. The state can outlive the callback that created it;
-the current code does not attach a Driver context to the state or establish a
-thread-local context before its `cuMemUnmap`, `cuMemAddressFree`, and
-`cuMemRelease` calls. The Unix FD server has its own worker thread, but that
-thread only serves file descriptors and does not call CUDA APIs. Later cleanup
-work must make the context and thread ownership explicit.
+`VmmSlotState` destructor. The Unix FD server has its own worker thread, but
+that thread only serves file descriptors and does not call CUDA APIs. The
+imported-resource cleanup path now carries the retained context for its Driver
+API cleanup; VMM publisher-side allocation cleanup remains part of the memory
+path migration.
 
 ## Later integration points
 
 Future Driver API migration should add scoped guards around:
 
 * VMM allocation, import, map, unmap, and release operations;
-* CUDA IPC event creation, recording, export, import, waiting, and destruction;
 * CUDA IPC memory export, import, and close operations;
 * Publisher and Subscriber resource classes that own those CUDA objects.
 

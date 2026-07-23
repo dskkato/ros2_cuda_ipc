@@ -10,6 +10,7 @@
 
 #include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_backend.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
@@ -41,7 +42,8 @@ class GpuBufferPool {
   int device_index() const noexcept { return device_index_; }
 
   void* device_ptr(uint32_t slot_id) const noexcept;
-  cudaError_t record_ready(uint32_t slot_id, cudaStream_t stream) noexcept;
+  detail::CudaResult<void> record_ready(uint32_t slot_id,
+                                        cudaStream_t stream) noexcept;
   const SlotResources* resources(uint32_t slot_id) const noexcept;
 
  private:
@@ -56,6 +58,7 @@ class GpuBufferPool {
   int device_index_ = -1;
   bool initialised_ = false;
   std::unique_ptr<MemoryBackend> memory_backend_;
+  std::shared_ptr<detail::CudaDeviceContext> context_;
 };
 
 }  // namespace ros2_cuda_ipc_core::publisher

@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <cuda_runtime_api.h>
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +21,7 @@ struct IpcHandleKey {
   PublisherInstanceId publisher_instance_id{};
   uint8_t backend = 0;
   transport::MemoryHandlePayload mem{};
-  std::array<uint8_t, sizeof(cudaIpcEventHandle_t)> event{};
+  transport::EventHandlePayload event{};
 
   bool operator==(const IpcHandleKey& other) const noexcept {
     return publisher_instance_id == other.publisher_instance_id &&
@@ -42,12 +40,17 @@ class IpcHandleCache {
   explicit IpcHandleCache(
       ReleaseFn release_fn = backend::release_imported_memory);
 
+  ~IpcHandleCache();
+
   static IpcHandleCache& instance();
 
   std::optional<backend::ImportedMemory> find(const IpcHandleKey& key) const;
 
   backend::ImportedMemory insert_or_discard_duplicate(
       const IpcHandleKey& key, backend::ImportedMemory imported);
+
+  /// Release all cache-owned imported resources after detaching the map.
+  void clear();
 
   std::size_t size() const;
 

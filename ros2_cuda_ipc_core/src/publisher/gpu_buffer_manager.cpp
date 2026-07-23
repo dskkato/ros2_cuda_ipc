@@ -43,15 +43,17 @@ void* PublishSlot::device_ptr() const noexcept {
   return valid() ? owner_->device_ptr(reservation_) : nullptr;
 }
 
-cudaError_t PublishSlot::record_ready(cudaStream_t stream) noexcept {
+detail::CudaResult<void> PublishSlot::record_ready(
+    cudaStream_t stream) noexcept {
   if (owner_ == nullptr || state_ != State::reserved) {
-    return cudaErrorInvalidResourceHandle;
+    return detail::CudaResult<void>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
-  const cudaError_t error = owner_->record_ready(reservation_, stream);
-  if (error == cudaSuccess) {
+  auto result = owner_->record_ready(reservation_, stream);
+  if (result) {
     state_ = State::ready_recorded;
   }
-  return error;
+  return result;
 }
 
 std::optional<transport::BufferDescriptor> PublishSlot::descriptor() const {
@@ -143,13 +145,14 @@ void* GpuBufferManager::device_ptr(
   return buffer_pool_.device_ptr(reservation.slot_id);
 }
 
-cudaError_t GpuBufferManager::record_ready(
+detail::CudaResult<void> GpuBufferManager::record_ready(
     const LeaseManager::Reservation& reservation,
     cudaStream_t stream) noexcept {
   if (reservation.shm_name != lease_manager_.shm_name() ||
       reservation.publisher_instance_id !=
           lease_manager_.publisher_instance_id()) {
-    return cudaErrorInvalidResourceHandle;
+    return detail::CudaResult<void>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
   return buffer_pool_.record_ready(reservation.slot_id, stream);
 }

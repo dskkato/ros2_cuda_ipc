@@ -21,6 +21,7 @@ BufferView& BufferView::operator=(const BufferView& other) {
 
   dev_ptr = other.dev_ptr;
   ready_evt = other.ready_evt;
+  context = other.context;
   device_id = other.device_id;
   byte_size = other.byte_size;
   slot_id = other.slot_id;
@@ -49,6 +50,7 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
 
   dev_ptr = other.dev_ptr;
   ready_evt = other.ready_evt;
+  context = std::move(other.context);
   device_id = other.device_id;
   byte_size = other.byte_size;
   slot_id = other.slot_id;
@@ -72,17 +74,34 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
   return *this;
 }
 
-cudaError_t BufferView::enqueue_ready_event(
+detail::CudaResult<void> BufferView::enqueue_ready_event(
     cudaStream_t stream) const noexcept {
   if (!ready_evt) {
-    return cudaSuccess;
+    return detail::CudaResult<void>::success();
   }
-  return cudaStreamWaitEvent(stream, ready_evt, 0);
+  if (context) {
+    auto guard_result = context->push_current();
+    if (!guard_result) {
+      return detail::CudaResult<void>::failure(guard_result.error());
+    }
+    auto guard = std::move(guard_result).value();
+    const CUresult result = cuStreamWaitEvent(stream, ready_evt, 0);
+    if (result != CUDA_SUCCESS) {
+      return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
+    }
+    return detail::CudaResult<void>::success();
+  }
+  const CUresult result = cuStreamWaitEvent(stream, ready_evt, 0);
+  if (result != CUDA_SUCCESS) {
+    return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
+  }
+  return detail::CudaResult<void>::success();
 }
 
 void BufferView::reset() noexcept {
   dev_ptr = nullptr;
   ready_evt = nullptr;
+  context.reset();
   byte_size = 0;
   slot_id = 0;
   generation = 0;
@@ -93,10 +112,10 @@ void BufferView::reset() noexcept {
   lease.reset();
 }
 
-void BufferView::set_ipc_handles(transport::MemoryBackendKind backend,
-                                 const uint8_t* payload_bytes,
-                                 std::size_t payload_size,
-                                 const cudaIpcEventHandle_t& evt) noexcept {
+void BufferView::set_ipc_handles(
+    transport::MemoryBackendKind backend, const uint8_t* payload_bytes,
+    std::size_t payload_size,
+    const transport::EventHandlePayload& evt) noexcept {
   backend_ = backend;
   std::memset(mem_payload_.data(), 0, mem_payload_.size());
   if (payload_bytes != nullptr && payload_size > 0) {
@@ -104,7 +123,7 @@ void BufferView::set_ipc_handles(transport::MemoryBackendKind backend,
         std::min(payload_size, static_cast<std::size_t>(mem_payload_.size()));
     std::memcpy(mem_payload_.data(), payload_bytes, copy);
   }
-  std::memcpy(&event_handle_, &evt, sizeof(event_handle_));
+  event_handle_ = evt;
   handles_ready_ = true;
 }
 
