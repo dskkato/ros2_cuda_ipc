@@ -3,6 +3,8 @@
 
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
+
 namespace ros2_cuda_ipc_core::detail {
 
 std::string cuda_error_to_string(cudaError_t err) {
@@ -10,21 +12,7 @@ std::string cuda_error_to_string(cudaError_t err) {
 }
 
 std::string cu_result_to_string(CUresult result) {
-  const char* name = nullptr;
-  const char* desc = nullptr;
-
-  // Attempt to retrieve human-readable error name and description.
-  // Fall back to default strings if the CUDA calls fail or return null.
-  CUresult name_result = cuGetErrorName(result, &name);
-  if (name_result != CUDA_SUCCESS || !name) {
-    name = "UNKNOWN";
-  }
-
-  CUresult desc_result = cuGetErrorString(result, &desc);
-  if (desc_result != CUDA_SUCCESS || !desc) {
-    desc = "unknown";
-  }
-  return std::string(name) + ": " + desc;
+  return CudaDriverError(result).to_string();
 }
 
 }  // namespace ros2_cuda_ipc_core::detail

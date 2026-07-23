@@ -25,6 +25,7 @@ endif()
 
 add_library(${PROJECT_NAME}
   src/detail/cuda_util.cpp
+  src/detail/cuda_driver_context.cpp
   src/publisher/gpu_buffer_manager.cpp
   src/publisher/gpu_buffer_pool.cpp
   src/backend/memory_importer.cpp
@@ -97,6 +98,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
   ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
   target_link_libraries(test_lease_manager ${PROJECT_NAME})
+  ament_add_gtest(test_cuda_driver_context test/test_cuda_driver_context.cpp)
+  target_link_libraries(test_cuda_driver_context ${PROJECT_NAME})
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
