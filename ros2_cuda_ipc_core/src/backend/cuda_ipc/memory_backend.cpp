@@ -3,13 +3,14 @@
 
 #include "ros2_cuda_ipc_core/backend/cuda_ipc/memory_backend.hpp"
 
-#include <cuda_runtime_api.h>
+#include <cuda.h>
 
 #include <cstring>
 #include <memory>
 #include <vector>
 
 #include "rclcpp/logging.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
@@ -22,21 +23,29 @@ class CudaIpcMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
   bool allocate(uint64_t frame_size_bytes, int device_index,
                 std::vector<publisher::GpuBufferPool::SlotResources>& slots,
                 rclcpp::Logger logger) override {
-    (void)device_index;
+    detail::ScopedPrimaryContext context(device_index);
+    if (!context.ok()) {
+      RCLCPP_ERROR(logger, "CUDA Driver context setup failed: %s",
+                   detail::cu_result_to_string(context.status()).c_str());
+      return false;
+    }
     for (auto& slot : slots) {
-      cudaError_t err = cudaMalloc(&slot.device_ptr, frame_size_bytes);
-      if (err != cudaSuccess) {
-        RCLCPP_ERROR(logger, "cudaMalloc failed: %s",
-                     detail::cuda_error_to_string(err).c_str());
+      CUdeviceptr device_ptr = 0;
+      CUresult result = cuMemAlloc(&device_ptr, frame_size_bytes);
+      if (result != CUDA_SUCCESS) {
+        RCLCPP_ERROR(logger, "cuMemAlloc failed: %s",
+                     detail::cu_result_to_string(result).c_str());
         destroy(slots, logger);
         return false;
       }
+      slot.device_ptr =
+          reinterpret_cast<void*>(static_cast<uintptr_t>(device_ptr));
 
-      cudaIpcMemHandle_t handle{};
-      err = cudaIpcGetMemHandle(&handle, slot.device_ptr);
-      if (err != cudaSuccess) {
-        RCLCPP_ERROR(logger, "cudaIpcGetMemHandle failed: %s",
-                     detail::cuda_error_to_string(err).c_str());
+      CUipcMemHandle handle{};
+      result = cuIpcGetMemHandle(&handle, device_ptr);
+      if (result != CUDA_SUCCESS) {
+        RCLCPP_ERROR(logger, "cuIpcGetMemHandle failed: %s",
+                     detail::cu_result_to_string(result).c_str());
         destroy(slots, logger);
         return false;
       }
@@ -51,10 +60,11 @@ class CudaIpcMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
                rclcpp::Logger logger) noexcept override {
     for (auto& slot : slots) {
       if (slot.device_ptr) {
-        const cudaError_t free_err = cudaFree(slot.device_ptr);
-        if (free_err != cudaSuccess) {
-          RCLCPP_ERROR(logger, "cudaFree failed for slot %u: %s", slot.index,
-                       detail::cuda_error_to_string(free_err).c_str());
+        const CUresult result = cuMemFree(static_cast<CUdeviceptr>(
+            reinterpret_cast<uintptr_t>(slot.device_ptr)));
+        if (result != CUDA_SUCCESS) {
+          RCLCPP_ERROR(logger, "cuMemFree failed for slot %u: %s", slot.index,
+                       detail::cu_result_to_string(result).c_str());
         }
         slot.device_ptr = nullptr;
       }

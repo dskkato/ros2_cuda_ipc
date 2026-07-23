@@ -22,6 +22,7 @@
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/payload.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
@@ -280,7 +281,10 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
   bool allocate(uint64_t frame_size_bytes, int device_index,
                 std::vector<publisher::GpuBufferPool::SlotResources>& slots,
                 rclcpp::Logger logger) override {
-    if (!ensure_driver(logger)) {
+    detail::ScopedPrimaryContext context(device_index);
+    if (!context.ok()) {
+      RCLCPP_ERROR(logger, "CUDA Driver context setup failed: %s",
+                   detail::cu_result_to_string(context.status()).c_str());
       return false;
     }
 
@@ -420,25 +424,6 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
       slot.mem_handle.fill(0);
       slot.backend = ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC;
     }
-  }
-
- private:
-  /**
-   * @brief Ensure the CUDA driver is initialised before using driver APIs.
-   *
-   * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
-   */
-  bool ensure_driver(const rclcpp::Logger& logger) {
-    static std::once_flag once;
-    static CUresult status = CUDA_SUCCESS;
-    std::call_once(once, [&]() { status = cuInit(0); });
-    if (status != CUDA_SUCCESS) {
-      RCLCPP_ERROR(
-          logger, "cuInit failed: %s",
-          ros2_cuda_ipc_core::detail::cu_result_to_string(status).c_str());
-      return false;
-    }
-    return true;
   }
 };
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include <cuda_runtime_api.h>
+#include <cuda.h>
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/mman.h>
@@ -39,8 +39,8 @@ class GpuBufferManagerTest : public ::testing::Test {
  protected:
   void SetUp() override {
     int count = 0;
-    if (cudaGetDeviceCount(&count) != cudaSuccess || count == 0 ||
-        cudaSetDevice(0) != cudaSuccess) {
+    if (cuInit(0) != CUDA_SUCCESS || cuDeviceGetCount(&count) != CUDA_SUCCESS ||
+        count == 0) {
       GTEST_SKIP() << "CUDA device not available";
     }
     shm_name_ = unique_name();

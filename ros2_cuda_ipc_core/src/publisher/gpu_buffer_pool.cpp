@@ -3,9 +3,13 @@
 
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 
+#include <cstring>
+#include <optional>
+
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/backend/cuda_ipc/memory_backend.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/memory_backend.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
@@ -46,10 +50,10 @@ bool GpuBufferPool::initialise(uint64_t byte_size, int device_index) {
   if (initialised_ || !slots_.empty()) {
     destroy_slots();
   }
-  const cudaError_t set_device_error = cudaSetDevice(device_index);
-  if (set_device_error != cudaSuccess) {
-    RCLCPP_ERROR(logger_, "cudaSetDevice failed: %s",
-                 detail::cuda_error_to_string(set_device_error).c_str());
+  detail::ScopedPrimaryContext context(device_index);
+  if (!context.ok()) {
+    RCLCPP_ERROR(logger_, "CUDA Driver context setup failed: %s",
+                 detail::cu_result_to_string(context.status()).c_str());
     return false;
   }
   byte_size_ = byte_size;
@@ -85,7 +89,13 @@ cudaError_t GpuBufferPool::record_ready(uint32_t slot_id,
   if (!initialised_ || slot == nullptr || slot->event == nullptr) {
     return cudaErrorInvalidResourceHandle;
   }
-  return cudaEventRecord(slot->event, stream);
+  detail::ScopedPrimaryContext context(device_index_);
+  if (!context.ok()) {
+    return cudaErrorUnknown;
+  }
+  return detail::cuda_error_from_driver(
+      cuEventRecord(reinterpret_cast<CUevent>(slot->event),
+                    reinterpret_cast<CUstream>(stream)));
 }
 
 const GpuBufferPool::SlotResources* GpuBufferPool::resources(
@@ -109,33 +119,46 @@ bool GpuBufferPool::allocate_slots() {
     return false;
   }
   for (auto& slot : slots_) {
-    cudaError_t error = cudaEventCreateWithFlags(
-        &slot.event, cudaEventDisableTiming | cudaEventInterprocess);
-    if (error != cudaSuccess) {
-      RCLCPP_ERROR(logger_, "cudaEventCreateWithFlags failed: %s",
-                   detail::cuda_error_to_string(error).c_str());
+    CUevent event = nullptr;
+    CUresult result =
+        cuEventCreate(&event, CU_EVENT_DISABLE_TIMING | CU_EVENT_INTERPROCESS);
+    if (result != CUDA_SUCCESS) {
+      RCLCPP_ERROR(logger_, "cuEventCreate failed: %s",
+                   detail::cu_result_to_string(result).c_str());
       return false;
     }
-    error = cudaIpcGetEventHandle(&slot.event_handle, slot.event);
-    if (error != cudaSuccess) {
-      RCLCPP_ERROR(logger_, "cudaIpcGetEventHandle failed: %s",
-                   detail::cuda_error_to_string(error).c_str());
+    slot.event = reinterpret_cast<cudaEvent_t>(event);
+    CUipcEventHandle handle{};
+    result = cuIpcGetEventHandle(&handle, event);
+    if (result != CUDA_SUCCESS) {
+      RCLCPP_ERROR(logger_, "cuIpcGetEventHandle failed: %s",
+                   detail::cu_result_to_string(result).c_str());
+      (void)cuEventDestroy(event);
+      slot.event = nullptr;
       return false;
     }
+    std::memcpy(&slot.event_handle, &handle, sizeof(handle));
   }
   return true;
 }
 
 void GpuBufferPool::destroy_slots() noexcept {
+  std::optional<detail::ScopedPrimaryContext> context;
   if (device_index_ >= 0) {
-    cudaSetDevice(device_index_);
+    context.emplace(device_index_);
+    if (!context->ok()) {
+      RCLCPP_ERROR(logger_,
+                   "CUDA Driver context setup failed during cleanup: %s",
+                   detail::cu_result_to_string(context->status()).c_str());
+    }
   }
   for (auto& slot : slots_) {
     if (slot.event != nullptr) {
-      const cudaError_t error = cudaEventDestroy(slot.event);
-      if (error != cudaSuccess) {
-        RCLCPP_ERROR(logger_, "cudaEventDestroy failed for slot %u: %s",
-                     slot.index, detail::cuda_error_to_string(error).c_str());
+      const CUresult result =
+          cuEventDestroy(reinterpret_cast<CUevent>(slot.event));
+      if (result != CUDA_SUCCESS) {
+        RCLCPP_ERROR(logger_, "cuEventDestroy failed for slot %u: %s",
+                     slot.index, detail::cu_result_to_string(result).c_str());
       }
       slot.event = nullptr;
     }

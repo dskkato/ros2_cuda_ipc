@@ -28,7 +28,6 @@ class ScopedPrimaryContext {
   CUcontext previous_ = nullptr;
   CUcontext primary_ = nullptr;
   CUdevice device_ = 0;
-  bool retained_ = false;
   bool pushed_ = false;
   CUresult status_ = CUDA_ERROR_NOT_INITIALIZED;
 };

@@ -49,8 +49,9 @@ primary-context guard calls `cuInit` once, retains the device primary context
 for each operation, and restores the caller's context without resetting it.
 This keeps Subscriber IPC interoperation safe when the process also uses
 Runtime-API clients such as PyTorch. Subscriber-only executables link against
-`libcuda`; publisher code that allocates with the Runtime API keeps its own
-explicit `libcudart` link.
+`libcuda`; the core Publisher allocation/event path uses the Driver API as
+well. Application nodes that launch Runtime API kernels may still link
+`libcudart` independently.
 
 ## Memory Backends
 

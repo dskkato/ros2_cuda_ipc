@@ -20,4 +20,9 @@ inline std::string cuda_error_to_string(cudaError_t err) {
 /// Convert a CUDA driver API error into "<name>: <message>".
 std::string cu_result_to_string(CUresult result);
 
+/// Preserve the public Runtime error type while executing Driver API calls.
+/// Driver and Runtime error enums do not have a one-to-one ABI mapping, so
+/// failures intentionally collapse to cudaErrorUnknown.
+cudaError_t cuda_error_from_driver(CUresult result) noexcept;
+
 }  // namespace ros2_cuda_ipc_core::detail

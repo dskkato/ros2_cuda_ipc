@@ -88,10 +88,7 @@ cudaError_t BufferView::enqueue_ready_event(
   const CUresult result =
       cuStreamWaitEvent(reinterpret_cast<CUstream>(stream),
                         reinterpret_cast<CUevent>(ready_evt), 0);
-  // Keep the historical public cudaError_t return type while all work and
-  // error reporting use the Driver API.  CUDA Runtime and Driver error enums
-  // are not ABI-compatible, so only success is translated precisely.
-  return result == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
+  return detail::cuda_error_from_driver(result);
 }
 
 void BufferView::reset() noexcept {

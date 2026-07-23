@@ -5,6 +5,10 @@
 
 namespace ros2_cuda_ipc_core::detail {
 
+cudaError_t cuda_error_from_driver(CUresult result) noexcept {
+  return result == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
+}
+
 std::string cu_result_to_string(CUresult result) {
   const char* name = nullptr;
   const char* desc = nullptr;

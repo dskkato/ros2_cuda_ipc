@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include <cuda_runtime_api.h>
+#include <cuda.h>
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -50,7 +50,8 @@ class PartiallyFailingBackend
 
 TEST(GpuBufferPoolTest, PartialBackendFailureIsRolledBack) {
   int device_count = 0;
-  if (cudaGetDeviceCount(&device_count) != cudaSuccess || device_count == 0) {
+  if (cuInit(0) != CUDA_SUCCESS ||
+      cuDeviceGetCount(&device_count) != CUDA_SUCCESS || device_count == 0) {
     GTEST_SKIP() << "CUDA device not available";
   }
   auto observation = std::make_shared<CleanupObservation>();

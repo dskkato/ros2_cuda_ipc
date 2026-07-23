@@ -438,8 +438,9 @@ memo:
 
 Subscriber の CUDA IPC/VMM 操作では Runtime API を呼び出さない。Driver API の
 エラーは `cuGetErrorString` / `cuGetErrorName` で記録し、`cuInit` と primary
-context の push/pop を操作単位で行う。コアの Publisher 部分は既存 API 互換のため
-Runtime API を維持し、Subscriber-only のリンクには `libcudart` を伝播させない。
+context の push/pop を操作単位で行う。コアの Publisher 部分も同じ Driver API を
+使用する。公開 API の型互換性のため Runtime 型名は残すが、コアライブラリから
+`libcudart` は伝播させない。
 
 エラーハンドリングポリシー:
 Mapper が ROS→View 変換中に cudaIpcOpen*Handle する際の失敗ケースと方針について:
