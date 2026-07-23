@@ -68,12 +68,6 @@ inline void release_imported_resources_best_effort(
   (void)release_imported_resources(imported);
 }
 
-// Compatibility wrapper for the pre-bundle name.
-inline bool release_imported_memory(
-    const ImportedResources& imported) noexcept {
-  return release_imported_resources(imported);
-}
-
 const MemoryImporter& get_memory_importer(uint8_t backend);
 
 }  // namespace ros2_cuda_ipc_core::backend

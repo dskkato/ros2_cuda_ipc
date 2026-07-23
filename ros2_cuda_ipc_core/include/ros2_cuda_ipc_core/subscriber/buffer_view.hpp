@@ -19,7 +19,6 @@
 namespace ros2_cuda_ipc_core::subscriber {
 
 struct BufferView {
-  std::shared_ptr<detail::CudaDeviceContext> context;
   int device_id = 0;
   uint64_t byte_size = 0;
   uint32_t slot_id = 0;

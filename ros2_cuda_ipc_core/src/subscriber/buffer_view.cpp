@@ -19,7 +19,6 @@ BufferView& BufferView::operator=(const BufferView& other) {
 
   reset();
 
-  context = other.context;
   device_id = other.device_id;
   byte_size = other.byte_size;
   slot_id = other.slot_id;
@@ -47,7 +46,6 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
 
   reset();
 
-  context = std::move(other.context);
   device_id = other.device_id;
   byte_size = other.byte_size;
   slot_id = other.slot_id;
@@ -77,7 +75,7 @@ detail::CudaResult<void> BufferView::enqueue_ready_event(
     return detail::CudaResult<void>::success();
   }
   const auto resource_context =
-      imported_resource_ ? imported_resource_->context : context;
+      imported_resource_ ? imported_resource_->context : nullptr;
   if (resource_context) {
     auto guard_result = resource_context->push_current();
     if (!guard_result) {
@@ -98,7 +96,6 @@ detail::CudaResult<void> BufferView::enqueue_ready_event(
 }
 
 void BufferView::reset() noexcept {
-  context.reset();
   imported_resource_.reset();
   mem_payload_.fill(0);
   event_handle_.fill(0);
@@ -115,11 +112,6 @@ void BufferView::reset() noexcept {
 void BufferView::set_imported_resource(
     std::shared_ptr<const backend::ImportedResources> resource) noexcept {
   imported_resource_ = std::move(resource);
-  if (!imported_resource_) {
-    context.reset();
-    return;
-  }
-  context = imported_resource_->context;
 }
 
 void BufferView::set_ipc_handles(
