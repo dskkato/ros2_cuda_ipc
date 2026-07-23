@@ -4,11 +4,11 @@
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 
 #include <cstring>
+#include <optional>
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/backend/cuda_ipc/memory_backend.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/memory_backend.hpp"
-#include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 namespace {
@@ -47,12 +47,6 @@ bool GpuBufferPool::initialise(uint64_t byte_size, int device_index) {
   }
   if (initialised_ || !slots_.empty()) {
     destroy_slots();
-  }
-  const cudaError_t set_device_error = cudaSetDevice(device_index);
-  if (set_device_error != cudaSuccess) {
-    RCLCPP_ERROR(logger_, "cudaSetDevice failed: %s",
-                 detail::cuda_error_to_string(set_device_error).c_str());
-    return false;
   }
   auto context_result = detail::CudaDeviceContext::retain_primary(device_index);
   if (!context_result) {
@@ -120,20 +114,30 @@ const GpuBufferPool::SlotResources* GpuBufferPool::resources(
 }
 
 bool GpuBufferPool::allocate_slots() {
+  if (!context_) {
+    RCLCPP_ERROR(logger_, "CUDA primary context is unavailable");
+    return false;
+  }
   if (!memory_backend_) {
     memory_backend_ = make_backend(backend_kind_);
   }
   if (!memory_backend_) {
     return false;
   }
-  if (!memory_backend_->allocate(byte_size_, device_index_, slots_, logger_)) {
-    memory_backend_->destroy(slots_, logger_);
-    memory_backend_.reset();
-    return false;
-  }
-  if (!context_) {
-    RCLCPP_ERROR(logger_, "CUDA primary context is unavailable");
-    return false;
+  {
+    auto memory_guard_result = context_->push_current();
+    if (!memory_guard_result) {
+      RCLCPP_ERROR(logger_, "Failed to activate CUDA context: %s",
+                   memory_guard_result.error().to_string().c_str());
+      return false;
+    }
+    auto memory_guard = std::move(memory_guard_result).value();
+    if (!memory_backend_->allocate(byte_size_, device_index_, slots_,
+                                   logger_)) {
+      memory_backend_->destroy(slots_, logger_);
+      memory_backend_.reset();
+      return false;
+    }
   }
   auto guard_result = context_->push_current();
   if (!guard_result) {
@@ -166,9 +170,7 @@ bool GpuBufferPool::allocate_slots() {
 }
 
 void GpuBufferPool::destroy_slots() noexcept {
-  if (device_index_ >= 0) {
-    cudaSetDevice(device_index_);
-  }
+  std::optional<detail::CudaContextGuard> guard;
   if (context_) {
     auto guard_result = context_->push_current();
     if (!guard_result) {
@@ -176,7 +178,7 @@ void GpuBufferPool::destroy_slots() noexcept {
                    "Failed to activate CUDA context for event cleanup: %s",
                    guard_result.error().to_string().c_str());
     } else {
-      auto guard = std::move(guard_result).value();
+      guard.emplace(std::move(guard_result).value());
       for (auto& slot : slots_) {
         if (slot.event != nullptr) {
           const CUresult result = cuEventDestroy(slot.event);
