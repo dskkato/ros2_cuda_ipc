@@ -173,7 +173,7 @@ class PreviewNode : public rclcpp::Node {
       NvtxScopedRange wait_range("PreviewNode::wait_input_event");
       auto result = view.enqueue_ready_event(stream_);
       if (!result) {
-        RCLCPP_WARN(get_logger(), "cuStreamWaitEvent failed: %s",
+        RCLCPP_WARN(get_logger(), "enqueue_ready_event failed: %s",
                     result.error().to_string().c_str());
         cudaEventDestroy(copy_start);
         cudaEventDestroy(copy_stop);

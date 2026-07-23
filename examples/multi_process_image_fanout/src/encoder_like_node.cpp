@@ -163,7 +163,7 @@ class EncoderLikeNode : public rclcpp::Node {
       NvtxScopedRange wait_range("EncoderLikeNode::wait_input_event");
       auto result = view.enqueue_ready_event(stream_);
       if (!result) {
-        RCLCPP_WARN(get_logger(), "cuStreamWaitEvent failed: %s",
+        RCLCPP_WARN(get_logger(), "enqueue_ready_event failed: %s",
                     result.error().to_string().c_str());
         cudaEventDestroy(kernel_start);
         cudaEventDestroy(kernel_stop);

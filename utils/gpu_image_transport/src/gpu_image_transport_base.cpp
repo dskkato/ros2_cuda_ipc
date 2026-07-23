@@ -73,7 +73,7 @@ void GpuImageTransportNodeBase::on_image(
     NvtxScopedRange wait_range("GpuImageTransportNodeBase::stream_wait_event");
     auto result = view.enqueue_ready_event(stream_);
     if (!result) {
-      RCLCPP_ERROR(get_logger(), "cuStreamWaitEvent failed: %s",
+      RCLCPP_ERROR(get_logger(), "enqueue_ready_event failed: %s",
                    result.error().to_string().c_str());
       return;
     }
