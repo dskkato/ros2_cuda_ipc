@@ -58,11 +58,12 @@ void IpcHandleCache::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     entries.swap(cache_);
   }
-for (const auto& entry : entries) {
-  try {
-    release_fn_(entry.second);
-  } catch (...) {
-    // Best-effort cleanup; keep cache clear/destruction noexcept.
+  for (const auto& entry : entries) {
+    try {
+      release_fn_(entry.second);
+    } catch (...) {
+      // Best-effort cleanup; keep cache clear/destruction noexcept.
+    }
   }
 }
 
