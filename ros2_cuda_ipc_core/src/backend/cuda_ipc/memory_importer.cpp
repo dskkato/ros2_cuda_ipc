@@ -6,16 +6,24 @@
 #include <cstring>
 
 #include "rclcpp/logging.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend::cuda_ipc {
 
 namespace {
 
-cudaIpcMemHandle_t to_cuda_mem_handle(
+CUipcMemHandle to_driver_mem_handle(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
-  cudaIpcMemHandle_t handle{};
+  CUipcMemHandle handle{};
   std::memcpy(&handle, msg.mem_handle.data(), sizeof(handle));
+  return handle;
+}
+
+CUipcEventHandle to_driver_event_handle(const cudaIpcEventHandle_t& event) {
+  CUipcEventHandle handle{};
+  std::memcpy(&handle, &event, sizeof(handle));
   return handle;
 }
 
@@ -26,23 +34,36 @@ std::optional<ImportedMemory> MemoryImporter::import(
     const cudaIpcEventHandle_t& event_handle,
     const rclcpp::Logger& logger) const {
   ImportedMemory imported;
-
-  auto err = cudaIpcOpenEventHandle(&imported.event, event_handle);
-  if (err != cudaSuccess) {
-    RCLCPP_WARN(logger, "cudaIpcOpenEventHandle failed: %s",
-                cudaGetErrorString(err));
+  imported.device_id = static_cast<int>(msg.device_id);
+  detail::ScopedPrimaryContext context(imported.device_id);
+  if (!context.ok()) {
+    RCLCPP_WARN(logger, "CUDA Driver context setup failed: %s",
+                detail::cu_result_to_string(context.status()).c_str());
     return std::nullopt;
   }
 
-  const cudaIpcMemHandle_t mem_handle = to_cuda_mem_handle(msg);
-  err = cudaIpcOpenMemHandle(&imported.dev_ptr, mem_handle,
-                             cudaIpcMemLazyEnablePeerAccess);
-  if (err != cudaSuccess) {
-    RCLCPP_WARN(logger, "cudaIpcOpenMemHandle failed: %s",
-                cudaGetErrorString(err));
-    cudaEventDestroy(imported.event);
+  CUevent event = nullptr;
+  CUresult result =
+      cuIpcOpenEventHandle(&event, to_driver_event_handle(event_handle));
+  if (result != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuIpcOpenEventHandle failed: %s",
+                detail::cu_result_to_string(result).c_str());
     return std::nullopt;
   }
+  imported.event = reinterpret_cast<cudaEvent_t>(event);
+
+  CUdeviceptr device_ptr = 0;
+  result = cuIpcOpenMemHandle(&device_ptr, to_driver_mem_handle(msg),
+                              CU_IPC_MEM_LAZY_ENABLE_PEER_ACCESS);
+  if (result != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuIpcOpenMemHandle failed: %s",
+                detail::cu_result_to_string(result).c_str());
+    (void)cuEventDestroy(event);
+    return std::nullopt;
+  }
+  imported.dev_ptr =
+      reinterpret_cast<void*>(static_cast<uintptr_t>(device_ptr));
+  imported.driver_owned = true;
 
   return imported;
 }

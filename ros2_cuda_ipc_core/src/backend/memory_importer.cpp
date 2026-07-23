@@ -3,25 +3,37 @@
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 
+#include <cstdint>
+
 #include "ros2_cuda_ipc_core/backend/cuda_ipc/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend {
 
 void release_imported_memory(const ImportedMemory& imported) noexcept {
+  if (!imported.driver_owned) {
+    return;
+  }
+  detail::ScopedPrimaryContext context(imported.device_id);
+  if (!context.ok()) {
+    return;
+  }
   if (imported.vmm_address != 0 && imported.allocation_size != 0) {
-    cuMemUnmap(imported.vmm_address, imported.allocation_size);
-    cuMemAddressFree(imported.vmm_address, imported.allocation_size);
+    (void)cuMemUnmap(imported.vmm_address, imported.allocation_size);
+    (void)cuMemAddressFree(imported.vmm_address, imported.allocation_size);
   }
   if (imported.vmm_allocation != 0) {
-    cuMemRelease(imported.vmm_allocation);
+    (void)cuMemRelease(imported.vmm_allocation);
   }
   if (imported.vmm_address == 0 && imported.dev_ptr != nullptr) {
-    cudaIpcCloseMemHandle(imported.dev_ptr);
+    (void)cuIpcCloseMemHandle(static_cast<CUdeviceptr>(
+        reinterpret_cast<uintptr_t>(imported.dev_ptr)));
   }
   if (imported.event != nullptr) {
-    cudaEventDestroy(imported.event);
+    (void)cuEventDestroy(reinterpret_cast<CUevent>(imported.event));
   }
 }
 

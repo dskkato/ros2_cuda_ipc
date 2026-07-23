@@ -25,6 +25,7 @@ endif()
 
 add_library(${PROJECT_NAME}
   src/detail/cuda_util.cpp
+  src/detail/cuda_driver_context.cpp
   src/publisher/gpu_buffer_manager.cpp
   src/publisher/gpu_buffer_pool.cpp
   src/backend/memory_importer.cpp
@@ -58,7 +59,6 @@ target_link_libraries(${PROJECT_NAME}
     ${ros2_cuda_ipc_msgs_TARGETS}
     ${sensor_msgs_TARGETS}
     ${std_msgs_TARGETS}
-    CUDA::cudart
     CUDA::cuda_driver
     ${UUID_LIB}
 )
@@ -80,6 +80,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_lease_handle ${PROJECT_NAME})
   ament_add_gtest(test_ipc_handle_cache test/test_ipc_handle_cache.cpp)
   target_link_libraries(test_ipc_handle_cache ${PROJECT_NAME})
+  ament_add_gtest(test_driver_api test/test_driver_api.cpp)
+  target_link_libraries(test_driver_api ${PROJECT_NAME})
   # mapper tests
   ament_add_gtest(test_buffer_view_mapper test/mapper/test_buffer_view_mapper.cpp)
   target_link_libraries(test_buffer_view_mapper ${PROJECT_NAME})
@@ -92,9 +94,9 @@ if(BUILD_TESTING)
   target_link_libraries(test_publisher_messages ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_manager
                   test/test_gpu_buffer_manager.cpp)
-  target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME})
+  target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME} CUDA::cudart)
   ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
-  target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
+  target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME} CUDA::cudart)
   ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
   target_link_libraries(test_lease_manager ${PROJECT_NAME})
 endif()

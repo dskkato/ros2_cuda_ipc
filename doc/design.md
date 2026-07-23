@@ -414,9 +414,11 @@ Mapper の責務は **Lease の取得、MemoryImporter 経由の IPC/VMM ハン�
 ROS message から View へのアプリケーションメタデータコピー**。
 
 * GPU データ本体のコピーは行わない。ROS msg と View の間では、shape や strides などのメタデータだけをコピーする。
-* 同期 (cudaStreamWaitEvent) はユーザ側の責務。
+* 同期 (`cuStreamWaitEvent`) はユーザ側の責務。公開 API は既存互換の
+  `cudaStream_t` / `cudaError_t` を維持し、内部で Driver API の
+  `CUstream` / `CUevent` に変換する。
 * 同一 (mem\_handle,event\_handle) の組み合わせをプロセス内でキャッシュし、
-  ハンドルごとの `cudaIpcOpen*Handle` や VMM import を初回だけ実行する。これにより、
+  ハンドルごとの Driver API `cuIpcOpen*Handle` や VMM import を初回だけ実行する。これにより、
   subscriber がフレームごとに IPC open/close を繰り返さずに済み、大きな
   API 開始コストを避けている。
   * キャッシュのライフタイムはプロセス存続中。送信側がメモリを再初期化した
@@ -431,7 +433,13 @@ Publisher/Subscriber の役割:
 * Subscriber は ROS message を受け取り、既定 mapper または Mapper オブジェクトを明示的に呼び出して View を取得する。
 
 memo:
-* cudaIpcOpenEventHandle で開いたイベントの破棄は受信側では不要（破棄は送信側が責任を持つ）。
+* `cuIpcOpenEventHandle` で開いたイベントはキャッシュが所有し、重複リソースを
+  残さず `cuEventDestroy` で解放する。送信側イベントの所有権とは分離される。
+
+Subscriber の CUDA IPC/VMM 操作では Runtime API を呼び出さない。Driver API の
+エラーは `cuGetErrorString` / `cuGetErrorName` で記録し、`cuInit` と primary
+context の push/pop を操作単位で行う。コアの Publisher 部分は既存 API 互換のため
+Runtime API を維持し、Subscriber-only のリンクには `libcudart` を伝播させない。
 
 エラーハンドリングポリシー:
 Mapper が ROS→View 変換中に cudaIpcOpen*Handle する際の失敗ケースと方針について:

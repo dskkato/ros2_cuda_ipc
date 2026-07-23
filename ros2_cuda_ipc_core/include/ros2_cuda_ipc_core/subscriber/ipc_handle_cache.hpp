@@ -41,6 +41,7 @@ class IpcHandleCache {
 
   explicit IpcHandleCache(
       ReleaseFn release_fn = backend::release_imported_memory);
+  ~IpcHandleCache() noexcept;
 
   static IpcHandleCache& instance();
 

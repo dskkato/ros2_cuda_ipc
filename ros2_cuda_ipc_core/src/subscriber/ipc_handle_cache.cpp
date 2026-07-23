@@ -3,6 +3,8 @@
 
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 
+#include <vector>
+
 namespace ros2_cuda_ipc_core::subscriber {
 
 std::size_t IpcHandleKeyHash::operator()(
@@ -23,6 +25,25 @@ std::size_t IpcHandleKeyHash::operator()(
 
 IpcHandleCache::IpcHandleCache(ReleaseFn release_fn)
     : release_fn_(std::move(release_fn)) {}
+
+IpcHandleCache::~IpcHandleCache() noexcept {
+  std::vector<backend::ImportedMemory> resources;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    resources.reserve(cache_.size());
+    for (const auto& entry : cache_) {
+      resources.push_back(entry.second);
+    }
+    cache_.clear();
+  }
+  for (const auto& resource : resources) {
+    try {
+      release_fn_(resource);
+    } catch (...) {
+      // Cleanup is best effort and must never throw during process teardown.
+    }
+  }
+}
 
 IpcHandleCache& IpcHandleCache::instance() {
   static IpcHandleCache cache;

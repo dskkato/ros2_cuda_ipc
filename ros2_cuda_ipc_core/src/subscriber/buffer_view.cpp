@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <cstring>
 
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
+
 namespace ros2_cuda_ipc_core::subscriber {
 
 BufferView::~BufferView() { reset(); }
@@ -62,6 +65,7 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
   handles_ready_ = other.handles_ready_;
   other.dev_ptr = nullptr;
   other.ready_evt = nullptr;
+  other.device_id = 0;
   other.byte_size = 0;
   other.slot_id = 0;
   other.generation = 0;
@@ -77,7 +81,17 @@ cudaError_t BufferView::enqueue_ready_event(
   if (!ready_evt) {
     return cudaSuccess;
   }
-  return cudaStreamWaitEvent(stream, ready_evt, 0);
+  detail::ScopedPrimaryContext context(device_id);
+  if (!context.ok()) {
+    return cudaErrorUnknown;
+  }
+  const CUresult result =
+      cuStreamWaitEvent(reinterpret_cast<CUstream>(stream),
+                        reinterpret_cast<CUevent>(ready_evt), 0);
+  // Keep the historical public cudaError_t return type while all work and
+  // error reporting use the Driver API.  CUDA Runtime and Driver error enums
+  // are not ABI-compatible, so only success is translated precisely.
+  return result == CUDA_SUCCESS ? cudaSuccess : cudaErrorUnknown;
 }
 
 void BufferView::reset() noexcept {
@@ -88,6 +102,7 @@ void BufferView::reset() noexcept {
   generation = 0;
   shm_name.clear();
   publisher_instance_id = {};
+  device_id = 0;
   handles_ready_ = false;
   backend_ = transport::MemoryBackendKind::CUDA_IPC;
   lease.reset();

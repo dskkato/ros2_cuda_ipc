@@ -43,6 +43,15 @@ Receiving code subscribes to `ros2_cuda_ipc_msgs::msg::GpuImage` and calls the
 mapper explicitly. Mapping acquires the lease and imports or looks up the GPU
 resource before returning an `ros2_cuda_ipc_core::image::ImageView`.
 
+Subscriber IPC operations use the CUDA Driver API (`cuIpcOpen*`,
+`cuIpcCloseMemHandle`, `cuEventDestroy`, and `cuStreamWaitEvent`). A small
+primary-context guard calls `cuInit` once, retains the device primary context
+for each operation, and restores the caller's context without resetting it.
+This keeps Subscriber IPC interoperation safe when the process also uses
+Runtime-API clients such as PyTorch. Subscriber-only executables link against
+`libcuda`; publisher code that allocates with the Runtime API keeps its own
+explicit `libcudart` link.
+
 ## Memory Backends
 
 `ros2_cuda_ipc` supports two GPU memory sharing backends.

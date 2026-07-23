@@ -18,6 +18,8 @@ namespace ros2_cuda_ipc_core::backend {
 struct ImportedMemory {
   void* dev_ptr = nullptr;
   cudaEvent_t event = nullptr;
+  int device_id = 0;
+  bool driver_owned = false;
   CUdeviceptr vmm_address = 0;
   CUmemGenericAllocationHandle vmm_allocation = 0;
   std::size_t allocation_size = 0;

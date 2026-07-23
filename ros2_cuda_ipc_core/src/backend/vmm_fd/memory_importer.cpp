@@ -10,12 +10,12 @@
 
 #include <cerrno>
 #include <cstring>
-#include <mutex>
 #include <optional>
 #include <string>
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/payload.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
@@ -33,19 +33,6 @@ std::size_t align_up_size(std::size_t value, std::size_t alignment) {
     return value;
   }
   return value + alignment - remainder;
-}
-
-bool ensure_cuda_driver_initialised(const rclcpp::Logger& logger) {
-  static std::once_flag once;
-  static CUresult init_status = CUDA_SUCCESS;
-  std::call_once(once, []() { init_status = cuInit(0); });
-  if (init_status != CUDA_SUCCESS) {
-    RCLCPP_ERROR(
-        logger, "cuInit failed: %s",
-        ros2_cuda_ipc_core::detail::cu_result_to_string(init_status).c_str());
-    return false;
-  }
-  return true;
 }
 
 std::optional<std::string> parse_vmm_payload(
@@ -149,12 +136,15 @@ std::optional<ImportedMemory> MemoryImporter::import(
     return std::nullopt;
   }
 
-  if (!ensure_cuda_driver_initialised(logger)) {
+  ImportedMemory imported;
+  imported.device_id = static_cast<int>(msg.device_id);
+  detail::ScopedPrimaryContext context(imported.device_id);
+  if (!context.ok()) {
+    RCLCPP_WARN(logger, "CUDA Driver context setup failed: %s",
+                detail::cu_result_to_string(context.status()).c_str());
     ::close(fd_opt.value());
     return std::nullopt;
   }
-
-  ImportedMemory imported;
 
   void* os_handle =
       reinterpret_cast<void*>(static_cast<intptr_t>(fd_opt.value()));
@@ -227,16 +217,21 @@ std::optional<ImportedMemory> MemoryImporter::import(
     return std::nullopt;
   }
 
-  auto err = cudaIpcOpenEventHandle(&imported.event, event_handle);
-  if (err != cudaSuccess) {
-    RCLCPP_WARN(logger, "cudaIpcOpenEventHandle failed: %s",
-                cudaGetErrorString(err));
+  CUipcEventHandle driver_event_handle{};
+  std::memcpy(&driver_event_handle, &event_handle, sizeof(driver_event_handle));
+  CUevent event = nullptr;
+  cu_res = cuIpcOpenEventHandle(&event, driver_event_handle);
+  if (cu_res != CUDA_SUCCESS) {
+    RCLCPP_WARN(logger, "cuIpcOpenEventHandle failed: %s",
+                detail::cu_result_to_string(cu_res).c_str());
     cuMemUnmap(imported.vmm_address, imported.allocation_size);
     cuMemAddressFree(imported.vmm_address, imported.allocation_size);
     cuMemRelease(imported.vmm_allocation);
     return std::nullopt;
   }
 
+  imported.event = reinterpret_cast<cudaEvent_t>(event);
+  imported.driver_owned = true;
   imported.dev_ptr = reinterpret_cast<void*>(imported.vmm_address);
   return imported;
 }
