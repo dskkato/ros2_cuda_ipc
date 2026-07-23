@@ -47,6 +47,12 @@ TEST(CudaDriverContext, ErrorFormattingUsesDriverApi) {
   EXPECT_FALSE(error.description().empty());
   EXPECT_NE(error.to_string().find("CUDA_ERROR_INVALID_CONTEXT"),
             std::string::npos);
+
+  const auto unknown_code = static_cast<CUresult>(999999);
+  const CudaDriverError unknown_error(unknown_code);
+  const auto numeric_code = std::to_string(static_cast<int>(unknown_code));
+  EXPECT_NE(unknown_error.name().find(numeric_code), std::string::npos);
+  EXPECT_NE(unknown_error.description().find(numeric_code), std::string::npos);
 }
 
 TEST(CudaDriverContext, InitializationIsSafeForConcurrentCallers) {

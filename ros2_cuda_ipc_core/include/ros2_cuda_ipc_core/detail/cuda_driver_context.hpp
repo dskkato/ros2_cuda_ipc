@@ -106,6 +106,13 @@ class CudaContextGuard;
  */
 class CudaDeviceContext {
  public:
+  /**
+   * @brief Retain the primary context for a validated CUDA device ordinal.
+   *
+   * CUDA failures are returned in the result. Allocation of the wrapper can
+   * still throw std::bad_alloc after the CUDA retain succeeds; that path
+   * balances the retain before propagating the exception.
+   */
   static CudaResult<std::shared_ptr<CudaDeviceContext>> retain_primary(
       int device_id);
 

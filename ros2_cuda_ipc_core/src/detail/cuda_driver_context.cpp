@@ -20,7 +20,8 @@ rclcpp::Logger cuda_context_logger() {
 std::string CudaDriverError::name() const {
   const char* value = nullptr;
   if (cuGetErrorName(result_, &value) != CUDA_SUCCESS || value == nullptr) {
-    return "CUDA_ERROR_UNKNOWN";
+    return "CUDA_ERROR_UNKNOWN(" + std::to_string(static_cast<int>(result_)) +
+           ")";
   }
   return value;
 }
@@ -28,7 +29,8 @@ std::string CudaDriverError::name() const {
 std::string CudaDriverError::description() const {
   const char* value = nullptr;
   if (cuGetErrorString(result_, &value) != CUDA_SUCCESS || value == nullptr) {
-    return "unknown CUDA driver error";
+    return "unknown CUDA driver error (CUresult=" +
+           std::to_string(static_cast<int>(result_)) + ")";
   }
   return value;
 }
@@ -138,13 +140,13 @@ CudaDeviceContext::~CudaDeviceContext() noexcept {
   if (result != CUDA_SUCCESS) {
     try {
       RCLCPP_ERROR(cuda_context_logger(),
-                   "cuDevicePrimaryCtxRelease(device=%d) failed: %s",
+                   "cuDevicePrimaryCtxRelease(device_id=%d) failed: %s",
                    device_id_, CudaDriverError(result).to_string().c_str());
     } catch (...) {
       try {
         RCLCPP_ERROR(cuda_context_logger(),
-                     "cuDevicePrimaryCtxRelease(device=%d) failed with an "
-                     "unformattable CUDA Driver API error",
+                     "cuDevicePrimaryCtxRelease(device_id=%d) failed with "
+                     "an unformattable CUDA Driver API error",
                      device_id_);
       } catch (...) {
         // A noexcept destructor must not throw while reporting cleanup.
