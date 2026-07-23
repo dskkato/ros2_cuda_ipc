@@ -23,7 +23,7 @@ CUipcMemHandle to_cuda_mem_handle(
 
 }  // namespace
 
-std::optional<ImportedMemory> MemoryImporter::import(
+std::optional<ImportedResources> MemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
     const CUipcEventHandle& event_handle, const rclcpp::Logger& logger) const {
   auto context_result = detail::CudaDeviceContext::retain_primary(
@@ -42,7 +42,7 @@ std::optional<ImportedMemory> MemoryImporter::import(
   }
   auto guard = std::move(guard_result).value();
 
-  ImportedMemory imported;
+  ImportedResources imported;
   imported.context = context;
 
   CUresult result = cuIpcOpenEventHandle(&imported.event, event_handle);

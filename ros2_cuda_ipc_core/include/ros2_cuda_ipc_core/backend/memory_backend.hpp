@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "rclcpp/logger.hpp"
+#include "ros2_cuda_ipc_core/detail/interprocess_event.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend {
@@ -21,8 +22,7 @@ struct SlotBackendState {
 struct SlotResources {
   uint32_t index = 0;
   void* device_ptr = nullptr;
-  CUevent event = nullptr;
-  transport::EventHandlePayload event_handle{};
+  std::unique_ptr<detail::InterprocessEvent> ready_event;
   transport::MemoryBackendKind backend = transport::MemoryBackendKind::CUDA_IPC;
   transport::MemoryHandlePayload mem_handle{};
   std::shared_ptr<SlotBackendState> backend_state;

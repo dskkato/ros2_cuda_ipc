@@ -99,15 +99,17 @@ memo:
 
 #### BufferView
 
-  * BufferCore.msg を Subscriber mapper が import した結果 (dev_ptr, ready_evt, LeaseHandle)。
+  * BufferCore.msg を Subscriber mapper が import した結果（ImportedResources、LeaseHandle）。
   * データの解釈は持たない。
 
 ```cpp
 // BufferView: GPUバッファそのものの借用ビュー（意味付けなし）
 struct BufferView {
-  // === リソース（必ず有効時は同一 device 上） ===
-  void*       dev_ptr = nullptr;     // デバイス先頭
-  CUevent     ready_evt = nullptr;   // "書き終わり" を示すイベント（他プロセス発行）
+  // === リソースのaccessor（所有権はImportedResourcesに集約） ===
+  template<class T = void> T* data() const noexcept;
+  void* device_ptr() const noexcept;
+  CUevent ready_event() const noexcept;
+  bool valid() const noexcept;
   int         device_id = 0;
   uint64_t    byte_size = 0;
 
@@ -126,14 +128,10 @@ struct BufferView {
   BufferView(BufferView&&) noexcept;
   BufferView& operator=(BufferView&&) noexcept;
 
-  // === 最小アクセサ／ユーティリティ ===
-  template<class T = void> T* data() const noexcept { return static_cast<T*>(dev_ptr); }
-  bool valid() const noexcept { return dev_ptr != nullptr; }
-
   // 自分のストリームに書き終わりイベントを依存として積む
   detail::CudaResult<void> enqueue_ready_event(cudaStream_t s) const noexcept;
 
-  void reset() noexcept;             // dev_ptr/evt をリセットし lease を解放
+  void reset() noexcept;             // resourceとleaseを解放
   void set_ipc_handles(MemoryBackendKind backend,
                        const uint8_t* payload_bytes,
                        std::size_t payload_size,
@@ -141,6 +139,7 @@ struct BufferView {
   bool handles_ready() const noexcept;
 
 private:
+  std::shared_ptr<const backend::ImportedResources> imported_resource_;
   MemoryHandlePayload mem_payload_{};  // Publisher から渡されたハンドル
   EventHandlePayload event_handle_{};
   bool handles_ready_ = false;
@@ -154,7 +153,7 @@ private:
   メタデータだけを持つ。
 * データの意味付けを持たない：幅やレイアウトは一切保持しない（下位互換性と拡張性を保つため）。
 
-BufferView 自体はハンドルを開かず、受信側 mapper が構築した dev_ptr / ready_evt と
+BufferView 自体はハンドルを開かず、受信側 mapper が構築した ImportedResources と
 LeaseHandle を保持する。mapper はプロセス内キャッシュを使って同じハンドルの open/import を
 初回だけ実行し、フレームごとの open/close コストを排除する。
 
@@ -221,6 +220,13 @@ GPU メモリを「Shareable FD」として扱い、`backend=VMM_FD` で配布�
      stale socket を取り除く。socket path は uuid により一意である前提だが、所有者確認はまだ行っていない。
    * 今後の課題として、別 Publisher の socket を誤って削除しないよう、shm\_name やプロセス識別子を含む
      管理情報で socket の所有者を確認してから削除する仕組みを検討する。
+
+`IpcHandleCache` は import 済み resource のインデックスであり、resource 自体を強く所有しない。
+memory mapping、ready event、CUDA context、必要な VMM state は `backend::ImportedResources` という
+一つの bundle として `std::shared_ptr` で管理し、`BufferView` が active な間だけ生存させる。
+cache は `std::weak_ptr` を保持するため、view がなくなった resource は次回 lookup 時に再 import でき、
+Publisher restart による古い entry の蓄積も避けられる。`clear()` は cache の索引だけを削除し、
+既存の view の lifetime には影響しない。
 
 この設計により、GPU メモリの配布方法だけを MemoryBackend/MemoryImporter で差し替え、ROS 2 メッセージ形式と
 BufferView と Mapper の API を維持したまま Jetson Orin をサポートできる。
@@ -418,19 +424,20 @@ ROS message から View へのアプリケーションメタデータコピー**
   ハンドルごとの `cudaIpcOpen*Handle` や VMM import を初回だけ実行する。これにより、
   subscriber がフレームごとに IPC open/close を繰り返さずに済み、大きな
   API 開始コストを避けている。
-  * キャッシュのライフタイムはプロセス存続中。送信側がメモリを再初期化した
-    場合は新しいハンドルが publish されるため、受信側も自然に再オープンする。
-  * `BufferView` は破棄時に IPC ハンドルを閉じない。キャッシュと同じ
-    ライフタイムで利用する前提のため、ハンドルの解放は送信側に委ねる。
+  * キャッシュは weak index としてプロセス内で共有する。resource の実体は
+    active な `BufferView` が保持し、view がなくなった entry は次回 lookup 時に再 import する。
+  * `BufferView` は `ImportedResources` と LeaseHandle を保持し、最後の view が
+    破棄された時点で受信側の import 済み resource を解放する。
 
 Publisher/Subscriber の役割:
 * Publisher: cudaIpcGet*Handle でハンドル生成 → msg に格納。
 * Publisher (VMM-FD): VMM allocation を FD export し、uuid 経由の Unix domain socket で FD を配布する。
-* Subscriber: Mapper が BufferView を構築し、`BufferCore.backend` に応じて `backend::MemoryImporter` から dev_ptr/event を取得する。
+* Subscriber: Mapper が BufferView を構築し、`BufferCore.backend` に応じて `backend::MemoryImporter` から `ImportedResources` を取得する。
 * Subscriber は ROS message を受け取り、既定 mapper または Mapper オブジェクトを明示的に呼び出して View を取得する。
 
 memo:
-* cudaIpcOpenEventHandle で開いたイベントの破棄は受信側では不要（破棄は送信側が責任を持つ）。
+* `cudaIpcOpenEventHandle` で開いたイベントは受信側の `ImportedResources` と同じ
+  lifetime で破棄し、送信側のイベントは `InterprocessEvent` が別に管理する。
 
 エラーハンドリングポリシー:
 Mapper が ROS→View 変換中に cudaIpcOpen*Handle する際の失敗ケースと方針について:
@@ -446,7 +453,7 @@ Mapper が ROS→View 変換中に cudaIpcOpen*Handle する際の失敗ケー�
     * 同様に cudaErrorInvalidResourceHandle。
 
 **推奨ポリシー**
-* Mapper 内では例外を投げず、「無効な View (dev_ptr==nullptr)」を返す。
+* Mapper 内では例外を投げず、「無効な View (`device_ptr()==nullptr`)」を返す。
 * Subscriber 側のコールバックで view.valid() を必ず確認。
   * 無効ならログ出力して破棄。
   * QoS が reliable でも再送は要求しない（上位レイヤの責務にする）。
@@ -478,7 +485,7 @@ void on_message(const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
   * バッファプール管理、書き込み、cudaEventRecord、ハンドル取得、ROS msg 生成・publish。
 * Subscriber
   * raw message を受け取り、`ImageViewMapper::map()` / `PointCloud2ViewMapper::map()` を呼ぶ。
-  * アプリは View の `dev_ptr` と `ready_evt` を使い、任意のストリームで同期・処理。
+  * アプリは View の `device_ptr()` / `data<T>()` と `enqueue_ready_event()` を使い、任意のストリームで同期・処理。
 
 ## 命名規則
 
@@ -504,5 +511,5 @@ void on_message(const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
    * GpuImage/GpuPointCloud2 を publish
 2. Subscriber:
    * ROS msg を受信 → Mapper が View を返す
-   * `cudaStreamWaitEvent(my_stream, view.ready_evt, 0)`
-   * カーネル呼び出しで view.dev_ptr を利用
+   * `view.enqueue_ready_event(my_stream)`
+   * カーネル呼び出しで `view.device_ptr()` または `view.data<T>()` を利用

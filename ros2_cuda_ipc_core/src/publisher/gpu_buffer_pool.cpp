@@ -3,7 +3,6 @@
 
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 
-#include <cstring>
 #include <optional>
 
 #include "rclcpp/logging.hpp"
@@ -57,7 +56,8 @@ bool GpuBufferPool::initialise(uint64_t byte_size, int device_index) {
   context_ = std::move(context_result).value();
   byte_size_ = byte_size;
   device_index_ = device_index;
-  slots_.assign(slot_count_, {});
+  slots_.clear();
+  slots_.resize(slot_count_);
   for (std::size_t i = 0; i < slots_.size(); ++i) {
     slots_[i].index = static_cast<uint32_t>(i);
   }
@@ -85,24 +85,11 @@ void* GpuBufferPool::device_ptr(uint32_t slot_id) const noexcept {
 detail::CudaResult<void> GpuBufferPool::record_ready(
     uint32_t slot_id, cudaStream_t stream) noexcept {
   const auto* slot = resources(slot_id);
-  if (!initialised_ || slot == nullptr || slot->event == nullptr) {
+  if (!initialised_ || slot == nullptr || !slot->ready_event) {
     return detail::CudaResult<void>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
-  if (!context_) {
-    return detail::CudaResult<void>::failure(
-        detail::CudaDriverError(CUDA_ERROR_INVALID_CONTEXT));
-  }
-  auto guard_result = context_->push_current();
-  if (!guard_result) {
-    return detail::CudaResult<void>::failure(guard_result.error());
-  }
-  auto guard = std::move(guard_result).value();
-  const CUresult result = cuEventRecord(slot->event, stream);
-  if (result != CUDA_SUCCESS) {
-    return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
-  }
-  return detail::CudaResult<void>::success();
+  return slot->ready_event->record(stream);
 }
 
 const GpuBufferPool::SlotResources* GpuBufferPool::resources(
@@ -139,37 +126,22 @@ bool GpuBufferPool::allocate_slots() {
       return false;
     }
   }
-  auto guard_result = context_->push_current();
-  if (!guard_result) {
-    RCLCPP_ERROR(logger_, "Failed to activate CUDA context: %s",
-                 guard_result.error().to_string().c_str());
-    return false;
-  }
-  auto guard = std::move(guard_result).value();
   for (auto& slot : slots_) {
-    CUresult result = cuEventCreate(
-        &slot.event, CU_EVENT_DISABLE_TIMING | CU_EVENT_INTERPROCESS);
-    if (result != CUDA_SUCCESS) {
-      RCLCPP_ERROR(logger_, "cuEventCreate failed: %s",
-                   detail::CudaDriverError(result).to_string().c_str());
+    auto event_result = detail::InterprocessEvent::create(context_);
+    if (!event_result) {
+      RCLCPP_ERROR(logger_, "Failed to create interprocess event: %s",
+                   event_result.error().to_string().c_str());
       return false;
     }
-    CUipcEventHandle event_handle{};
-    result = cuIpcGetEventHandle(&event_handle, slot.event);
-    if (result != CUDA_SUCCESS) {
-      RCLCPP_ERROR(logger_, "cuIpcGetEventHandle failed: %s",
-                   detail::CudaDriverError(result).to_string().c_str());
-      return false;
-    }
-    static_assert(
-        sizeof(event_handle) == transport::EventHandlePayload{}.size(),
-        "CUDA IPC event handle payload size changed");
-    std::memcpy(slot.event_handle.data(), &event_handle, sizeof(event_handle));
+    slot.ready_event = std::move(event_result).value();
   }
   return true;
 }
 
 void GpuBufferPool::destroy_slots() noexcept {
+  for (auto& slot : slots_) {
+    slot.ready_event.reset();
+  }
   std::optional<detail::CudaContextGuard> guard;
   if (context_) {
     auto guard_result = context_->push_current();
@@ -179,17 +151,6 @@ void GpuBufferPool::destroy_slots() noexcept {
                    guard_result.error().to_string().c_str());
     } else {
       guard.emplace(std::move(guard_result).value());
-      for (auto& slot : slots_) {
-        if (slot.event != nullptr) {
-          const CUresult result = cuEventDestroy(slot.event);
-          if (result != CUDA_SUCCESS) {
-            RCLCPP_ERROR(logger_, "cuEventDestroy failed for slot %u: %s",
-                         slot.index,
-                         detail::CudaDriverError(result).to_string().c_str());
-          }
-          slot.event = nullptr;
-        }
-      }
     }
   }
   if (memory_backend_) {
