@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <cuda_runtime_api.h>
-
 #include <cstdint>
 #include <string>
 
@@ -25,7 +23,7 @@ struct BufferDescriptor {
   uint64_t byte_size = 0;
   MemoryBackendKind backend = MemoryBackendKind::CUDA_IPC;
   MemoryHandlePayload memory_handle{};
-  cudaIpcEventHandle_t ready_event_handle{};
+  EventHandlePayload ready_event_handle{};
 };
 
 }  // namespace ros2_cuda_ipc_core::transport

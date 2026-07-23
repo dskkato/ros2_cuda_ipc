@@ -59,6 +59,9 @@ target_link_libraries(${PROJECT_NAME}
     ${ros2_cuda_ipc_msgs_TARGETS}
     ${sensor_msgs_TARGETS}
     ${std_msgs_TARGETS}
+    # The memory backends still use the Runtime API.  Ready-event calls use
+    # CUDA::cuda_driver exclusively; libcudart can be removed after the
+    # memory-path migration.
     CUDA::cudart
     CUDA::cuda_driver
     ${UUID_LIB}
@@ -96,6 +99,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
   target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
+  ament_add_gtest(test_ready_event_driver test/test_ready_event_driver.cpp)
+  target_link_libraries(test_ready_event_driver ${PROJECT_NAME})
   ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
   target_link_libraries(test_lease_manager ${PROJECT_NAME})
   ament_add_gtest(test_cuda_driver_context test/test_cuda_driver_context.cpp)

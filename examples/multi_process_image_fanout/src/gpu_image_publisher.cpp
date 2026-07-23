@@ -148,10 +148,12 @@ class GpuImagePublisherNode : public rclcpp::Node {
 
     {
       NvtxScopedRange event_range("GpuImagePublisherNode::record_ready");
-      error = slot->record_ready(stream_);
-    }
-    if (!log_cuda_error(get_logger(), "record_ready", error)) {
-      return;
+      auto result = slot->record_ready(stream_);
+      if (!result) {
+        RCLCPP_WARN(get_logger(), "record_ready failed: %s",
+                    result.error().to_string().c_str());
+        return;
+      }
     }
 
     const auto descriptor = slot->descriptor();

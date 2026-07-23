@@ -16,9 +16,11 @@ namespace ros2_cuda_ipc_core::subscriber {
 
 namespace {
 
-cudaIpcEventHandle_t to_cuda_event_handle(
+CUipcEventHandle to_cuda_event_handle(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
-  cudaIpcEventHandle_t handle{};
+  CUipcEventHandle handle{};
+  static_assert(sizeof(handle) == transport::EventHandlePayload{}.size(),
+                "CUDA IPC event handle payload size changed");
   std::memcpy(&handle, msg.event_handle.data(), sizeof(handle));
   return handle;
 }
@@ -108,13 +110,16 @@ BufferView BufferViewMapper::map(
   }
 
   auto lease_ptr = std::make_shared<lease::LeaseHandle>(std::move(lease));
-  const cudaIpcEventHandle_t event_handle = to_cuda_event_handle(msg);
+  const CUipcEventHandle event_handle = to_cuda_event_handle(msg);
+  transport::EventHandlePayload event_payload{};
+  std::memcpy(event_payload.data(), msg.event_handle.data(),
+              event_payload.size());
 
   IpcHandleKey key{};
   key.publisher_instance_id = instance_id;
   key.backend = static_cast<uint8_t>(msg.backend);
   key.mem = msg.mem_handle;
-  std::memcpy(key.event.data(), &event_handle, sizeof(event_handle));
+  std::memcpy(key.event.data(), msg.event_handle.data(), key.event.size());
 
   backend::ImportedMemory imported;
   auto cached = IpcHandleCache::instance().find(key);
@@ -134,6 +139,7 @@ BufferView BufferViewMapper::map(
   BufferView view;
   view.dev_ptr = imported.dev_ptr;
   view.ready_evt = imported.event;
+  view.context = imported.context;
   view.device_id = static_cast<int>(msg.device_id);
   view.byte_size = msg.byte_size;
   view.slot_id = msg.slot_id;
@@ -143,7 +149,7 @@ BufferView BufferViewMapper::map(
   view.lease = std::move(lease_ptr);
   view.set_ipc_handles(
       transport::backend_from_byte(static_cast<uint8_t>(msg.backend)),
-      msg.mem_handle.data(), msg.mem_handle.size(), event_handle);
+      msg.mem_handle.data(), msg.mem_handle.size(), event_payload);
   return view;
 }
 

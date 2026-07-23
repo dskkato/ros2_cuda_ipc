@@ -85,4 +85,19 @@ TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
   EXPECT_EQ(released.load(), 1);
 }
 
+TEST(IpcHandleCacheTest, ClearReleasesCacheOwnedResources) {
+  std::atomic<int> released{0};
+  subscriber::IpcHandleCache cache(
+      [&released](const backend::ImportedMemory&) { released.fetch_add(1); });
+  subscriber::IpcHandleKey key{};
+  backend::ImportedMemory imported;
+  imported.dev_ptr = reinterpret_cast<void*>(0x9090);
+  cache.insert_or_discard_duplicate(key, imported);
+
+  cache.clear();
+
+  EXPECT_EQ(released.load(), 1);
+  EXPECT_EQ(cache.size(), 0u);
+}
+
 }  // namespace ros2_cuda_ipc_core

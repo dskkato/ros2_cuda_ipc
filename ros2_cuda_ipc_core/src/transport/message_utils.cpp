@@ -3,6 +3,8 @@
 
 #include "ros2_cuda_ipc_core/transport/message_utils.hpp"
 
+#include <cuda.h>
+
 #include <cstring>
 
 namespace ros2_cuda_ipc_core::transport {
@@ -14,9 +16,11 @@ using BufferCoreMessage = ros2_cuda_ipc_msgs::msg::BufferCore;
 static_assert(sizeof(BufferCoreMessage::_mem_handle_type) ==
                   sizeof(MemoryHandlePayload),
               "BufferCore.mem_handle must match MemoryHandlePayload");
+static_assert(sizeof(CUipcEventHandle) == EventHandlePayload{}.size(),
+              "CUDA IPC event handle payload size changed");
 static_assert(sizeof(BufferCoreMessage::_event_handle_type) ==
-                  sizeof(cudaIpcEventHandle_t),
-              "BufferCore.event_handle must match cudaIpcEventHandle_t");
+                  EventHandlePayload{}.size(),
+              "BufferCore.event_handle must remain a 64-byte payload");
 
 }  // namespace
 

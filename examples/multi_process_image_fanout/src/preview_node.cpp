@@ -171,15 +171,14 @@ class PreviewNode : public rclcpp::Node {
     {
       // Wait for the publisher's ready event before copying.
       NvtxScopedRange wait_range("PreviewNode::wait_input_event");
-      err = view.enqueue_ready_event(stream_);
-    }
-    if (err != cudaSuccess) {
-      RCLCPP_WARN(
-          get_logger(), "cudaStreamWaitEvent failed: %s",
-          ros2_cuda_ipc_core::detail::cuda_error_to_string(err).c_str());
-      cudaEventDestroy(copy_start);
-      cudaEventDestroy(copy_stop);
-      return;
+      auto result = view.enqueue_ready_event(stream_);
+      if (!result) {
+        RCLCPP_WARN(get_logger(), "cuStreamWaitEvent failed: %s",
+                    result.error().to_string().c_str());
+        cudaEventDestroy(copy_start);
+        cudaEventDestroy(copy_stop);
+        return;
+      }
     }
 
     {

@@ -62,7 +62,7 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   auto slot = manager.acquire_for_publish(1);
   ASSERT_TRUE(slot.has_value());
   EXPECT_EQ(slot->descriptor(), std::nullopt);
-  ASSERT_EQ(slot->record_ready(nullptr), cudaSuccess);
+  ASSERT_TRUE(slot->record_ready(nullptr));
   auto descriptor = slot->descriptor();
   ASSERT_TRUE(descriptor.has_value());
   EXPECT_EQ(descriptor->slot_id, 0u);
@@ -70,7 +70,7 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   EXPECT_EQ(descriptor->lease_shm_name, manager.shm_name());
   EXPECT_EQ(descriptor->publisher_instance_id, instance_id);
   EXPECT_EQ(descriptor->byte_size, 1024u);
-  EXPECT_NE(slot->record_ready(nullptr), cudaSuccess);
+  EXPECT_FALSE(slot->record_ready(nullptr));
   slot->commit_publish();
   slot->commit_publish();
   EXPECT_FALSE(slot->valid());
@@ -92,7 +92,7 @@ TEST_F(GpuBufferManagerTest, CommittedDestructionKeepsPending) {
   {
     auto slot = manager.acquire_for_publish(1);
     ASSERT_TRUE(slot.has_value());
-    ASSERT_EQ(slot->record_ready(nullptr), cudaSuccess);
+    ASSERT_TRUE(slot->record_ready(nullptr));
     slot->commit_publish();
   }
   EXPECT_FALSE(manager.acquire_for_publish(1).has_value());
@@ -150,7 +150,7 @@ TEST_F(GpuBufferManagerTest, AcquireAutomaticallyReclaimsExpiredPending) {
   {
     auto slot = manager.acquire_for_publish(1);
     ASSERT_TRUE(slot.has_value());
-    ASSERT_EQ(slot->record_ready(nullptr), cudaSuccess);
+    ASSERT_TRUE(slot->record_ready(nullptr));
     slot->commit_publish();
   }
 

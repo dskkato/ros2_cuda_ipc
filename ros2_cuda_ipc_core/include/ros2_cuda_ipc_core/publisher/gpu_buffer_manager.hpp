@@ -11,6 +11,7 @@
 #include <string>
 
 #include "rclcpp/logger.hpp"
+#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/publisher/lease_manager.hpp"
 #include "ros2_cuda_ipc_core/transport/buffer_descriptor.hpp"
@@ -47,9 +48,9 @@ class PublishSlot {
 
   /// Record that the slot's GPU payload is ready on the given stream.
   ///
-  /// @return CUDA error code, or cudaErrorInvalidResourceHandle when the slot
-  /// is not in the reserved state.
-  cudaError_t record_ready(cudaStream_t stream) noexcept;
+  /// @return A Driver API result. A failed result is returned when the slot
+  /// is not in the reserved state or the event cannot be recorded.
+  detail::CudaResult<void> record_ready(cudaStream_t stream) noexcept;
 
   /// Build the transport descriptor after the ready event has been recorded.
   ///
@@ -160,8 +161,9 @@ class GpuBufferManager {
   friend class PublishSlot;
 
   void* device_ptr(const LeaseManager::Reservation& reservation) const noexcept;
-  cudaError_t record_ready(const LeaseManager::Reservation& reservation,
-                           cudaStream_t stream) noexcept;
+  detail::CudaResult<void> record_ready(
+      const LeaseManager::Reservation& reservation,
+      cudaStream_t stream) noexcept;
   std::optional<transport::BufferDescriptor> descriptor(
       const LeaseManager::Reservation& reservation) const;
   void cancel(const LeaseManager::Reservation& reservation) noexcept;

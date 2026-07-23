@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cuda.h>
 #include <cuda_runtime_api.h>
 
 #include <cstdint>
@@ -21,8 +22,8 @@ struct SlotBackendState {
 struct SlotResources {
   uint32_t index = 0;
   void* device_ptr = nullptr;
-  cudaEvent_t event = nullptr;
-  cudaIpcEventHandle_t event_handle{};
+  CUevent event = nullptr;
+  transport::EventHandlePayload event_handle{};
   transport::MemoryBackendKind backend = transport::MemoryBackendKind::CUDA_IPC;
   transport::MemoryHandlePayload mem_handle{};
   std::shared_ptr<SlotBackendState> backend_state;

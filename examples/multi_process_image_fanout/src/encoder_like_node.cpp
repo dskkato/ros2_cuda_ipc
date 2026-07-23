@@ -161,16 +161,15 @@ class EncoderLikeNode : public rclcpp::Node {
       // Order this node's stream after the publisher's ready event before any
       // kernel reads the shared input slot.
       NvtxScopedRange wait_range("EncoderLikeNode::wait_input_event");
-      err = view.enqueue_ready_event(stream_);
+      auto result = view.enqueue_ready_event(stream_);
+      if (!result) {
+        RCLCPP_WARN(get_logger(), "cuStreamWaitEvent failed: %s",
+                    result.error().to_string().c_str());
+        cudaEventDestroy(kernel_start);
+        cudaEventDestroy(kernel_stop);
+        return;
+      }
     }
-    if (err != cudaSuccess) {
-      RCLCPP_WARN(get_logger(), "cudaStreamWaitEvent failed: %s",
-                  cuda_error_to_string(err).c_str());
-      cudaEventDestroy(kernel_start);
-      cudaEventDestroy(kernel_stop);
-      return;
-    }
-
     err = cudaEventRecord(kernel_start, stream_);
     if (err != cudaSuccess) {
       RCLCPP_WARN(get_logger(), "cudaEventRecord failed: %s",
