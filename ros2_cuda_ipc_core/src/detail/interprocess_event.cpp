@@ -17,14 +17,6 @@ InterprocessEvent::InterprocessEvent(
       event_(event),
       ipc_handle_(std::move(ipc_handle)) {}
 
-InterprocessEvent::InterprocessEvent(InterprocessEvent&& other) noexcept
-    : context_(std::move(other.context_)),
-      event_(other.event_),
-      ipc_handle_(other.ipc_handle_) {
-  other.event_ = nullptr;
-  other.ipc_handle_.fill(0);
-}
-
 InterprocessEvent::~InterprocessEvent() noexcept { reset_noexcept(); }
 
 CudaResult<std::unique_ptr<InterprocessEvent>> InterprocessEvent::create(
@@ -61,10 +53,16 @@ CudaResult<std::unique_ptr<InterprocessEvent>> InterprocessEvent::create(
                 "CUDA IPC event handle payload size changed");
   std::memcpy(payload.data(), &event_handle, sizeof(event_handle));
 
-  InterprocessEvent resource(std::move(context), event, payload);
-  return CudaResult<std::unique_ptr<InterprocessEvent>>::success(
-      std::unique_ptr<InterprocessEvent>(
-          new InterprocessEvent(std::move(resource))));
+  try {
+    return CudaResult<std::unique_ptr<InterprocessEvent>>::success(
+        std::unique_ptr<InterprocessEvent>(
+            new InterprocessEvent(std::move(context), event, payload)));
+  } catch (...) {
+    // The context guard is still active here, so the event can be cleaned up
+    // if allocation of the owning object fails.
+    (void)cuEventDestroy(event);
+    throw;
+  }
 }
 
 CudaResult<void> InterprocessEvent::record(CUstream stream) const noexcept {

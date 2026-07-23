@@ -40,17 +40,17 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseInstanceBackendPayloadAndEvent) {
 }
 
 TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
-  subscriber::IpcHandleCache cache([](const backend::ImportedMemory&) {});
+  subscriber::IpcHandleCache cache([](const backend::ImportedResources&) {});
   subscriber::IpcHandleKey key{};
   key.backend = 1;
   key.mem[0] = 11;
   key.event[0] = 13;
 
-  backend::ImportedMemory first;
+  backend::ImportedResources first;
   first.dev_ptr = reinterpret_cast<void*>(0x1010);
   first.event = reinterpret_cast<CUevent>(0x2020);
 
-  backend::ImportedMemory duplicate;
+  backend::ImportedResources duplicate;
   duplicate.dev_ptr = reinterpret_cast<void*>(0x3030);
   duplicate.event = reinterpret_cast<CUevent>(0x4040);
 
@@ -68,47 +68,59 @@ TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
 TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
   std::atomic<int> released{0};
   subscriber::IpcHandleCache cache(
-      [&released](const backend::ImportedMemory&) { released.fetch_add(1); });
+      [&released](const backend::ImportedResources&) {
+        released.fetch_add(1);
+      });
   subscriber::IpcHandleKey key{};
   key.backend = 1;
   key.mem[0] = 17;
   key.event[0] = 19;
 
-  backend::ImportedMemory first;
+  backend::ImportedResources first;
   first.dev_ptr = reinterpret_cast<void*>(0x5050);
   first.event = reinterpret_cast<CUevent>(0x6060);
 
-  backend::ImportedMemory duplicate;
+  backend::ImportedResources duplicate;
   duplicate.dev_ptr = reinterpret_cast<void*>(0x7070);
   duplicate.event = reinterpret_cast<CUevent>(0x8080);
 
-  cache.insert_or_discard_duplicate(key, std::move(first));
-  cache.insert_or_discard_duplicate(key, std::move(duplicate));
+  auto first_entry = cache.insert_or_discard_duplicate(key, std::move(first));
+  auto duplicate_entry =
+      cache.insert_or_discard_duplicate(key, std::move(duplicate));
 
   EXPECT_EQ(released.load(), 1);
+  first_entry.reset();
+  duplicate_entry.reset();
+  EXPECT_EQ(released.load(), 2);
 }
 
-TEST(IpcHandleCacheTest, ClearReleasesCacheOwnedResources) {
+TEST(IpcHandleCacheTest, ClearDoesNotReleaseActiveResources) {
   std::atomic<int> released{0};
   subscriber::IpcHandleCache cache(
-      [&released](const backend::ImportedMemory&) { released.fetch_add(1); });
+      [&released](const backend::ImportedResources&) {
+        released.fetch_add(1);
+      });
   subscriber::IpcHandleKey key{};
-  backend::ImportedMemory imported;
+  backend::ImportedResources imported;
   imported.dev_ptr = reinterpret_cast<void*>(0x9090);
-  cache.insert_or_discard_duplicate(key, std::move(imported));
+  auto entry = cache.insert_or_discard_duplicate(key, std::move(imported));
 
   cache.clear();
 
-  EXPECT_EQ(released.load(), 1);
+  EXPECT_EQ(released.load(), 0);
   EXPECT_EQ(cache.size(), 0u);
+  entry.reset();
+  EXPECT_EQ(released.load(), 1);
 }
 
 TEST(IpcHandleCacheTest, ClearDefersReleaseUntilExternalOwnerIsGone) {
   std::atomic<int> released{0};
   subscriber::IpcHandleCache cache(
-      [&released](const backend::ImportedMemory&) { released.fetch_add(1); });
+      [&released](const backend::ImportedResources&) {
+        released.fetch_add(1);
+      });
   subscriber::IpcHandleKey key{};
-  backend::ImportedMemory imported;
+  backend::ImportedResources imported;
   imported.dev_ptr = reinterpret_cast<void*>(0xa0a0);
   auto entry = cache.insert_or_discard_duplicate(key, std::move(imported));
 
@@ -123,12 +135,29 @@ TEST(IpcHandleCacheTest, ClearDefersReleaseUntilExternalOwnerIsGone) {
   EXPECT_EQ(released.load(), 1);
 }
 
+TEST(IpcHandleCacheTest, ExpiredEntriesArePruned) {
+  std::atomic<int> released{0};
+  subscriber::IpcHandleCache cache(
+      [&released](const backend::ImportedResources&) {
+        released.fetch_add(1);
+      });
+  subscriber::IpcHandleKey key{};
+  backend::ImportedResources imported;
+  imported.dev_ptr = reinterpret_cast<void*>(0xa0a0);
+
+  cache.insert_or_discard_duplicate(key, std::move(imported));
+
+  EXPECT_EQ(released.load(), 1);
+  EXPECT_EQ(cache.find(key), nullptr);
+  EXPECT_EQ(cache.size(), 0u);
+}
+
 TEST(IpcHandleCacheTest, BufferViewCopiesShareImportedResourceOwnership) {
   std::atomic<int> released{0};
-  auto* imported = new backend::ImportedMemory();
+  auto* imported = new backend::ImportedResources();
   imported->dev_ptr = reinterpret_cast<void*>(0xb0b0);
-  std::shared_ptr<const backend::ImportedMemory> resource(
-      imported, [&released](const backend::ImportedMemory* value) {
+  std::shared_ptr<const backend::ImportedResources> resource(
+      imported, [&released](const backend::ImportedResources* value) {
         released.fetch_add(1);
         delete value;
       });
@@ -141,9 +170,33 @@ TEST(IpcHandleCacheTest, BufferViewCopiesShareImportedResourceOwnership) {
 
   EXPECT_EQ(released.load(), 0);
   EXPECT_TRUE(second.valid());
-  EXPECT_EQ(second.dev_ptr, reinterpret_cast<void*>(0xb0b0));
+  EXPECT_EQ(second.device_ptr(), reinterpret_cast<void*>(0xb0b0));
 
   second.reset();
+  EXPECT_EQ(released.load(), 1);
+}
+
+TEST(IpcHandleCacheTest, BufferViewSurvivesCacheClear) {
+  std::atomic<int> released{0};
+  subscriber::IpcHandleCache cache(
+      [&released](const backend::ImportedResources&) {
+        released.fetch_add(1);
+      });
+  subscriber::IpcHandleKey key{};
+  backend::ImportedResources imported;
+  imported.dev_ptr = reinterpret_cast<void*>(0xc0c0);
+
+  auto entry = cache.insert_or_discard_duplicate(key, std::move(imported));
+  subscriber::BufferView view;
+  view.set_imported_resource(entry);
+  entry.reset();
+  cache.clear();
+
+  EXPECT_TRUE(view.valid());
+  EXPECT_EQ(view.device_ptr(), reinterpret_cast<void*>(0xc0c0));
+  EXPECT_EQ(released.load(), 0);
+
+  view.reset();
   EXPECT_EQ(released.load(), 1);
 }
 

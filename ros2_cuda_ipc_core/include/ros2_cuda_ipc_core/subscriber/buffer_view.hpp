@@ -19,8 +19,6 @@
 namespace ros2_cuda_ipc_core::subscriber {
 
 struct BufferView {
-  void* dev_ptr = nullptr;
-  CUevent ready_evt = nullptr;
   std::shared_ptr<detail::CudaDeviceContext> context;
   int device_id = 0;
   uint64_t byte_size = 0;
@@ -39,10 +37,18 @@ struct BufferView {
 
   template <class T = void>
   T* data() const noexcept {
-    return static_cast<T*>(dev_ptr);
+    return static_cast<T*>(device_ptr());
   }
 
-  bool valid() const noexcept { return dev_ptr != nullptr; }
+  void* device_ptr() const noexcept {
+    return imported_resource_ ? imported_resource_->dev_ptr : nullptr;
+  }
+
+  CUevent ready_event() const noexcept {
+    return imported_resource_ ? imported_resource_->event : nullptr;
+  }
+
+  bool valid() const noexcept { return device_ptr() != nullptr; }
 
   detail::CudaResult<void> enqueue_ready_event(
       cudaStream_t stream) const noexcept;
@@ -53,7 +59,7 @@ struct BufferView {
                        const uint8_t* payload_bytes, std::size_t payload_size,
                        const transport::EventHandlePayload& evt) noexcept;
   void set_imported_resource(
-      std::shared_ptr<const backend::ImportedMemory> resource) noexcept;
+      std::shared_ptr<const backend::ImportedResources> resource) noexcept;
   const transport::MemoryHandlePayload& mem_payload() const noexcept {
     return mem_payload_;
   }
@@ -64,7 +70,7 @@ struct BufferView {
   bool handles_ready() const noexcept { return handles_ready_; }
 
  private:
-  std::shared_ptr<const backend::ImportedMemory> imported_resource_;
+  std::shared_ptr<const backend::ImportedResources> imported_resource_;
   transport::MemoryHandlePayload mem_payload_{};
   transport::EventHandlePayload event_handle_{};
   transport::MemoryBackendKind backend_ =

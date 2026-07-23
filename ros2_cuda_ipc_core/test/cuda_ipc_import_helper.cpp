@@ -75,29 +75,30 @@ int main(int argc, char** argv) {
   {
     auto guard_result = imported->context->push_current();
     if (!guard_result) {
-      ros2_cuda_ipc_core::backend::release_imported_memory(*imported);
+      ros2_cuda_ipc_core::backend::release_imported_resources(*imported);
       return 6;
     }
     auto guard = std::move(guard_result).value();
     if (cuEventSynchronize(imported->event) != CUDA_SUCCESS) {
-      ros2_cuda_ipc_core::backend::release_imported_memory(*imported);
+      ros2_cuda_ipc_core::backend::release_imported_resources(*imported);
       return 7;
     }
     std::vector<uint8_t> host(payload.byte_size);
     const auto device_ptr = static_cast<CUdeviceptr>(
         reinterpret_cast<uintptr_t>(imported->dev_ptr));
     if (cuMemcpyDtoH(host.data(), device_ptr, host.size()) != CUDA_SUCCESS) {
-      ros2_cuda_ipc_core::backend::release_imported_memory(*imported);
+      ros2_cuda_ipc_core::backend::release_imported_resources(*imported);
       return 8;
     }
     for (const uint8_t value : host) {
       if (value != payload.expected_value) {
-        ros2_cuda_ipc_core::backend::release_imported_memory(*imported);
+        ros2_cuda_ipc_core::backend::release_imported_resources(*imported);
         return 9;
       }
     }
   }
 
-  return ros2_cuda_ipc_core::backend::release_imported_memory(*imported) ? 0
-                                                                         : 10;
+  return ros2_cuda_ipc_core::backend::release_imported_resources(*imported)
+             ? 0
+             : 10;
 }

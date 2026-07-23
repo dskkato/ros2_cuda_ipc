@@ -5,6 +5,9 @@
 #include <cuda_runtime_api.h>
 #include <gtest/gtest.h>
 
+#include <memory>
+
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_view.hpp"
 
 namespace {
@@ -25,8 +28,11 @@ TEST(ReadyEventDriverTest, DriverWaitAcceptsRuntimeCreatedStream) {
             cudaSuccess);
   ASSERT_EQ(cudaEventRecord(runtime_event, producer), cudaSuccess);
 
+  auto imported =
+      std::make_shared<ros2_cuda_ipc_core::backend::ImportedResources>();
+  imported->event = reinterpret_cast<CUevent>(runtime_event);
   ros2_cuda_ipc_core::subscriber::BufferView view;
-  view.ready_evt = reinterpret_cast<CUevent>(runtime_event);
+  view.set_imported_resource(std::move(imported));
   const auto result = view.enqueue_ready_event(consumer);
   ASSERT_TRUE(result) << result.error().to_string();
   ASSERT_EQ(cudaStreamSynchronize(consumer), cudaSuccess);

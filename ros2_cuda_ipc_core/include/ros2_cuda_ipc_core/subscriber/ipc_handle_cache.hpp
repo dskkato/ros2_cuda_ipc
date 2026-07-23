@@ -7,9 +7,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
@@ -35,11 +37,11 @@ struct IpcHandleKeyHash {
 
 class IpcHandleCache {
  public:
-  using ReleaseFn = std::function<void(const backend::ImportedMemory&)>;
-  using Entry = std::shared_ptr<const backend::ImportedMemory>;
+  using ReleaseFn = std::function<void(const backend::ImportedResources&)>;
+  using Entry = std::shared_ptr<const backend::ImportedResources>;
 
   explicit IpcHandleCache(
-      ReleaseFn release_fn = backend::release_imported_memory);
+      ReleaseFn release_fn = backend::release_imported_resources_best_effort);
 
   ~IpcHandleCache();
 
@@ -48,17 +50,25 @@ class IpcHandleCache {
   Entry find(const IpcHandleKey& key) const;
 
   Entry insert_or_discard_duplicate(const IpcHandleKey& key,
-                                    backend::ImportedMemory imported);
+                                    backend::ImportedResources imported);
 
-  /// Release all cache-owned imported resources after detaching the map.
+  /// Remove all cached references without affecting resources held by views.
   void clear();
 
   std::size_t size() const;
 
  private:
+  using CachedEntry = std::weak_ptr<const backend::ImportedResources>;
+
+  void prune_expired_locked() const;
+
   ReleaseFn release_fn_;
   mutable std::mutex mutex_;
-  std::unordered_map<IpcHandleKey, Entry, IpcHandleKeyHash> cache_;
+  // The cache indexes resources but does not own them.  BufferView (or
+  // another active consumer) is the owner that keeps an imported resource
+  // alive; an expired entry is re-imported on the next lookup.
+  mutable std::unordered_map<IpcHandleKey, CachedEntry, IpcHandleKeyHash>
+      cache_;
 };
 
 }  // namespace ros2_cuda_ipc_core::subscriber

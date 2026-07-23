@@ -114,7 +114,7 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
 
 }  // namespace
 
-std::optional<ImportedMemory> MemoryImporter::import(
+std::optional<ImportedResources> MemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
     const CUipcEventHandle& event_handle, const rclcpp::Logger& logger) const {
   const auto meta = parse_vmm_payload(msg.mem_handle, logger);
@@ -152,7 +152,7 @@ std::optional<ImportedMemory> MemoryImporter::import(
   }
   auto guard = std::move(guard_result).value();
 
-  ImportedMemory imported;
+  ImportedResources imported;
   imported.context = context;
 
   void* os_handle =

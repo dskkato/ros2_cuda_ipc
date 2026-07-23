@@ -22,6 +22,7 @@ class InterprocessEvent {
 
   InterprocessEvent(const InterprocessEvent&) = delete;
   InterprocessEvent& operator=(const InterprocessEvent&) = delete;
+  InterprocessEvent(InterprocessEvent&&) = delete;
   InterprocessEvent& operator=(InterprocessEvent&&) = delete;
 
   CudaResult<void> record(CUstream stream) const noexcept;
@@ -33,7 +34,6 @@ class InterprocessEvent {
  private:
   InterprocessEvent(std::shared_ptr<CudaDeviceContext> context, CUevent event,
                     transport::EventHandlePayload ipc_handle) noexcept;
-  InterprocessEvent(InterprocessEvent&& other) noexcept;
 
   void reset_noexcept() noexcept;
 

@@ -10,6 +10,7 @@
 #include <cstring>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
@@ -77,11 +78,15 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_cached_buffer_core_message(
 
 inline void seed_cache_for_message(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg, uintptr_t ptr_seed) {
-  backend::ImportedMemory imported;
+  backend::ImportedResources imported;
   imported.dev_ptr = reinterpret_cast<void*>(ptr_seed);
   imported.event = reinterpret_cast<CUevent>(ptr_seed + 1U);
-  subscriber::IpcHandleCache::instance().insert_or_discard_duplicate(
-      make_key(msg), std::move(imported));
+  // The production cache is weakly owned.  Keep this synthetic resource
+  // alive for the mapper test until the test process exits.
+  static std::vector<subscriber::IpcHandleCache::Entry> test_owners;
+  test_owners.push_back(
+      subscriber::IpcHandleCache::instance().insert_or_discard_duplicate(
+          make_key(msg), std::move(imported)));
 }
 
 inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(

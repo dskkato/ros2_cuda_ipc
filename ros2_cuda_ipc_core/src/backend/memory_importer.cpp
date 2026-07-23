@@ -12,7 +12,7 @@
 
 namespace ros2_cuda_ipc_core::backend {
 
-bool release_imported_memory(const ImportedMemory& imported) noexcept {
+bool release_imported_resources(const ImportedResources& imported) noexcept {
   // Imported resources created by the Driver-backed importers always carry
   // the context that owns them.  A missing context denotes a non-owning test
   // or inspection value; do not issue CUDA cleanup calls for such a value.

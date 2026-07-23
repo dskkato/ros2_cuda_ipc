@@ -19,8 +19,6 @@ BufferView& BufferView::operator=(const BufferView& other) {
 
   reset();
 
-  dev_ptr = other.dev_ptr;
-  ready_evt = other.ready_evt;
   context = other.context;
   device_id = other.device_id;
   byte_size = other.byte_size;
@@ -49,8 +47,6 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
 
   reset();
 
-  dev_ptr = other.dev_ptr;
-  ready_evt = other.ready_evt;
   context = std::move(other.context);
   device_id = other.device_id;
   byte_size = other.byte_size;
@@ -64,8 +60,6 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
   event_handle_ = other.event_handle_;
   backend_ = other.backend_;
   handles_ready_ = other.handles_ready_;
-  other.dev_ptr = nullptr;
-  other.ready_evt = nullptr;
   other.byte_size = 0;
   other.slot_id = 0;
   other.generation = 0;
@@ -78,22 +72,25 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
 
 detail::CudaResult<void> BufferView::enqueue_ready_event(
     cudaStream_t stream) const noexcept {
-  if (!ready_evt) {
+  const CUevent event = ready_event();
+  if (!event) {
     return detail::CudaResult<void>::success();
   }
-  if (context) {
-    auto guard_result = context->push_current();
+  const auto resource_context =
+      imported_resource_ ? imported_resource_->context : context;
+  if (resource_context) {
+    auto guard_result = resource_context->push_current();
     if (!guard_result) {
       return detail::CudaResult<void>::failure(guard_result.error());
     }
     auto guard = std::move(guard_result).value();
-    const CUresult result = cuStreamWaitEvent(stream, ready_evt, 0);
+    const CUresult result = cuStreamWaitEvent(stream, event, 0);
     if (result != CUDA_SUCCESS) {
       return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
     }
     return detail::CudaResult<void>::success();
   }
-  const CUresult result = cuStreamWaitEvent(stream, ready_evt, 0);
+  const CUresult result = cuStreamWaitEvent(stream, event, 0);
   if (result != CUDA_SUCCESS) {
     return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
   }
@@ -101,10 +98,10 @@ detail::CudaResult<void> BufferView::enqueue_ready_event(
 }
 
 void BufferView::reset() noexcept {
-  dev_ptr = nullptr;
-  ready_evt = nullptr;
   context.reset();
   imported_resource_.reset();
+  mem_payload_.fill(0);
+  event_handle_.fill(0);
   byte_size = 0;
   slot_id = 0;
   generation = 0;
@@ -116,16 +113,12 @@ void BufferView::reset() noexcept {
 }
 
 void BufferView::set_imported_resource(
-    std::shared_ptr<const backend::ImportedMemory> resource) noexcept {
+    std::shared_ptr<const backend::ImportedResources> resource) noexcept {
   imported_resource_ = std::move(resource);
   if (!imported_resource_) {
-    dev_ptr = nullptr;
-    ready_evt = nullptr;
     context.reset();
     return;
   }
-  dev_ptr = imported_resource_->dev_ptr;
-  ready_evt = imported_resource_->event;
   context = imported_resource_->context;
 }
 

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 #include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
@@ -16,13 +17,16 @@
 
 namespace ros2_cuda_ipc_core::backend {
 
-struct ImportedMemory {
-  ImportedMemory() = default;
-  ImportedMemory(const ImportedMemory&) = delete;
-  ImportedMemory& operator=(const ImportedMemory&) = delete;
-  ImportedMemory& operator=(ImportedMemory&&) = delete;
+// The imported memory mapping and its synchronization event must have one
+// lifetime.  In particular, BufferView keeps this whole bundle alive after
+// the cache entry itself has been detached.
+struct ImportedResources {
+  ImportedResources() = default;
+  ImportedResources(const ImportedResources&) = delete;
+  ImportedResources& operator=(const ImportedResources&) = delete;
+  ImportedResources& operator=(ImportedResources&&) = delete;
 
-  ImportedMemory(ImportedMemory&& other) noexcept
+  ImportedResources(ImportedResources&& other) noexcept
       : dev_ptr(other.dev_ptr),
         event(other.event),
         context(std::move(other.context)),
@@ -48,13 +52,27 @@ class MemoryImporter {
  public:
   virtual ~MemoryImporter() = default;
 
-  virtual std::optional<ImportedMemory> import(
+  virtual std::optional<ImportedResources> import(
       const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
       const CUipcEventHandle& event_handle,
       const rclcpp::Logger& logger) const = 0;
 };
 
-bool release_imported_memory(const ImportedMemory& imported) noexcept;
+bool release_imported_resources(const ImportedResources& imported) noexcept;
+
+// Cache destruction cannot propagate a cleanup error, so its deleter uses an
+// explicit best-effort adapter.  The checked function above remains available
+// to callers such as cross-process tests that need the result.
+inline void release_imported_resources_best_effort(
+    const ImportedResources& imported) noexcept {
+  (void)release_imported_resources(imported);
+}
+
+// Compatibility wrapper for the pre-bundle name.
+inline bool release_imported_memory(
+    const ImportedResources& imported) noexcept {
+  return release_imported_resources(imported);
+}
 
 const MemoryImporter& get_memory_importer(uint8_t backend);
 
