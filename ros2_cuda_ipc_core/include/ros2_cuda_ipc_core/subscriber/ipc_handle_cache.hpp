@@ -37,6 +37,10 @@ struct IpcHandleKeyHash {
 
 class IpcHandleCache {
  public:
+  // The callback is copied into each Entry's shared_ptr deleter.  It may run
+  // after this cache instance has been destroyed, so callers must provide a
+  // self-contained callback and must not capture references to the cache or
+  // other state with a shorter lifetime than the returned Entry.
   using ReleaseFn = std::function<void(const backend::ImportedResources&)>;
   using Entry = std::shared_ptr<const backend::ImportedResources>;
 

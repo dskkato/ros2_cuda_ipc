@@ -73,7 +73,12 @@ IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
     // caller-provided value.  Once the resource exists, its local guard has
     // already performed the release while unwinding.
     if (!resource_constructed) {
-      release_fn_(imported);
+      try {
+        release_fn_(imported);
+      } catch (...) {
+        // Preserve the original allocation/construction exception.  Cleanup
+        // callbacks are best-effort and must not terminate stack unwinding.
+      }
     }
     throw;
   }

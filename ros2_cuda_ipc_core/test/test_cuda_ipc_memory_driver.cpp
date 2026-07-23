@@ -26,6 +26,19 @@ extern char** environ;
 
 namespace {
 
+class ScopedSigpipeIgnore {
+ public:
+  ScopedSigpipeIgnore() : previous_(std::signal(SIGPIPE, SIG_IGN)) {}
+  ~ScopedSigpipeIgnore() { std::signal(SIGPIPE, previous_); }
+
+  ScopedSigpipeIgnore(const ScopedSigpipeIgnore&) = delete;
+  ScopedSigpipeIgnore& operator=(const ScopedSigpipeIgnore&) = delete;
+
+ private:
+  using SignalHandler = void (*)(int);
+  SignalHandler previous_;
+};
+
 bool write_all(int fd, const void* data, std::size_t size) {
   const auto* bytes = static_cast<const unsigned char*>(data);
   std::size_t offset = 0;
@@ -100,10 +113,15 @@ TEST(CudaIpcMemoryDriverTest, ImportsReadsAndClosesInChildProcess) {
   ASSERT_EQ(spawn_result, 0);
   ::close(payload_pipe[0]);
 
-  ASSERT_TRUE(write_all(payload_pipe[1], &payload, sizeof(payload)));
+  bool wrote_payload = false;
+  {
+    ScopedSigpipeIgnore sigpipe_ignore;
+    wrote_payload = write_all(payload_pipe[1], &payload, sizeof(payload));
+  }
   ::close(payload_pipe[1]);
 
   int status = 0;
+  EXPECT_TRUE(wrote_payload);
   ASSERT_EQ(::waitpid(child, &status, 0), child);
   ASSERT_TRUE(WIFEXITED(status));
   EXPECT_EQ(WEXITSTATUS(status), 0);

@@ -30,20 +30,27 @@ bool release_imported_resources(const ImportedResources& imported) noexcept {
   }
   guard.emplace(std::move(guard_result).value());
   bool success = true;
+  const auto logger = rclcpp::get_logger("ros2_cuda_ipc_core.memory_importer");
+  const auto report_cleanup_failure = [&success, &logger](const char* operation,
+                                                          CUresult result) {
+    if (result == CUDA_SUCCESS) {
+      return;
+    }
+    success = false;
+    RCLCPP_ERROR(logger, "%s failed during imported resource cleanup: %s",
+                 operation,
+                 detail::CudaDriverError(result).to_string().c_str());
+  };
   if (imported.vmm_address != 0 && imported.allocation_size != 0) {
-    if (cuMemUnmap(imported.vmm_address, imported.allocation_size) !=
-        CUDA_SUCCESS) {
-      success = false;
-    }
-    if (cuMemAddressFree(imported.vmm_address, imported.allocation_size) !=
-        CUDA_SUCCESS) {
-      success = false;
-    }
+    report_cleanup_failure("cuMemUnmap", cuMemUnmap(imported.vmm_address,
+                                                    imported.allocation_size));
+    report_cleanup_failure(
+        "cuMemAddressFree",
+        cuMemAddressFree(imported.vmm_address, imported.allocation_size));
   }
   if (imported.vmm_allocation != 0) {
-    if (cuMemRelease(imported.vmm_allocation) != CUDA_SUCCESS) {
-      success = false;
-    }
+    report_cleanup_failure("cuMemRelease",
+                           cuMemRelease(imported.vmm_allocation));
   }
   if (imported.vmm_address == 0 && imported.dev_ptr != nullptr) {
     const CUdeviceptr device_ptr =
@@ -51,7 +58,7 @@ bool release_imported_resources(const ImportedResources& imported) noexcept {
     const CUresult result = cuIpcCloseMemHandle(device_ptr);
     if (result != CUDA_SUCCESS) {
       success = false;
-      RCLCPP_ERROR(rclcpp::get_logger("ros2_cuda_ipc_core.memory_importer"),
+      RCLCPP_ERROR(logger,
                    "cuIpcCloseMemHandle failed during imported resource "
                    "cleanup: %s",
                    detail::CudaDriverError(result).to_string().c_str());
@@ -61,7 +68,7 @@ bool release_imported_resources(const ImportedResources& imported) noexcept {
     const CUresult result = cuEventDestroy(imported.event);
     if (result != CUDA_SUCCESS) {
       success = false;
-      RCLCPP_ERROR(rclcpp::get_logger("ros2_cuda_ipc_core.memory_importer"),
+      RCLCPP_ERROR(logger,
                    "cuEventDestroy failed during imported resource cleanup: %s",
                    detail::CudaDriverError(result).to_string().c_str());
     }
