@@ -4,9 +4,9 @@
 #pragma once
 
 #include <cuda.h>
-#include <cuda_runtime_api.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 
 #include "rclcpp/logger.hpp"

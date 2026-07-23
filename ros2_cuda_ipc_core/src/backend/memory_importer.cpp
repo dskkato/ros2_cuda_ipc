@@ -3,6 +3,8 @@
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 
+#include <cstdint>
+
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/backend/cuda_ipc/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
@@ -35,7 +37,15 @@ void release_imported_memory(const ImportedMemory& imported) noexcept {
     cuMemRelease(imported.vmm_allocation);
   }
   if (imported.vmm_address == 0 && imported.dev_ptr != nullptr) {
-    cudaIpcCloseMemHandle(imported.dev_ptr);
+    const CUdeviceptr device_ptr =
+        static_cast<CUdeviceptr>(reinterpret_cast<uintptr_t>(imported.dev_ptr));
+    const CUresult result = cuIpcCloseMemHandle(device_ptr);
+    if (result != CUDA_SUCCESS) {
+      RCLCPP_ERROR(rclcpp::get_logger("ros2_cuda_ipc_core.memory_importer"),
+                   "cuIpcCloseMemHandle failed during imported resource "
+                   "cleanup: %s",
+                   detail::CudaDriverError(result).to_string().c_str());
+    }
   }
   if (imported.event != nullptr) {
     const CUresult result = cuEventDestroy(imported.event);

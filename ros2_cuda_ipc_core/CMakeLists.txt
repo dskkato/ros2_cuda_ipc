@@ -59,9 +59,8 @@ target_link_libraries(${PROJECT_NAME}
     ${ros2_cuda_ipc_msgs_TARGETS}
     ${sensor_msgs_TARGETS}
     ${std_msgs_TARGETS}
-    # The memory backends still use the Runtime API.  Ready-event calls use
-    # CUDA::cuda_driver exclusively; libcudart can be removed after the
-    # memory-path migration.
+    # Stream-facing public APIs and non-IPC users still depend on libcudart;
+    # CUDA IPC memory allocation/import itself uses CUDA::cuda_driver.
     CUDA::cudart
     CUDA::cuda_driver
     ${UUID_LIB}
