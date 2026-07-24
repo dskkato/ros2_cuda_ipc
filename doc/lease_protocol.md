@@ -143,6 +143,12 @@ round-robinで探索する。各候補slotについて次を行う。
 Publisherは取得したdevice pointerへ必要なGPU workをenqueueした後、同じ依存関係を持つ
 CUDA streamで`record_ready()`を呼ぶ。ready eventはlibraryがslotごとに所有する。
 
+publicな`record_ready()`と`enqueue_ready_event()`はCUDA Driver APIの
+`CUstream`を受け取る。Runtime APIを使うapplicationは
+`<cuda_runtime_api.h>`を明示的にincludeすれば、`cudaStreamCreate()`で作成した
+`cudaStream_t`をcastなしでそのまま渡せる。streamの作成・破棄とownershipは
+application側にあり、libraryは非所有参照として使用する。
+
 `descriptor()`は`record_ready()`成功前には失敗する。これにより、未記録のready eventを
 含むmessageの生成を防ぐ。
 

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
+#include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <fcntl.h>
 #include <gtest/gtest.h>
@@ -74,6 +75,34 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   slot->commit_publish();
   slot->commit_publish();
   EXPECT_FALSE(slot->valid());
+}
+
+TEST_F(GpuBufferManagerTest, RuntimeCreatedStreamCanRecordReady) {
+  auto manager = make_manager();
+  ASSERT_TRUE(manager.initialise());
+  auto slot = manager.acquire_for_publish(1);
+  ASSERT_TRUE(slot.has_value());
+
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  const auto result = slot->record_ready(stream);
+  ASSERT_TRUE(result) << result.error().to_string();
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
+}
+
+TEST_F(GpuBufferManagerTest, DriverCreatedStreamCanRecordReady) {
+  auto manager = make_manager();
+  ASSERT_TRUE(manager.initialise());
+  auto slot = manager.acquire_for_publish(1);
+  ASSERT_TRUE(slot.has_value());
+
+  CUstream stream = nullptr;
+  ASSERT_EQ(cuStreamCreate(&stream, CU_STREAM_DEFAULT), CUDA_SUCCESS);
+  const auto result = slot->record_ready(stream);
+  ASSERT_TRUE(result) << result.error().to_string();
+  ASSERT_EQ(cuStreamSynchronize(stream), CUDA_SUCCESS);
+  ASSERT_EQ(cuStreamDestroy(stream), CUDA_SUCCESS);
 }
 
 TEST_F(GpuBufferManagerTest, UncommittedDestructionCancelsReservation) {

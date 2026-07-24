@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <cuda_runtime_api.h>
+#include <cuda.h>
 
 #include <chrono>
 #include <cstdint>
@@ -50,7 +50,7 @@ class PublishSlot {
   ///
   /// @return A Driver API result. A failed result is returned when the slot
   /// is not in the reserved state or the event cannot be recorded.
-  detail::CudaResult<void> record_ready(cudaStream_t stream) noexcept;
+  detail::CudaResult<void> record_ready(CUstream stream) noexcept;
 
   /// Build the transport descriptor after the ready event has been recorded.
   ///
@@ -162,8 +162,7 @@ class GpuBufferManager {
 
   void* device_ptr(const LeaseManager::Reservation& reservation) const noexcept;
   detail::CudaResult<void> record_ready(
-      const LeaseManager::Reservation& reservation,
-      cudaStream_t stream) noexcept;
+      const LeaseManager::Reservation& reservation, CUstream stream) noexcept;
   std::optional<transport::BufferDescriptor> descriptor(
       const LeaseManager::Reservation& reservation) const;
   void cancel(const LeaseManager::Reservation& reservation) noexcept;

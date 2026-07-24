@@ -25,9 +25,10 @@ errors are logged and never thrown from the destructor.
 
 Ready-event operations use this foundation: each publisher pool and imported
 subscriber event retains the device primary context, and each Driver API call
-is enclosed by a short-lived guard. CUDA Runtime-created streams remain valid
-because the public stream type is still `cudaStream_t`. The library never
-resets contexts with `cuDevicePrimaryCtxReset()` or `cudaDeviceReset()`.
+is enclosed by a short-lived guard. The public stream type is `CUstream`, while
+CUDA Runtime-created streams remain valid because `cudaStream_t` and `CUstream`
+are compatible handles. The library never resets contexts with
+`cuDevicePrimaryCtxReset()` or `cudaDeviceReset()`.
 
 ## Current VMM assumptions
 

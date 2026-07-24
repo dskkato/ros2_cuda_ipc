@@ -34,6 +34,12 @@ publisher->publish(make_message(*descriptor));
 slot->commit_publish();
 ```
 
+The public ready-event APIs use the CUDA Driver API stream type `CUstream`.
+Applications that use the CUDA Runtime API include
+`<cuda_runtime_api.h>` themselves; a Runtime-created `cudaStream_t` can be
+passed directly to `record_ready()` and `enqueue_ready_event()`. The stream is
+owned by the application and is only borrowed by the core library.
+
 Destroying an uncommitted `PublishSlot` cancels its reservation. Descriptor
 creation is rejected until the ready event has been recorded successfully.
 The protocol guarantees and known limitations are specified in

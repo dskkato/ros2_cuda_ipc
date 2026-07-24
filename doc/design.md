@@ -129,7 +129,7 @@ struct BufferView {
   BufferView& operator=(BufferView&&) noexcept;
 
   // 自分のストリームに書き終わりイベントを依存として積む
-  detail::CudaResult<void> enqueue_ready_event(cudaStream_t s) const noexcept;
+  detail::CudaResult<void> enqueue_ready_event(CUstream s) const noexcept;
 
   void reset() noexcept;             // resourceとleaseを解放
   void set_ipc_handles(MemoryBackendKind backend,
@@ -295,7 +295,7 @@ struct ImageView {
   }
 
   // 同期依存の登録（必要なら呼ぶ。どのストリームで待つかは呼び手が決める）
-  detail::CudaResult<void> enqueue_ready_event(cudaStream_t s) const noexcept {
+  detail::CudaResult<void> enqueue_ready_event(CUstream s) const noexcept {
     return core.enqueue_ready_event(s);
   }
 
@@ -393,7 +393,7 @@ struct PointCloud2View {
   }
 
   size_t num_points() const noexcept { return static_cast<size_t>(width) * height; }
-  detail::CudaResult<void> enqueue_ready_event(cudaStream_t s) const noexcept {
+  detail::CudaResult<void> enqueue_ready_event(CUstream s) const noexcept {
     return core.enqueue_ready_event(s);
   }
 };
