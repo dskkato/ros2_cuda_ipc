@@ -13,7 +13,6 @@
 #include "multi_process_image_fanout/cuda_checks.hpp"
 #include "multi_process_image_fanout/status_format.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/image/image_view_mapper.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
@@ -193,9 +192,8 @@ class PreviewNode : public rclcpp::Node {
       cudaEventRecord(copy_stop, stream_);
     }
     if (err != cudaSuccess) {
-      RCLCPP_WARN(
-          get_logger(), "cudaMemcpy2DAsync failed: %s",
-          ros2_cuda_ipc_core::detail::cuda_error_to_string(err).c_str());
+      RCLCPP_WARN(get_logger(), "cudaMemcpy2DAsync failed: %s",
+                  cuda_error_to_string(err).c_str());
       cudaEventDestroy(copy_start);
       cudaEventDestroy(copy_stop);
       return;
@@ -203,9 +201,8 @@ class PreviewNode : public rclcpp::Node {
 
     err = cudaStreamSynchronize(stream_);
     if (err != cudaSuccess) {
-      RCLCPP_WARN(
-          get_logger(), "cudaStreamSynchronize failed: %s",
-          ros2_cuda_ipc_core::detail::cuda_error_to_string(err).c_str());
+      RCLCPP_WARN(get_logger(), "cudaStreamSynchronize failed: %s",
+                  cuda_error_to_string(err).c_str());
       cudaEventDestroy(copy_start);
       cudaEventDestroy(copy_stop);
       return;

@@ -60,9 +60,6 @@ target_link_libraries(${PROJECT_NAME}
     ${ros2_cuda_ipc_msgs_TARGETS}
     ${sensor_msgs_TARGETS}
     ${std_msgs_TARGETS}
-    # Stream-facing public APIs and non-IPC users still depend on libcudart;
-    # CUDA IPC memory allocation/import itself uses CUDA::cuda_driver.
-    CUDA::cudart
     CUDA::cuda_driver
     ${UUID_LIB}
 )
@@ -96,15 +93,15 @@ if(BUILD_TESTING)
   target_link_libraries(test_publisher_messages ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_manager
                   test/test_gpu_buffer_manager.cpp)
-  target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME})
+  target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME} CUDA::cudart)
   ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
-  target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME})
+  target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME} CUDA::cudart)
   ament_add_gtest(test_ready_event_driver test/test_ready_event_driver.cpp)
-  target_link_libraries(test_ready_event_driver ${PROJECT_NAME})
+  target_link_libraries(test_ready_event_driver ${PROJECT_NAME} CUDA::cudart)
   ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
   target_link_libraries(test_lease_manager ${PROJECT_NAME})
   ament_add_gtest(test_cuda_driver_context test/test_cuda_driver_context.cpp)
-  target_link_libraries(test_cuda_driver_context ${PROJECT_NAME})
+  target_link_libraries(test_cuda_driver_context ${PROJECT_NAME} CUDA::cudart)
   add_executable(cuda_ipc_import_helper
                  test/cuda_ipc_import_helper.cpp)
   target_include_directories(cuda_ipc_import_helper PRIVATE test)

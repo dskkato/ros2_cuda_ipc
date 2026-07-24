@@ -7,10 +7,6 @@
 
 namespace ros2_cuda_ipc_core::detail {
 
-std::string cuda_error_to_string(cudaError_t err) {
-  return std::string(cudaGetErrorName(err)) + ": " + cudaGetErrorString(err);
-}
-
 std::string cu_result_to_string(CUresult result) {
   return CudaDriverError(result).to_string();
 }

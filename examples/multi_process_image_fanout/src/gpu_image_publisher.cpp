@@ -107,9 +107,8 @@ class GpuImagePublisherNode : public rclcpp::Node {
     if (stream_ != nullptr) {
       const cudaError_t error = cudaStreamDestroy(stream_);
       if (error != cudaSuccess) {
-        RCLCPP_ERROR(
-            get_logger(), "cudaStreamDestroy failed: %s",
-            ros2_cuda_ipc_core::detail::cuda_error_to_string(error).c_str());
+        RCLCPP_ERROR(get_logger(), "cudaStreamDestroy failed: %s",
+                     cuda_error_to_string(error).c_str());
       }
       stream_ = nullptr;
     }
