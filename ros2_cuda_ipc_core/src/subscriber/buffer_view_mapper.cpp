@@ -118,6 +118,7 @@ BufferView BufferViewMapper::map(
   IpcHandleKey key{};
   key.publisher_instance_id = instance_id;
   key.backend = static_cast<uint8_t>(msg.backend);
+  key.device_id = msg.device_id;
   key.mem = msg.mem_handle;
   std::memcpy(key.event.data(), msg.event_handle.data(), key.event.size());
 
