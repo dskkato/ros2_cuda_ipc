@@ -97,6 +97,7 @@ ros2 topic echo /fanout/inference_like/status
 
 - `ros2_cuda_ipc_msgs`: ROS 2 message definitions for GPU-backed buffers.
 - `ros2_cuda_ipc_core`: CUDA memory sharing plus modality-oriented mapping and view utilities.
+- `ros2_cuda_ipc_py`: `rclpy`/pybind11 subscriber mapping with zero-copy CuPy views.
 - `examples/multi_process_image_fanout`: primary runnable demo.
 - `utils/gpu_image_transport`: utility nodes that map `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: small CUDA IPC / VMM-FD environment checks.
@@ -106,6 +107,8 @@ ros2 topic echo /fanout/inference_like/status
 - Demo usage: [examples/multi_process_image_fanout/README.md](examples/multi_process_image_fanout/README.md)
 - Development notes: [DEVELOPING.md](DEVELOPING.md)
 - Core design: [doc/design.md](doc/design.md)
+- Python subscriber: [ros2_cuda_ipc_py/README.md](ros2_cuda_ipc_py/README.md)
+- Python binding design: [doc/python-subscriber-implementation.md](doc/python-subscriber-implementation.md)
 - CUDA IPC / VMM-FD checks: [utils/cuda_ipc_poc/README.md](utils/cuda_ipc_poc/README.md)
 
 ## Stream API
