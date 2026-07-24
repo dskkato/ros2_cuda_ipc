@@ -221,12 +221,17 @@ GPU メモリを「Shareable FD」として扱い、`backend=VMM_FD` で配布�
    * 今後の課題として、別 Publisher の socket を誤って削除しないよう、shm\_name やプロセス識別子を含む
      管理情報で socket の所有者を確認してから削除する仕組みを検討する。
 
-`IpcHandleCache` は import 済み resource のインデックスであり、resource 自体を強く所有しない。
-memory mapping、ready event、CUDA context、必要な VMM state は `backend::ImportedResources` という
-一つの bundle として `std::shared_ptr` で管理し、`BufferView` が active な間だけ生存させる。
-cache は `std::weak_ptr` を保持するため、view がなくなった resource は次回 lookup 時に再 import でき、
-Publisher restart による古い entry の蓄積も避けられる。`clear()` は cache の索引だけを削除し、
-既存の view の lifetime には影響しない。
+`IpcHandleCache` は、slot ごとに固定された CUDA IPC/VMM resource を message 間で再利用するため、
+`backend::ImportedResources` を `std::shared_ptr` として strong ownership する。memory mapping、ready event、
+CUDA context、必要な VMM state は一つの bundle として管理され、cache entry と `BufferView` が同じ
+`shared_ptr` の所有権を共有する。
+cache key は publisher instance identity、backend、device、memory handle、event handle を含み、
+Publisher restart や異なる device/resource を別 entry として扱う。
+
+cache entry は明示的な `clear()` または process 終了まで保持される。`clear()` は map を mutex の外で
+破棄するため、active な `BufferView` が同じ resource を保持していれば view は有効なままである。
+Publisher restart では publisher instance identity が変わり、異なる key の entry が追加され得る。
+現時点では entry 数の上限、eviction、Publisher instance 単位の自動 prune は行わない unbounded policy とする。
 
 この設計により、GPU メモリの配布方法だけを MemoryBackend/MemoryImporter で差し替え、ROS 2 メッセージ形式と
 BufferView と Mapper の API を維持したまま Jetson Orin をサポートできる。
@@ -420,14 +425,16 @@ ROS message から View へのアプリケーションメタデータコピー**
 
 * GPU データ本体のコピーは行わない。ROS msg と View の間では、shape や strides などのメタデータだけをコピーする。
 * 同期 (cudaStreamWaitEvent) はユーザ側の責務。
-* 同一 (mem\_handle,event\_handle) の組み合わせをプロセス内でキャッシュし、
+* 同一 (publisher instance, backend, device, mem\_handle, event\_handle) の組み合わせをプロセス内でキャッシュし、
   ハンドルごとの `cudaIpcOpen*Handle` や VMM import を初回だけ実行する。これにより、
   subscriber がフレームごとに IPC open/close を繰り返さずに済み、大きな
   API 開始コストを避けている。
-  * キャッシュは weak index としてプロセス内で共有する。resource の実体は
-    active な `BufferView` が保持し、view がなくなった entry は次回 lookup 時に再 import する。
-  * `BufferView` は `ImportedResources` と LeaseHandle を保持し、最後の view が
-    破棄された時点で受信側の import 済み resource を解放する。
+  * キャッシュは `ImportedResources` を strong ownership するプロセス内 cache として共有し、
+    callback 終了後も同じ handle の resource を次の message で再利用する。
+  * `BufferView` も同じ `shared_ptr<const ImportedResources>` と LeaseHandle を保持するため、
+    cache を clear した後も active な view は有効である。resource は cache と view の最後の参照が
+    なくなった時点で解放される。
+  * cache は unbounded policy であり、entry は明示的な `clear()` または process 終了まで保持する。
 
 Publisher/Subscriber の役割:
 * Publisher: cudaIpcGet*Handle でハンドル生成 → msg に格納。

@@ -9,7 +9,6 @@
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -22,12 +21,14 @@ namespace ros2_cuda_ipc_core::subscriber {
 struct IpcHandleKey {
   PublisherInstanceId publisher_instance_id{};
   uint8_t backend = 0;
+  uint32_t device_id = 0;
   transport::MemoryHandlePayload mem{};
   transport::EventHandlePayload event{};
 
   bool operator==(const IpcHandleKey& other) const noexcept {
     return publisher_instance_id == other.publisher_instance_id &&
-           backend == other.backend && mem == other.mem && event == other.event;
+           backend == other.backend && device_id == other.device_id &&
+           mem == other.mem && event == other.event;
   }
 };
 
@@ -62,17 +63,12 @@ class IpcHandleCache {
   std::size_t size() const;
 
  private:
-  using CachedEntry = std::weak_ptr<const backend::ImportedResources>;
-
-  void prune_expired_locked() const;
-
   ReleaseFn release_fn_;
   mutable std::mutex mutex_;
-  // The cache indexes resources but does not own them.  BufferView (or
-  // another active consumer) is the owner that keeps an imported resource
-  // alive; an expired entry is re-imported on the next lookup.
-  mutable std::unordered_map<IpcHandleKey, CachedEntry, IpcHandleKeyHash>
-      cache_;
+  // Keep imported resources alive between messages.  BufferView also keeps a
+  // shared ownership reference so clearing the cache cannot invalidate an
+  // active view.
+  std::unordered_map<IpcHandleKey, Entry, IpcHandleKeyHash> cache_;
 };
 
 }  // namespace ros2_cuda_ipc_core::subscriber

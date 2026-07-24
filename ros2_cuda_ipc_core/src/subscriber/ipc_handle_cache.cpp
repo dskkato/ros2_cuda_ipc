@@ -11,6 +11,9 @@ std::size_t IpcHandleKeyHash::operator()(
     const IpcHandleKey& key) const noexcept {
   constexpr std::size_t PRIME{131};
   std::size_t hash = key.backend;
+  for (unsigned int shift = 0; shift < sizeof(key.device_id) * 8; shift += 8) {
+    hash = hash * PRIME + ((key.device_id >> shift) & 0xffU);
+  }
   for (uint8_t byte : key.publisher_instance_id) {
     hash = hash * PRIME + byte;
   }
@@ -35,15 +38,11 @@ IpcHandleCache& IpcHandleCache::instance() {
 
 IpcHandleCache::Entry IpcHandleCache::find(const IpcHandleKey& key) const {
   std::lock_guard<std::mutex> lock(mutex_);
-  auto it = cache_.find(key);
+  const auto it = cache_.find(key);
   if (it == cache_.end()) {
     return {};
   }
-  auto resource = it->second.lock();
-  if (!resource) {
-    cache_.erase(it);
-  }
-  return resource;
+  return it->second;
 }
 
 IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
@@ -64,9 +63,12 @@ IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
     using OwnedResource =
         std::unique_ptr<backend::ImportedResources, decltype(deleter)>;
     OwnedResource resource(new backend::ImportedResources(std::move(imported)),
-                           deleter);
+                           std::move(deleter));
     resource_constructed = true;
-    candidate = Entry(resource.get(), deleter);
+    // The unique_ptr owns the resource while shared_ptr allocates its control
+    // block.  If this copy throws, the unique_ptr still invokes the moved-in
+    // deleter during unwinding.
+    candidate = Entry(resource.get(), resource.get_deleter());
     resource.release();
   } catch (...) {
     // If allocation failed before the resource took ownership, release the
@@ -86,20 +88,12 @@ IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
   Entry result;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = cache_.find(key);
-    if (it != cache_.end()) {
-      result = it->second.lock();
-      if (result) {
-        // Keep the first successfully imported resource for this key.  The
-        // candidate is released after the lock is dropped.
-      } else {
-        it->second = candidate;
-        result = candidate;
-      }
-    } else {
-      cache_.emplace(key, candidate);
-      result = candidate;
-    }
+    const auto [it, inserted] = cache_.emplace(key, candidate);
+    (void)inserted;
+    // Keep the first imported resource for this key.  If this was a
+    // duplicate, candidate remains a local shared_ptr and is released after
+    // this scope drops the cache mutex.
+    result = it->second;
   }
   // A duplicate candidate is released here, after dropping the cache lock;
   // for a new key this is only the local shared_ptr copy.
@@ -107,24 +101,19 @@ IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
 }
 
 void IpcHandleCache::clear() {
-  std::lock_guard<std::mutex> lock(mutex_);
-  cache_.clear();
+  decltype(cache_) entries;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries.swap(cache_);
+  }
+  // Imported resource cleanup can call arbitrary backend code.  Do not run
+  // it while holding the cache mutex.
+  entries.clear();
 }
 
 std::size_t IpcHandleCache::size() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  prune_expired_locked();
   return cache_.size();
-}
-
-void IpcHandleCache::prune_expired_locked() const {
-  for (auto it = cache_.begin(); it != cache_.end();) {
-    if (it->second.expired()) {
-      it = cache_.erase(it);
-    } else {
-      ++it;
-    }
-  }
 }
 
 }  // namespace ros2_cuda_ipc_core::subscriber

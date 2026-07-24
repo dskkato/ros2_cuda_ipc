@@ -10,7 +10,6 @@
 #include <cstring>
 #include <sstream>
 #include <string>
-#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
@@ -50,6 +49,7 @@ inline subscriber::IpcHandleKey make_key(
   subscriber::IpcHandleKey key{};
   key.publisher_instance_id = msg.publisher_instance_id;
   key.backend = static_cast<uint8_t>(msg.backend);
+  key.device_id = msg.device_id;
   key.mem = msg.mem_handle;
   std::memcpy(key.event.data(), msg.event_handle.data(),
               msg.event_handle.size());
@@ -81,12 +81,10 @@ inline void seed_cache_for_message(
   backend::ImportedResources imported;
   imported.dev_ptr = reinterpret_cast<void*>(ptr_seed);
   imported.event = reinterpret_cast<CUevent>(ptr_seed + 1U);
-  // The production cache is weakly owned.  Keep this synthetic resource
-  // alive for the mapper test until the test process exits.
-  static std::vector<subscriber::IpcHandleCache::Entry> test_owners;
-  test_owners.push_back(
-      subscriber::IpcHandleCache::instance().insert_or_discard_duplicate(
-          make_key(msg), std::move(imported)));
+  // The production cache strongly owns this synthetic resource until it is
+  // explicitly cleared or the process exits.
+  (void)subscriber::IpcHandleCache::instance().insert_or_discard_duplicate(
+      make_key(msg), std::move(imported));
 }
 
 inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(
