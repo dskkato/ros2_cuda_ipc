@@ -23,7 +23,7 @@ if(NOT UUID_LIB)
   message(FATAL_ERROR "Failed to find libuuid (uuid)")
 endif()
 
-add_library(${PROJECT_NAME} SHARED
+add_library(${PROJECT_NAME}
   src/detail/cuda_util.cpp
   src/detail/cuda_driver_context.cpp
   src/detail/interprocess_event.cpp
