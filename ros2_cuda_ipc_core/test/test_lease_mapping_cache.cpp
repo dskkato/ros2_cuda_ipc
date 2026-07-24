@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
@@ -30,6 +31,20 @@ std::string make_unique_shm_name(const std::string& prefix) {
   oss << "/" << prefix << "_" << ::getpid() << "_" << counter.fetch_add(1);
   return oss.str();
 }
+
+class ShmUnlinkGuard {
+ public:
+  explicit ShmUnlinkGuard(std::string shm_name)
+      : shm_name_(std::move(shm_name)) {}
+
+  ~ShmUnlinkGuard() { ::shm_unlink(shm_name_.c_str()); }
+
+  ShmUnlinkGuard(const ShmUnlinkGuard&) = delete;
+  ShmUnlinkGuard& operator=(const ShmUnlinkGuard&) = delete;
+
+ private:
+  std::string shm_name_;
+};
 
 struct FactoryState {
   ~FactoryState() {
@@ -290,6 +305,7 @@ TEST(LeaseMappingCacheTest, AttachExceptionLeavesCacheUnchanged) {
 
 TEST(LeaseMappingCacheTest, ReportsMissAndHitLatency) {
   const std::string shm_name = make_unique_shm_name("lease_cache_timing");
+  const ShmUnlinkGuard shm_unlink_guard(shm_name);
   const auto instance_id = test::publisher_instance_id(shm_name);
   auto publisher_mapping =
       lease::LeaseMapping::create(shm_name, instance_id, 1);
@@ -342,7 +358,6 @@ TEST(LeaseMappingCacheTest, ReportsMissAndHitLatency) {
   EXPECT_EQ(cache.size(), 1u);
   cache.clear();
   publisher_mapping.reset();
-  ::shm_unlink(shm_name.c_str());
 }
 
 }  // namespace ros2_cuda_ipc_core
