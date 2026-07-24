@@ -109,6 +109,9 @@ std::array<T, N> fixed_sequence(py::handle value, const std::string& path) {
     throw py::type_error(path + " must be a sequence");
   }
   const Py_ssize_t length = PySequence_Size(value.ptr());
+  if (length == -1) {
+    throw py::error_already_set();
+  }
   if (length != static_cast<Py_ssize_t>(N)) {
     throw py::value_error(path + " must contain exactly " + std::to_string(N) +
                           " elements");
