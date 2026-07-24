@@ -13,7 +13,6 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 REQUIRED CONFIG)
-find_package(pybind11_vendor REQUIRED)
 find_package(ros2_cuda_ipc_core REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 
