@@ -34,14 +34,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Lyrical Python binding dependencies
-        if: matrix.ros_distro == 'lyrical'
-        run: |
-          set -eo pipefail
-          apt-get update
-          apt-get install -y --no-install-recommends pybind11-dev
-          rm -rf /var/lib/apt/lists/*
-
       - name: Build workspace
         run: |
           set -eo pipefail
