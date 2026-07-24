@@ -43,8 +43,7 @@ void* PublishSlot::device_ptr() const noexcept {
   return valid() ? owner_->device_ptr(reservation_) : nullptr;
 }
 
-detail::CudaResult<void> PublishSlot::record_ready(
-    cudaStream_t stream) noexcept {
+detail::CudaResult<void> PublishSlot::record_ready(CUstream stream) noexcept {
   if (owner_ == nullptr || state_ != State::reserved) {
     return detail::CudaResult<void>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
@@ -146,8 +145,7 @@ void* GpuBufferManager::device_ptr(
 }
 
 detail::CudaResult<void> GpuBufferManager::record_ready(
-    const LeaseManager::Reservation& reservation,
-    cudaStream_t stream) noexcept {
+    const LeaseManager::Reservation& reservation, CUstream stream) noexcept {
   if (reservation.shm_name != lease_manager_.shm_name() ||
       reservation.publisher_instance_id !=
           lease_manager_.publisher_instance_id()) {

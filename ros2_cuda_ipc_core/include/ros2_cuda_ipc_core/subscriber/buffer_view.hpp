@@ -4,7 +4,6 @@
 #pragma once
 
 #include <cuda.h>
-#include <driver_types.h>
 
 #include <cstdint>
 #include <memory>
@@ -49,8 +48,7 @@ struct BufferView {
 
   bool valid() const noexcept { return device_ptr() != nullptr; }
 
-  detail::CudaResult<void> enqueue_ready_event(
-      cudaStream_t stream) const noexcept;
+  detail::CudaResult<void> enqueue_ready_event(CUstream stream) const noexcept;
 
   void reset() noexcept;
 

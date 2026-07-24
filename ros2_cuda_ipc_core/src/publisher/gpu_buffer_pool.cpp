@@ -82,8 +82,8 @@ void* GpuBufferPool::device_ptr(uint32_t slot_id) const noexcept {
   return slot ? slot->device_ptr : nullptr;
 }
 
-detail::CudaResult<void> GpuBufferPool::record_ready(
-    uint32_t slot_id, cudaStream_t stream) noexcept {
+detail::CudaResult<void> GpuBufferPool::record_ready(uint32_t slot_id,
+                                                     CUstream stream) noexcept {
   const auto* slot = resources(slot_id);
   if (!initialised_ || slot == nullptr || !slot->ready_event) {
     return detail::CudaResult<void>::failure(

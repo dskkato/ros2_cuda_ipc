@@ -108,6 +108,32 @@ ros2 topic echo /fanout/inference_like/status
 - Core design: [doc/design.md](doc/design.md)
 - CUDA IPC / VMM-FD checks: [utils/cuda_ipc_poc/README.md](utils/cuda_ipc_poc/README.md)
 
+## Stream API
+
+The public ready-event APIs use the CUDA Driver API stream type `CUstream`:
+
+```cpp
+#include <cuda_runtime_api.h>
+
+cudaStream_t stream = nullptr;
+cudaStreamCreate(&stream);
+
+slot.record_ready(stream);
+view.enqueue_ready_event(stream);
+```
+
+`cudaStream_t` streams created by the CUDA Runtime API and `CUstream` streams
+created by the Driver API are compatible handles, so no cast is needed in
+normal Runtime API user code. `nullptr` remains the default stream; the
+corresponding special stream values are also accepted. The application owns
+the stream and is responsible for creating and destroying it; the core only
+borrows it while calling `cuEventRecord()` and `cuStreamWaitEvent()`.
+
+The core implementation uses the CUDA Driver API and links to the CUDA driver,
+not `libcudart.so`. Runtime API applications must include
+`<cuda_runtime_api.h>` explicitly; this declaration is not supplied
+incidentally by core public headers.
+
 ## License
 
 MIT License. See [LICENSE](LICENSE).

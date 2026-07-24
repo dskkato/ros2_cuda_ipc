@@ -69,7 +69,7 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
 }
 
 detail::CudaResult<void> BufferView::enqueue_ready_event(
-    cudaStream_t stream) const noexcept {
+    CUstream stream) const noexcept {
   const CUevent event = ready_event();
   if (!event) {
     return detail::CudaResult<void>::success();

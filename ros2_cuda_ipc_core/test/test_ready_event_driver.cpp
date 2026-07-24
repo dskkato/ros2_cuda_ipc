@@ -42,4 +42,35 @@ TEST(ReadyEventDriverTest, DriverWaitAcceptsRuntimeCreatedStream) {
   EXPECT_EQ(cudaStreamDestroy(producer), cudaSuccess);
 }
 
+TEST(ReadyEventDriverTest, RuntimeEventCanBeWaitedOnDriverCreatedStream) {
+  int device_count = 0;
+  if (cudaGetDeviceCount(&device_count) != cudaSuccess || device_count == 0) {
+    GTEST_SKIP() << "CUDA device not available";
+  }
+  ASSERT_EQ(cudaSetDevice(0), cudaSuccess);
+
+  cudaStream_t producer = nullptr;
+  cudaEvent_t runtime_event = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&producer), cudaSuccess);
+  ASSERT_EQ(cudaEventCreateWithFlags(&runtime_event, cudaEventDisableTiming),
+            cudaSuccess);
+  ASSERT_EQ(cudaEventRecord(runtime_event, producer), cudaSuccess);
+
+  CUstream consumer = nullptr;
+  ASSERT_EQ(cuStreamCreate(&consumer, CU_STREAM_DEFAULT), CUDA_SUCCESS);
+
+  auto imported =
+      std::make_shared<ros2_cuda_ipc_core::backend::ImportedResources>();
+  imported->event = reinterpret_cast<CUevent>(runtime_event);
+  ros2_cuda_ipc_core::subscriber::BufferView view;
+  view.set_imported_resource(std::move(imported));
+  const auto result = view.enqueue_ready_event(consumer);
+  ASSERT_TRUE(result) << result.error().to_string();
+  ASSERT_EQ(cuStreamSynchronize(consumer), CUDA_SUCCESS);
+
+  EXPECT_EQ(cuStreamDestroy(consumer), CUDA_SUCCESS);
+  EXPECT_EQ(cudaEventDestroy(runtime_event), cudaSuccess);
+  EXPECT_EQ(cudaStreamDestroy(producer), cudaSuccess);
+}
+
 }  // namespace

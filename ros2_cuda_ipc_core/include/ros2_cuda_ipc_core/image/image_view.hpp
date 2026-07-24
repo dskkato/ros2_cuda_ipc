@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <cuda.h>
+
 #include <array>
 #include <cstdint>
 #include <string>
@@ -51,8 +53,7 @@ struct ImageView {
 
   uint32_t elem_size_bytes() const noexcept;
 
-  detail::CudaResult<void> enqueue_ready_event(
-      cudaStream_t stream) const noexcept {
+  detail::CudaResult<void> enqueue_ready_event(CUstream stream) const noexcept {
     return core.enqueue_ready_event(stream);
   }
 

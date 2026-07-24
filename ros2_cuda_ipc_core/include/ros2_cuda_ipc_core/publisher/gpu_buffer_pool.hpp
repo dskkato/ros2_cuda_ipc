@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <cuda_runtime_api.h>
+#include <cuda.h>
 
 #include <cstdint>
 #include <vector>
@@ -43,7 +43,7 @@ class GpuBufferPool {
 
   void* device_ptr(uint32_t slot_id) const noexcept;
   detail::CudaResult<void> record_ready(uint32_t slot_id,
-                                        cudaStream_t stream) noexcept;
+                                        CUstream stream) noexcept;
   const SlotResources* resources(uint32_t slot_id) const noexcept;
 
  private:
