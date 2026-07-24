@@ -49,36 +49,55 @@ std::size_t LeaseMappingCache::KeyHash::operator()(
   return hash;
 }
 
+LeaseMappingCache::LeaseMappingCache(AttachFn attach_fn)
+    : attach_fn_(std::move(attach_fn)) {}
+
+LeaseMappingCache::~LeaseMappingCache() { clear(); }
+
 std::shared_ptr<lease::LeaseMapping> LeaseMappingCache::get_or_attach(
     const std::string& shm_name,
     const PublisherInstanceId& publisher_instance_id) const {
   const Key key{shm_name, publisher_instance_id};
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    auto it = mappings_.find(key);
+    const auto it = mappings_.find(key);
     if (it != mappings_.end()) {
-      if (auto mapping = it->second.lock()) {
-        return mapping;
-      }
-      mappings_.erase(it);
+      return it->second;
     }
   }
 
-  auto mapping = lease::LeaseMapping::attach(shm_name, publisher_instance_id);
-  if (!mapping) {
+  auto candidate = attach_fn_(shm_name, publisher_instance_id);
+  if (!candidate) {
     return nullptr;
   }
 
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto it = mappings_.find(key);
-  if (it != mappings_.end()) {
-    if (auto existing = it->second.lock()) {
-      return existing;
-    }
-    mappings_.erase(it);
+  std::shared_ptr<lease::LeaseMapping> result;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto [it, inserted] = mappings_.emplace(key, candidate);
+    (void)inserted;
+    // Keep the first mapping for this key. If this was a duplicate, the
+    // candidate remains local and is released after this scope drops the
+    // cache mutex.
+    result = it->second;
   }
-  mappings_.emplace(key, mapping);
-  return mapping;
+  return result;
+}
+
+void LeaseMappingCache::clear() const {
+  decltype(mappings_) entries;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries.swap(mappings_);
+  }
+  // LeaseMapping destruction calls munmap(2). Do not run it while holding the
+  // cache mutex, because destruction may call code that needs this cache.
+  entries.clear();
+}
+
+std::size_t LeaseMappingCache::size() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return mappings_.size();
 }
 
 BufferViewMapper::BufferViewMapper(BufferViewMapperOptions options)

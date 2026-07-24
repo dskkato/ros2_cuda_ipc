@@ -233,6 +233,21 @@ cache entry は明示的な `clear()` または process 終了まで保持され
 Publisher restart では publisher instance identity が変わり、異なる key の entry が追加され得る。
 現時点では entry 数の上限、eviction、Publisher instance 単位の自動 prune は行わない unbounded policy とする。
 
+Subscriber の `LeaseMappingCache` も同じ ownership 方針を採用する。cache は
+`std::unordered_map<Key, std::shared_ptr<lease::LeaseMapping>>` を保持し、POSIX shared-memory の
+mapping を message 間で再利用する。entry の `Key` は `shm_name` と `publisher_instance_id` で構成されるため、
+同じ SHM 名でも Publisher instance が異なれば別 mapping として扱う。
+
+`LeaseMappingCache` と active な `LeaseHandle` は同じ `LeaseMapping` を `shared_ptr` で shared ownership する。
+そのため callback-local な `BufferView` が破棄されても cache entry は mapping を保持し、同じ Publisher instance
+に対する次の message では attach 済み mapping を再利用できる。cache の `clear()` は entry を mutex の外で
+破棄するため、active な `LeaseHandle` が残っていれば slot metadata への参照と lease semantics は有効なままであり、
+最後の `LeaseHandle` が解放された時点で mapping が破棄される。
+
+Lease mapping cache は現時点では unbounded policy である。entry は明示的な `clear()` または process 終了まで保持され、
+LRU、TTL、最大 entry 数、Publisher instance 単位の自動 prune、background cleanup は行わない。Publisher restart
+では新しい `publisher_instance_id` の entry が追加される可能性がある。
+
 この設計により、GPU メモリの配布方法だけを MemoryBackend/MemoryImporter で差し替え、ROS 2 メッセージ形式と
 BufferView と Mapper の API を維持したまま Jetson Orin をサポートできる。
 Publisher は wire message を直接構築し、Subscriber は Mapper API で明示的に View を取得する。

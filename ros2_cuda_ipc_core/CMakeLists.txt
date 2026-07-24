@@ -81,6 +81,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_lease_handle ${PROJECT_NAME})
   ament_add_gtest(test_ipc_handle_cache test/test_ipc_handle_cache.cpp)
   target_link_libraries(test_ipc_handle_cache ${PROJECT_NAME})
+  ament_add_gtest(test_lease_mapping_cache test/test_lease_mapping_cache.cpp)
+  target_link_libraries(test_lease_mapping_cache ${PROJECT_NAME})
   # mapper tests
   ament_add_gtest(test_buffer_view_mapper test/mapper/test_buffer_view_mapper.cpp)
   target_link_libraries(test_buffer_view_mapper ${PROJECT_NAME})

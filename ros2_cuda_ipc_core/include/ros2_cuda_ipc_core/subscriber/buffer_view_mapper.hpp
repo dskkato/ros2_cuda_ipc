@@ -3,10 +3,13 @@
 
 #pragma once
 
+#include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
@@ -20,12 +23,23 @@ struct BufferViewMapperOptions {
       rclcpp::get_logger("ros2_cuda_ipc_core.BufferViewMapper");
 };
 
-/// Reuses subscriber mappings without extending their lifetime.
+/// Strongly owns subscriber mappings so they can be reused between messages.
 class LeaseMappingCache {
  public:
+  using AttachFn = std::function<std::shared_ptr<lease::LeaseMapping>(
+      const std::string&, const PublisherInstanceId&)>;
+
+  explicit LeaseMappingCache(AttachFn attach_fn = lease::LeaseMapping::attach);
+  ~LeaseMappingCache();
+
   std::shared_ptr<lease::LeaseMapping> get_or_attach(
       const std::string& shm_name,
       const PublisherInstanceId& publisher_instance_id) const;
+
+  /// Release all cache-owned mappings without holding the cache mutex.
+  void clear() const;
+
+  std::size_t size() const;
 
  private:
   struct Key {
@@ -42,8 +56,9 @@ class LeaseMappingCache {
     std::size_t operator()(const Key& key) const noexcept;
   };
 
+  AttachFn attach_fn_;
   mutable std::mutex mutex_;
-  mutable std::unordered_map<Key, std::weak_ptr<lease::LeaseMapping>, KeyHash>
+  mutable std::unordered_map<Key, std::shared_ptr<lease::LeaseMapping>, KeyHash>
       mappings_;
 };
 
