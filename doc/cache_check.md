@@ -90,11 +90,11 @@ cache-hit時のCPU側map latencyは約0.271 µsでした。ただし、これは
 
 実装は次の構造です。
 
-- [`IpcHandleCache`](</home/dskkato/workspace/ros2_cuda_ipc/ros2_cuda_ipc_core/include/ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp:38>) は
+- [`IpcHandleCache`](../ros2_cuda_ipc_core/include/ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp#L38) は
   `shared_ptr<const ImportedResources>` を map に保持
-- [`BufferViewMapper::map()`](</home/dskkato/workspace/ros2_cuda_ipc/ros2_cuda_ipc_core/src/subscriber/buffer_view_mapper.cpp:124>) は
+- [`BufferViewMapper::map()`](../ros2_cuda_ipc_core/src/subscriber/buffer_view_mapper.cpp#L124) は
   cache hit なら既存 entry を使い、miss のときだけ importer を呼ぶ
-- [`BufferView`](</home/dskkato/workspace/ros2_cuda_ipc/ros2_cuda_ipc_core/src/subscriber/buffer_view.cpp:98>) も同じ
+- [`BufferView`](../ros2_cuda_ipc_core/src/subscriber/buffer_view.cpp#L98) も同じ
   resource の shared ownership を保持
 - `clear()` 後も view が保持されていれば resource は生存し、最後の cache/view reference 解放時に
   `cuIpcCloseMemHandle` と `cuEventDestroy` が呼ばれる
@@ -131,7 +131,7 @@ callback終了時に `view` が破棄されても、cache が `ImportedResources
 | 項目 | 方針 |
 |---|---|
 | ownership | `IpcHandleCache` と `BufferView` が同じ `shared_ptr<const ImportedResources>` を共有 |
-| hit | 同じ publisher instance/backend/memory handle/event handle の key なら既存 entry を返す |
+| hit | 同じ publisher instance/backend/device/memory handle/event handle の key なら既存 entry を返す |
 | clear | map を mutex 外で破棄し、active view の resource は保持 |
 | policy | unbounded。上限、LRU、TTL、automatic eviction、instance 単位 prune は導入しない |
 | restart | publisher instance identity が key に含まれるため、restart 後は異なる entry が追加され得る |
@@ -167,9 +167,9 @@ active viewなしの `clear()` 後の release=1 を確認している。
 
 ## 使用した一時計測物
 
-- [実GPU用interposer](/tmp/ros2_cuda_ipc_count_interposer.cpp)
-- Scenario 1/2 の比較 harness
-- 合成 CUDA shim
-- [実GPU計測ログ](/tmp/ros2_cuda_ipc_actual_measure2.log)
+- 実GPU用interposer（ローカル計測用、一時ファイル）
+- Scenario 1/2 の比較 harness（ローカル計測用、一時ファイル）
+- 合成 CUDA shim（ローカル計測用、一時ファイル）
+- 実GPU計測ログ（ローカル計測用、一時ファイル）
 
 core Release build、core 81 tests、example Release build は成功した。
