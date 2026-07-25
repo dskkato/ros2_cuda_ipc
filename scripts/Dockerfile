@@ -18,6 +18,7 @@ RUN apt-get update \
         pybind11-dev \
         python3-dev \
         python3-pip \
+        python3-venv \
     && rm -rf /var/lib/apt/lists/*
 RUN . /etc/os-release \
     && CUDA_REPO_DISTRO="ubuntu$(printf '%s' "${VERSION_ID}" | tr -d .)" \
@@ -30,12 +31,13 @@ RUN . /etc/os-release \
         "cuda-toolkit-${CUDA_TOOLKIT_VERSION}" \
         "cuda-compat-${CUDA_TOOLKIT_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
-RUN PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip install \
+RUN python3 -m venv --system-site-packages /opt/venv \
+    && /opt/venv/bin/python -m pip install \
         --no-cache-dir \
         cupy-cuda13x
 
 ENV CUDA_HOME=/usr/local/cuda
-ENV PATH="${CUDA_HOME}/bin:${PATH}"
+ENV PATH="/opt/venv/bin:${CUDA_HOME}/bin:${PATH}"
 ENV LD_LIBRARY_PATH="${CUDA_HOME}/compat:${CUDA_HOME}/lib64"
 
 # Initialize rosdep (safe to rerun if already initialized)
