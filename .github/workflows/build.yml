@@ -42,8 +42,7 @@ jobs:
             --symlink-install \
             --event-handlers console_direct+ \
             --cmake-args \
-              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-              -DROS2_CUDA_IPC_PY_FETCH_DLPACK=ON
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
       - name: Run tests
         run: |

@@ -16,28 +16,14 @@ find_package(pybind11 REQUIRED CONFIG)
 find_package(ros2_cuda_ipc_core REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 
-option(
-  ROS2_CUDA_IPC_PY_FETCH_DLPACK
-  "Fetch DLPack when an installed package is not available"
-  OFF
+include(FetchContent)
+# Fetch DLPack from GitHub to try the latest version of DLPack for all distributions.
+FetchContent_Declare(
+  dlpack
+  GIT_REPOSITORY https://github.com/dmlc/dlpack
+  GIT_TAG        v1.3
 )
-find_package(dlpack CONFIG QUIET)
-if(NOT TARGET dlpack::dlpack)
-  if(NOT ROS2_CUDA_IPC_PY_FETCH_DLPACK)
-    message(FATAL_ERROR
-      "DLPack was not found. Install DLPack or configure "
-      "-DROS2_CUDA_IPC_PY_FETCH_DLPACK=ON to fetch it from GitHub."
-    )
-  endif()
-
-  include(FetchContent)
-  FetchContent_Declare(
-    dlpack
-    GIT_REPOSITORY https://github.com/dmlc/dlpack
-    GIT_TAG        v1.3
-  )
-  FetchContent_MakeAvailable(dlpack)
-endif()
+FetchContent_MakeAvailable(dlpack)
 
 ament_get_python_install_dir(PYTHON_INSTALL_DIR)
 
