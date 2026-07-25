@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>ros2_cuda_ipc_py</name>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
   <description>Python subscriber bindings for ros2_cuda_ipc GPU images.</description>
   <maintainer email="dskkato@example.com">dskkato</maintainer>
   <license>MIT</license>
