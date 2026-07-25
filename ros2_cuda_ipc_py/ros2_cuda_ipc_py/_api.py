@@ -11,16 +11,6 @@ MappingError = _native.MappingError
 _UINTPTR_MAX = (1 << (ctypes.sizeof(ctypes.c_void_p) * 8)) - 1
 
 
-def _debug_info(native_view):
-    """Return private native diagnostics for view representations."""
-    try:
-        return native_view._debug_info()
-    except AttributeError:
-        # Keep lightweight test doubles and older private native objects usable
-        # without making diagnostics part of the public view contract.
-        return {}
-
-
 def _dlpack_stream_pointer(stream):
     """Normalize the standard CUDA DLPack stream values.
 
@@ -88,18 +78,27 @@ class BufferView:
         return self._native.valid
 
     @property
+    def device_ptr(self):
+        return self._native.device_ptr
+
+    @property
+    def byte_size(self):
+        return self._native.byte_size
+
+    @property
     def device_id(self):
         return self._native.device_id
 
+    @property
+    def slot_id(self):
+        return self._native.slot_id
+
+    @property
+    def generation(self):
+        return self._native.generation
+
     def close(self):
         self._native.close()
-
-    def __repr__(self):
-        return (
-            "BufferView("
-            f"valid={self.valid!r}, "
-            f"debug={_debug_info(self._native)!r})"
-        )
 
     def __enter__(self):
         return self
@@ -123,8 +122,24 @@ class ImageView:
         return self._native.valid
 
     @property
+    def device_ptr(self):
+        return self._native.device_ptr
+
+    @property
+    def byte_size(self):
+        return self._native.byte_size
+
+    @property
     def device_id(self):
         return self._native.device_id
+
+    @property
+    def slot_id(self):
+        return self._native.slot_id
+
+    @property
+    def generation(self):
+        return self._native.generation
 
     @property
     def shape(self):
@@ -189,18 +204,6 @@ class ImageView:
 
     def close(self):
         self._native.close()
-
-    def __repr__(self):
-        return (
-            "ImageView("
-            f"valid={self.valid!r}, "
-            f"shape={self.shape!r}, "
-            f"strides={self.strides!r}, "
-            f"dtype={self.dtype!r}, "
-            f"encoding={self.encoding!r}, "
-            f"frame_id={self.frame_id!r}, "
-            f"debug={_debug_info(self._native)!r})"
-        )
 
     def __enter__(self):
         return self

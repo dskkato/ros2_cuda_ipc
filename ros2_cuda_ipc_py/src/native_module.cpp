@@ -367,17 +367,14 @@ class PyBufferView {
       : view_(std::move(view)) {}
 
   bool valid() const noexcept { return view_.valid(); }
-  int device_id() const noexcept { return view_.device_id; }
-  py::dict debug_info() const {
-    py::dict info;
-    info["device_ptr"] =
-        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(view_.device_ptr()));
-    info["byte_size"] = view_.byte_size;
-    info["device_id"] = view_.device_id;
-    info["slot_id"] = view_.slot_id;
-    info["generation"] = view_.generation;
-    return info;
+  uint64_t device_ptr() const noexcept {
+    return static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(view_.device_ptr()));
   }
+  uint64_t byte_size() const noexcept { return view_.byte_size; }
+  int device_id() const noexcept { return view_.device_id; }
+  uint32_t slot_id() const noexcept { return view_.slot_id; }
+  uint32_t generation() const noexcept { return view_.generation; }
 
   void close() noexcept { view_.reset(); }
 
@@ -391,7 +388,14 @@ class PyImageView {
       : view_(std::move(view)) {}
 
   bool valid() const noexcept { return view_.valid(); }
+  uint64_t device_ptr() const noexcept {
+    return static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(view_.core.device_ptr()));
+  }
+  uint64_t byte_size() const noexcept { return view_.core.byte_size; }
   int device_id() const noexcept { return view_.core.device_id; }
+  uint32_t slot_id() const noexcept { return view_.core.slot_id; }
+  uint32_t generation() const noexcept { return view_.core.generation; }
   py::tuple dlpack_device() const {
     if (!view_.valid()) {
       throw MappingError("cannot export an invalid ImageView through DLPack");
@@ -421,16 +425,6 @@ class PyImageView {
     throw std::logic_error("unsupported ros2_cuda_ipc image dtype");
   }
 
-  py::dict debug_info() const {
-    py::dict info;
-    info["device_ptr"] = static_cast<uint64_t>(
-        reinterpret_cast<uintptr_t>(view_.core.device_ptr()));
-    info["byte_size"] = view_.core.byte_size;
-    info["device_id"] = view_.core.device_id;
-    info["slot_id"] = view_.core.slot_id;
-    info["generation"] = view_.core.generation;
-    return info;
-  }
   py::tuple shape() const {
     return py::make_tuple(view_.shape[0], view_.shape[1], view_.shape[2]);
   }
@@ -690,20 +684,26 @@ PYBIND11_MODULE(_native, module) {
 
   py::class_<PyBufferView>(module, "BufferView")
       .def_property_readonly("valid", &PyBufferView::valid)
+      .def_property_readonly("device_ptr", &PyBufferView::device_ptr)
+      .def_property_readonly("byte_size", &PyBufferView::byte_size)
       .def_property_readonly("device_id", &PyBufferView::device_id)
-      .def("_debug_info", &PyBufferView::debug_info)
+      .def_property_readonly("slot_id", &PyBufferView::slot_id)
+      .def_property_readonly("generation", &PyBufferView::generation)
       .def("close", &PyBufferView::close);
 
   py::class_<PyImageView>(module, "ImageView")
       .def_property_readonly("valid", &PyImageView::valid)
+      .def_property_readonly("device_ptr", &PyImageView::device_ptr)
+      .def_property_readonly("byte_size", &PyImageView::byte_size)
       .def_property_readonly("device_id", &PyImageView::device_id)
+      .def_property_readonly("slot_id", &PyImageView::slot_id)
+      .def_property_readonly("generation", &PyImageView::generation)
       .def_property_readonly("shape", &PyImageView::shape)
       .def_property_readonly("strides", &PyImageView::strides)
       .def_property_readonly("dtype", &PyImageView::dtype)
       .def_property_readonly("encoding", &PyImageView::encoding)
       .def_property_readonly("frame_id", &PyImageView::frame_id)
       .def("_dlpack_device", &PyImageView::dlpack_device)
-      .def("_debug_info", &PyImageView::debug_info)
       .def("_dlpack", &PyImageView::dlpack, py::arg("stream_ptr"),
            py::arg("synchronize"), py::arg("versioned"))
       .def("close", &PyImageView::close);

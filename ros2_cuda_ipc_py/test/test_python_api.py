@@ -39,45 +39,32 @@ def test_extension_imports_and_native_mapper_preserves_metadata():
     assert probe.refcount() == 0
 
 
-def test_views_hide_storage_and_lease_attributes_but_keep_debug_repr():
+def test_views_expose_storage_and_lease_metadata_without_debug_helpers():
     native_view, probe, descriptor = _fixture()
     image = ImageMapper().map(descriptor)
     buffer = BufferViewMapper().map(descriptor["core"])
-    hidden = (
-        "device_ptr",
-        "byte_size",
-        "slot_id",
-        "generation",
-        "dtype_code",
-    )
+    core = descriptor["core"]
 
-    for name in hidden:
-        assert not hasattr(image, name)
-        assert not hasattr(image._native, name)
-        assert not hasattr(native_view, name)
-        assert not hasattr(buffer, name)
-        assert not hasattr(buffer._native, name)
+    for view in (image, image._native, buffer, buffer._native):
+        assert view.device_ptr != 0
+        assert view.byte_size == core["byte_size"]
+        assert view.device_id == core["device_id"]
+        assert view.slot_id == core["slot_id"]
+        assert view.generation == core["generation"]
 
-    assert image.device_id == 0
-    assert buffer.device_id == 0
+    assert image.device_ptr == native_view.device_ptr
+    assert buffer.device_ptr == image.device_ptr
+    assert image.dtype == "uint8"
+    assert not hasattr(image, "dtype_code")
+    assert not hasattr(image._native, "dtype_code")
 
-    buffer_representation = repr(buffer)
-    assert "BufferView(" in buffer_representation
-    assert "device_id" in buffer_representation
-    assert "slot_id" in buffer_representation
-    assert "generation" in buffer_representation
+    for view in (image, image._native, buffer, buffer._native):
+        assert not hasattr(view, "_debug_info")
 
-    representation = repr(image)
-    assert "ImageView(" in representation
-    assert "shape=(2, 3, 4)" in representation
-    assert "dtype='uint8'" in representation
-    assert "device_id" in representation
-    assert "slot_id" in representation
-    assert "generation" in representation
+    assert type(image).__repr__ is object.__repr__
 
     image.close()
     buffer.close()
-    assert "valid=False" in repr(image)
     del image, buffer, native_view
     gc.collect()
     assert probe.refcount() == 0
@@ -264,6 +251,7 @@ def test_torch_from_dlpack_is_zero_copy_and_retains_lease():
     del native_view
     tensor = torch.from_dlpack(image)
     assert tensor.is_cuda
+    assert tensor.data_ptr() == image.device_ptr
     assert tuple(tensor.shape) == image.shape
     assert tuple(tensor.stride()) == (12, 4, 1)
     assert str(tensor.dtype) == "torch.uint8"
@@ -314,6 +302,7 @@ def test_cupy_from_dlpack_is_zero_copy_and_retains_lease_when_available():
     image = ImageView._from_native(native_view)
     del native_view
     array = cp.from_dlpack(image)
+    assert array.data.ptr == image.device_ptr
     assert array.shape == image.shape
     assert array.strides == image.strides
     assert str(array.dtype) == "uint8"
