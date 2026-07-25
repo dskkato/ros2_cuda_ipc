@@ -7,7 +7,7 @@ the existing C++ subscriber mapper.
 ## Requirements
 
 Build with a sourced ROS 2 environment, CUDA Driver API headers/libraries,
-`ros2_cuda_ipc_core`, and the ROS `pybind11_vendor` package. Runtime CuPy is a
+`ros2_cuda_ipc_core`, and the `pybind11-dev` package. Runtime CuPy is a
 separate dependency and must match the installed CUDA major version.
 
 ```bash

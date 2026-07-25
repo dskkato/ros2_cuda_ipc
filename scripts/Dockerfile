@@ -32,9 +32,10 @@ RUN . /etc/os-release \
         "cuda-compat-${CUDA_TOOLKIT_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv --system-site-packages /opt/venv \
+    && CUDA_MAJOR_VERSION="${CUDA_TOOLKIT_VERSION%%-*}" \
     && /opt/venv/bin/python -m pip install \
         --no-cache-dir \
-        cupy-cuda13x
+        "cupy-cuda${CUDA_MAJOR_VERSION}x"
 
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH="/opt/venv/bin:${CUDA_HOME}/bin:${PATH}"
