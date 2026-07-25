@@ -1,5 +1,6 @@
 import copy
 import gc
+import struct
 
 import pytest
 from ros2_cuda_ipc_msgs.msg import GpuImage
@@ -132,6 +133,9 @@ def test_dlpack_device_and_stream_protocol_arguments():
     assert native.arguments == (0, False, True)
     assert image.__dlpack__(stream=2) == "capsule"
     assert native.arguments == (2, True, False)
+    max_uintptr = (1 << (struct.calcsize("P") * 8)) - 1
+    assert image.__dlpack__(stream=max_uintptr) == "capsule"
+    assert native.arguments == (max_uintptr, True, False)
 
     with pytest.raises(ValueError, match="ambiguous"):
         image.__dlpack__(stream=0)

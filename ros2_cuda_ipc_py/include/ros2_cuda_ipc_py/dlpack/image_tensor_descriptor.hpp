@@ -78,8 +78,7 @@ inline ImageTensorDescriptor project_to_tensor(
     const uint64_t dimension = image.shape[index];
     const uint64_t byte_stride = image.strides[index];
     if (dimension == 0) {
-      throw std::invalid_argument(
-          "ImageView dimensions must be non-negative and non-zero");
+      throw std::invalid_argument("ImageView dimensions must be positive");
     }
     if (byte_stride % element_size != 0) {
       throw std::invalid_argument(

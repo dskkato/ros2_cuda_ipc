@@ -1,13 +1,14 @@
 """High-level Python views and DLPack exports."""
 
+import ctypes
 import operator
-import sys
 
 from . import _native
 from ._descriptor import buffer_core_descriptor, gpu_image_descriptor
 
 
 MappingError = _native.MappingError
+_UINTPTR_MAX = (1 << (ctypes.sizeof(ctypes.c_void_p) * 8)) - 1
 
 
 def _dlpack_stream_pointer(stream):
@@ -39,7 +40,7 @@ def _dlpack_stream_pointer(stream):
         raise ValueError("CUDA DLPack stream pointer 0 is ambiguous")
     if pointer < -1:
         raise ValueError("CUDA DLPack stream pointer must be -1 or positive")
-    if pointer > sys.maxsize:
+    if pointer > _UINTPTR_MAX:
         raise ValueError("CUDA DLPack stream pointer is outside uintptr_t")
     return pointer, True
 
@@ -196,9 +197,11 @@ class ImageView:
         Legacy capsules are emitted by default for compatibility with current
         CuPy and PyTorch releases. A consumer that advertises
         ``max_version >= (1, 0)`` receives the versioned DLPack v1.0 capsule.
-        The producer-ready event is waited on the requested CUDA stream before
-        the capsule is returned. The consuming framework object owns the
-        retained native view after capsule consumption.
+        Unless ``stream=-1`` is requested, the producer-ready event is waited
+        on the requested CUDA stream before the capsule is returned. As
+        required by DLPack, ``stream=-1`` disables producer synchronization.
+        The consuming framework object owns the retained native view after
+        capsule consumption.
         """
 
         pointer, synchronize = _dlpack_stream_pointer(stream)

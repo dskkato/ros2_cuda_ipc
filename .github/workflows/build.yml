@@ -41,7 +41,9 @@ jobs:
           colcon build \
             --symlink-install \
             --event-handlers console_direct+ \
-            --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+            --cmake-args \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              -DROS2_CUDA_IPC_PY_FETCH_DLPACK=ON
 
       - name: Run tests
         run: |
