@@ -114,21 +114,18 @@ detail::CudaResult<void> BufferView::validate_stream(
 
   // CU_STREAM_PER_THREAD has no context that can be queried with
   // cuStreamGetCtx.  Both special streams are associated with the current
-  // CUDA context instead.
+  // CUDA context instead.  enqueue_ready_event() pushes this imported
+  // resource context before using the stream, so validate them under that
+  // same context rather than under the caller's current context.
   if (stream == CU_STREAM_LEGACY || stream == CU_STREAM_PER_THREAD) {
-    CUcontext current_context = nullptr;
-    CUresult result = cuCtxGetCurrent(&current_context);
-    if (result != CUDA_SUCCESS) {
-      return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
+    auto guard_result = resource_context->push_current();
+    if (!guard_result) {
+      return detail::CudaResult<void>::failure(guard_result.error());
     }
-    if (current_context == nullptr) {
-      // enqueue_ready_event() will activate the imported context before it
-      // submits the wait.  There is no foreign current context to reject.
-      return detail::CudaResult<void>::success();
-    }
+    auto guard = std::move(guard_result).value();
 
     CUdevice current_device = 0;
-    result = cuCtxGetDevice(&current_device);
+    const CUresult result = cuCtxGetDevice(&current_device);
     if (result != CUDA_SUCCESS) {
       return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
     }

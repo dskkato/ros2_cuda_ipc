@@ -105,4 +105,49 @@ TEST(ReadyEventDriverTest, RejectsStreamFromAnotherCudaDevice) {
   EXPECT_EQ(cudaStreamDestroy(other_device_stream), cudaSuccess);
 }
 
+TEST(ReadyEventDriverTest,
+     AcceptsSpecialStreamsWhenCallerContextIsOnAnotherDevice) {
+  int device_count = 0;
+  if (cudaGetDeviceCount(&device_count) != cudaSuccess || device_count < 2) {
+    GTEST_SKIP() << "At least two CUDA devices are required";
+  }
+
+  auto context_result =
+      ros2_cuda_ipc_core::detail::CudaDeviceContext::retain_primary(0);
+  if (!context_result) {
+    GTEST_SKIP() << "CUDA primary context is unavailable: "
+                 << context_result.error().to_string();
+  }
+
+  ASSERT_EQ(cudaSetDevice(0), cudaSuccess);
+  cudaStream_t producer = nullptr;
+  cudaEvent_t runtime_event = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&producer), cudaSuccess);
+  ASSERT_EQ(cudaEventCreateWithFlags(&runtime_event, cudaEventDisableTiming),
+            cudaSuccess);
+  ASSERT_EQ(cudaEventRecord(runtime_event, producer), cudaSuccess);
+
+  {
+    auto imported =
+        std::make_shared<ros2_cuda_ipc_core::backend::ImportedResources>();
+    imported->event = reinterpret_cast<CUevent>(runtime_event);
+    imported->context = context_result.value();
+    ros2_cuda_ipc_core::subscriber::BufferView view;
+    view.set_imported_resource(std::move(imported));
+
+    // The caller's context must not affect the special stream that will be
+    // resolved after enqueue_ready_event() pushes the imported context.
+    ASSERT_EQ(cudaSetDevice(1), cudaSuccess);
+    for (const CUstream stream : {CU_STREAM_LEGACY, CU_STREAM_PER_THREAD}) {
+      const auto result = view.enqueue_ready_event(stream);
+      ASSERT_TRUE(result) << result.error().to_string();
+    }
+
+    ASSERT_EQ(cudaSetDevice(0), cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  }
+
+  EXPECT_EQ(cudaStreamDestroy(producer), cudaSuccess);
+}
+
 }  // namespace

@@ -4,13 +4,18 @@
 import argparse
 
 import rclpy
-import torch
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from ros2_cuda_ipc_msgs.msg import GpuImage
 
 from ros2_cuda_ipc_py import ImageMapper, MappingError
+
+try:
+    import torch
+except ImportError as exc:
+    torch = None
+    _TORCH_IMPORT_ERROR = exc
 
 
 class GpuImageTorchSubscriber(Node):
@@ -42,6 +47,13 @@ class GpuImageTorchSubscriber(Node):
 
 
 def main():
+    if torch is None:
+        raise SystemExit(
+            "PyTorch is required for gpu_image_torch_subscriber.py. "
+            "Install a CUDA-enabled PyTorch package that matches the "
+            "installed CUDA runtime."
+        ) from _TORCH_IMPORT_ERROR
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--topic", default="/fanout/image_gpu")
     args, ros_args = parser.parse_known_args()
