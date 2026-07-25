@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cuda.h>
+#include <dlpack/dlpack.h>
 
 #include <array>
 #include <cstdint>
@@ -11,7 +12,6 @@
 #include <stdexcept>
 #include <string>
 
-#include "dlpack.hpp"
 #include "ros2_cuda_ipc_core/image/image_view.hpp"
 
 namespace ros2_cuda_ipc_py {
