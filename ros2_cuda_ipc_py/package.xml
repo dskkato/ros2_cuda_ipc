@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ros2_cuda_ipc_py</name>
+  <version>0.3.0</version>
+  <description>Python subscriber bindings for ros2_cuda_ipc GPU images.</description>
+  <maintainer email="dskkato@example.com">dskkato</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <build_depend>python3-dev</build_depend>
+  <depend>pybind11-dev</depend>
+  <depend>ros2_cuda_ipc_core</depend>
+  <depend>ros2_cuda_ipc_msgs</depend>
+
+  <exec_depend>rclpy</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
