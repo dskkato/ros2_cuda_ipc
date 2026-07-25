@@ -195,6 +195,38 @@ def test_dlpack_device_and_stream_protocol_arguments():
         image.__dlpack__(stream=object())
 
 
+def test_dlpack_device_copy_and_keyword_only_arguments():
+    class SpyNative:
+        valid = True
+
+        def _dlpack_device(self):
+            return (2, 3)
+
+        def _dlpack(self, stream_ptr, synchronize, versioned):
+            self.arguments = (stream_ptr, synchronize, versioned)
+            return "capsule"
+
+        def close(self):
+            self.valid = False
+
+    native = SpyNative()
+    image = ImageView._from_native(native)
+
+    assert image.__dlpack__() == "capsule"
+    assert image.__dlpack__(copy=False) == "capsule"
+    assert image.__dlpack__(dl_device=(2, 3)) == "capsule"
+    assert image.__dlpack__(dl_device=[2, 3]) == "capsule"
+
+    with pytest.raises(BufferError, match="copying"):
+        image.__dlpack__(copy=True)
+    with pytest.raises(BufferError, match="cross-device"):
+        image.__dlpack__(dl_device=(2, 4))
+    with pytest.raises(BufferError, match="cross-device"):
+        image.__dlpack__(dl_device=(1, 0))
+    with pytest.raises(TypeError):
+        image.__dlpack__(None)
+
+
 def test_unconsumed_dlpack_capsule_releases_lease():
     native_view, probe, _descriptor = _fixture()
     image = ImageView._from_native(native_view)

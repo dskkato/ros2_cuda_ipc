@@ -153,18 +153,35 @@ class ImageView:
             raise MappingError("cannot export an invalid ImageView through DLPack")
         return self._native._dlpack_device()
 
-    def __dlpack__(self, stream=None, max_version=None):
+    def __dlpack__(
+        self,
+        *,
+        stream=None,
+        max_version=None,
+        dl_device=None,
+        copy=None,
+    ):
         """Return a zero-copy DLPack capsule for this image.
 
         Legacy capsules are emitted by default for compatibility with current
         CuPy and PyTorch releases. A consumer that advertises
         ``max_version >= (1, 0)`` receives the versioned DLPack v1.0 capsule.
+        ``dl_device`` must be this image's CUDA device when specified. This
+        producer does not support cross-device exports or copying, so
+        ``copy=True`` raises ``BufferError`` while ``copy=None`` and
+        ``copy=False`` retain zero-copy semantics.
         Unless ``stream=-1`` is requested, the producer-ready event is waited
         on the requested CUDA stream before the capsule is returned. As
         required by DLPack, ``stream=-1`` disables producer synchronization.
         The consuming framework object owns the retained native view after
         capsule consumption.
         """
+
+        current_device = self.__dlpack_device__()
+        if dl_device is not None and tuple(dl_device) != current_device:
+            raise BufferError("cross-device DLPack export is not supported")
+        if copy is True:
+            raise BufferError("copying DLPack export is not supported")
 
         pointer, synchronize = _dlpack_stream_pointer(stream)
         versioned = _dlpack_versioned(max_version)
