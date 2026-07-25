@@ -23,6 +23,7 @@
 #include "ros2_cuda_ipc_core/subscriber/buffer_view_mapper.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
+#include "ros2_cuda_ipc_py/dlpack/image_tensor_descriptor.hpp"
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
 #include <sys/mman.h>
@@ -189,23 +190,14 @@ ros2_cuda_ipc_msgs::msg::GpuImage gpu_image_from_descriptor(
 }
 
 uint32_t dtype_size(uint8_t dtype) {
-  using ros2_cuda_ipc_core::image::DType;
-  switch (static_cast<DType>(dtype)) {
-    case DType::U8:
-      return 1;
-    case DType::U16:
-    case DType::F16:
-    case DType::S16:
-      return 2;
-    case DType::F32:
-    case DType::S32:
-    case DType::U32:
-      return 4;
-    case DType::F64:
-      return 8;
+  try {
+    const auto dl_dtype = dlpack::tensor_dl_dtype(
+        static_cast<ros2_cuda_ipc_core::image::DType>(dtype));
+    return dl_dtype.bits / 8;
+  } catch (const std::invalid_argument&) {
+    throw py::value_error("unsupported ros2_cuda_ipc image dtype " +
+                          std::to_string(dtype));
   }
-  throw py::value_error("unsupported ros2_cuda_ipc image dtype " +
-                        std::to_string(dtype));
 }
 
 void validate_image_descriptor(
@@ -232,33 +224,159 @@ std::string cuda_error_message(
   return error.to_string();
 }
 
+// Lifetime object for a DLPack export. The descriptor is the value projected
+// into DLPack, while owner retains the mapped resource until the consumer
+// releases the managed tensor.
+struct DlpackExportContext {
+  dlpack::ImageTensorDescriptor tensor;
+  ros2_cuda_ipc_core::image::ImageView owner;
+};
+
+void legacy_dlpack_deleter(DLManagedTensor* managed) noexcept {
+  if (managed == nullptr) {
+    return;
+  }
+  auto* context = static_cast<DlpackExportContext*>(managed->manager_ctx);
+  managed->manager_ctx = nullptr;
+  try {
+    delete context;
+  } catch (...) {
+    // A C ABI deleter must never allow an exception to escape.  The
+    // C++ owner has a noexcept destructor in practice; retain this guard as a
+    // final boundary guarantee.
+  }
+  try {
+    delete managed;
+  } catch (...) {
+  }
+}
+
+void versioned_dlpack_deleter(DLManagedTensorVersioned* managed) noexcept {
+  if (managed == nullptr) {
+    return;
+  }
+  auto* context = static_cast<DlpackExportContext*>(managed->manager_ctx);
+  managed->manager_ctx = nullptr;
+  try {
+    delete context;
+  } catch (...) {
+  }
+  try {
+    delete managed;
+  } catch (...) {
+  }
+}
+
+constexpr char kDLPackName[] = "dltensor";
+constexpr char kVersionedDLPackName[] = "dltensor_versioned";
+
+void dlpack_capsule_destructor(PyObject* capsule) noexcept {
+  if (capsule == nullptr) {
+    return;
+  }
+
+  const char* name = PyCapsule_GetName(capsule);
+  if (name == nullptr) {
+    PyErr_Clear();
+    return;
+  }
+
+  if (std::strcmp(name, kDLPackName) == 0) {
+    auto* managed = static_cast<DLManagedTensor*>(
+        PyCapsule_GetPointer(capsule, kDLPackName));
+    if (managed != nullptr && managed->deleter != nullptr) {
+      managed->deleter(managed);
+    }
+  } else if (std::strcmp(name, kVersionedDLPackName) == 0) {
+    auto* managed = static_cast<DLManagedTensorVersioned*>(
+        PyCapsule_GetPointer(capsule, kVersionedDLPackName));
+    if (managed != nullptr && managed->deleter != nullptr) {
+      managed->deleter(managed);
+    }
+  }
+  // PyCapsule_GetPointer reports an error for an invalid/moved capsule.  A
+  // destructor cannot propagate that error to Python.
+  PyErr_Clear();
+}
+
+template <typename ManagedTensor>
+void populate_dlpack_tensor(ManagedTensor& managed,
+                            DlpackExportContext& context) noexcept {
+  auto& tensor = managed.dl_tensor;
+  tensor.data = context.tensor.data;
+  tensor.device = {kDLCUDA, context.tensor.device_id};
+  tensor.ndim = context.tensor.rank;
+  tensor.dtype = context.tensor.dl_dtype;
+  tensor.shape = context.tensor.shape.data();
+  tensor.strides = context.tensor.element_strides.data();
+  tensor.byte_offset = context.tensor.byte_offset;
+}
+
+py::capsule make_legacy_dlpack_capsule(
+    const dlpack::ImageTensorDescriptor& tensor,
+    const ros2_cuda_ipc_core::image::ImageView& owner) {
+  auto context = std::make_unique<DlpackExportContext>();
+  context->tensor = tensor;
+  context->owner = owner;
+  auto managed = std::make_unique<DLManagedTensor>();
+  managed->manager_ctx = context.get();
+  managed->deleter = &legacy_dlpack_deleter;
+  populate_dlpack_tensor(*managed, *context);
+  auto* managed_ptr = managed.release();
+  context.release();  // NOLINT(bugprone-unused-return-value) - context is now
+                      // owned by the DLManagedTensor and will be deleted by the
+                      // deleter.
+
+  try {
+    return py::capsule(managed_ptr, kDLPackName, &dlpack_capsule_destructor);
+  } catch (...) {
+    legacy_dlpack_deleter(managed_ptr);
+    throw;
+  }
+}
+
+py::capsule make_versioned_dlpack_capsule(
+    const dlpack::ImageTensorDescriptor& tensor,
+    const ros2_cuda_ipc_core::image::ImageView& owner) {
+  auto context = std::make_unique<DlpackExportContext>();
+  context->tensor = tensor;
+  context->owner = owner;
+  auto managed = std::make_unique<DLManagedTensorVersioned>();
+  managed->version = {1, 0};
+  managed->manager_ctx = context.get();
+  managed->deleter = &versioned_dlpack_deleter;
+  managed->flags = 0;
+  populate_dlpack_tensor(*managed, *context);
+  auto* managed_ptr = managed.release();
+  context.release();  // NOLINT(bugprone-unused-return-value) - context is now
+                      // owned by the DLManagedTensor and will be deleted by the
+                      // deleter.
+
+  try {
+    return py::capsule(managed_ptr, kVersionedDLPackName,
+                       &dlpack_capsule_destructor);
+  } catch (...) {
+    versioned_dlpack_deleter(managed_ptr);
+    throw;
+  }
+}
+
 class PyBufferView {
  public:
   explicit PyBufferView(ros2_cuda_ipc_core::subscriber::BufferView view)
       : view_(std::move(view)) {}
 
   bool valid() const noexcept { return view_.valid(); }
-  uint64_t device_ptr() const noexcept {
-    return static_cast<uint64_t>(
-        reinterpret_cast<uintptr_t>(view_.device_ptr()));
-  }
-  uint64_t byte_size() const noexcept { return view_.byte_size; }
   int device_id() const noexcept { return view_.device_id; }
-  uint32_t slot_id() const noexcept { return view_.slot_id; }
-  uint32_t generation() const noexcept { return view_.generation; }
-
-  void wait(std::uintptr_t stream_ptr) const {
-    if (!view_.valid()) {
-      throw MappingError("cannot wait on an invalid BufferView");
-    }
-    const auto result = [&]() {
-      py::gil_scoped_release release;
-      return view_.enqueue_ready_event(reinterpret_cast<CUstream>(stream_ptr));
-    }();
-    if (!result) {
-      throw std::runtime_error("CUDA ready-event wait failed: " +
-                               cuda_error_message(result.error()));
-    }
+  py::dict debug_info() const {
+    py::dict info;
+    info["device_ptr"] =
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(view_.device_ptr()));
+    info["byte_size"] = view_.byte_size;
+    info["device_id"] = view_.device_id;
+    info["slot_id"] = view_.slot_id;
+    info["generation"] = view_.generation;
+    return info;
   }
 
   void close() noexcept { view_.reset(); }
@@ -272,41 +390,90 @@ class PyImageView {
   explicit PyImageView(ros2_cuda_ipc_core::image::ImageView view)
       : view_(std::move(view)) {}
 
-  PyImageView retain() const { return PyImageView(view_); }
-
   bool valid() const noexcept { return view_.valid(); }
-  uint64_t device_ptr() const noexcept {
-    return static_cast<uint64_t>(
-        reinterpret_cast<uintptr_t>(view_.core.device_ptr()));
-  }
-  uint64_t byte_size() const noexcept { return view_.core.byte_size; }
   int device_id() const noexcept { return view_.core.device_id; }
-  uint32_t slot_id() const noexcept { return view_.core.slot_id; }
-  uint32_t generation() const noexcept { return view_.core.generation; }
+  py::tuple dlpack_device() const {
+    if (!view_.valid()) {
+      throw MappingError("cannot export an invalid ImageView through DLPack");
+    }
+    return py::make_tuple(static_cast<int32_t>(kDLCUDA), view_.core.device_id);
+  }
+
+  std::string dtype() const {
+    switch (view_.dtype) {
+      case ros2_cuda_ipc_core::image::DType::U8:
+        return "uint8";
+      case ros2_cuda_ipc_core::image::DType::U16:
+        return "uint16";
+      case ros2_cuda_ipc_core::image::DType::F16:
+        return "float16";
+      case ros2_cuda_ipc_core::image::DType::F32:
+        return "float32";
+      case ros2_cuda_ipc_core::image::DType::F64:
+        return "float64";
+      case ros2_cuda_ipc_core::image::DType::S16:
+        return "int16";
+      case ros2_cuda_ipc_core::image::DType::S32:
+        return "int32";
+      case ros2_cuda_ipc_core::image::DType::U32:
+        return "uint32";
+    }
+    throw std::logic_error("unsupported ros2_cuda_ipc image dtype");
+  }
+
+  py::dict debug_info() const {
+    py::dict info;
+    info["device_ptr"] = static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(view_.core.device_ptr()));
+    info["byte_size"] = view_.core.byte_size;
+    info["device_id"] = view_.core.device_id;
+    info["slot_id"] = view_.core.slot_id;
+    info["generation"] = view_.core.generation;
+    return info;
+  }
   py::tuple shape() const {
     return py::make_tuple(view_.shape[0], view_.shape[1], view_.shape[2]);
   }
   py::tuple strides() const {
     return py::make_tuple(view_.strides[0], view_.strides[1], view_.strides[2]);
   }
-  uint8_t dtype_code() const noexcept {
-    return static_cast<uint8_t>(view_.dtype);
-  }
   const std::string& encoding() const noexcept { return view_.encoding; }
   const std::string& frame_id() const noexcept { return view_.header.frame_id; }
 
-  void wait(std::uintptr_t stream_ptr) const {
+  py::capsule dlpack(std::uintptr_t stream_ptr, bool synchronize,
+                     bool versioned) const {
     if (!view_.valid()) {
-      throw MappingError("cannot wait on an invalid ImageView");
+      throw MappingError("cannot export an invalid ImageView through DLPack");
     }
-    const auto result = [&]() {
-      py::gil_scoped_release release;
-      return view_.enqueue_ready_event(reinterpret_cast<CUstream>(stream_ptr));
-    }();
-    if (!result) {
-      throw std::runtime_error("CUDA ready-event wait failed: " +
-                               cuda_error_message(result.error()));
+
+    // Validate and retain the framework-independent layout before touching a
+    // consumer stream. Invalid metadata must not enqueue a synchronization
+    // side effect.
+    dlpack::ImageTensorDescriptor tensor;
+    try {
+      tensor = dlpack::project_to_tensor(view_);
+    } catch (const std::invalid_argument& error) {
+      // The DLPack Python protocol uses BufferError for layouts that cannot
+      // be represented safely as a dense strided tensor.
+      throw py::buffer_error(error.what());
     }
+
+    if (synchronize) {
+      const auto result = [&]() {
+        py::gil_scoped_release release;
+        return view_.enqueue_ready_event(
+            reinterpret_cast<CUstream>(stream_ptr));
+      }();
+      if (!result) {
+        throw std::runtime_error("CUDA ready-event wait failed: " +
+                                 cuda_error_message(result.error()));
+      }
+    }
+
+    if (versioned) {
+      return make_versioned_dlpack_capsule(tensor, view_);
+    }
+    return make_legacy_dlpack_capsule(tensor, view_);
   }
 
   void close() noexcept { view_.core.reset(); }
@@ -523,28 +690,22 @@ PYBIND11_MODULE(_native, module) {
 
   py::class_<PyBufferView>(module, "BufferView")
       .def_property_readonly("valid", &PyBufferView::valid)
-      .def_property_readonly("device_ptr", &PyBufferView::device_ptr)
-      .def_property_readonly("byte_size", &PyBufferView::byte_size)
       .def_property_readonly("device_id", &PyBufferView::device_id)
-      .def_property_readonly("slot_id", &PyBufferView::slot_id)
-      .def_property_readonly("generation", &PyBufferView::generation)
-      .def("wait", &PyBufferView::wait, py::arg("stream_ptr"))
+      .def("_debug_info", &PyBufferView::debug_info)
       .def("close", &PyBufferView::close);
 
   py::class_<PyImageView>(module, "ImageView")
-      .def("_retain", &PyImageView::retain)
       .def_property_readonly("valid", &PyImageView::valid)
-      .def_property_readonly("device_ptr", &PyImageView::device_ptr)
-      .def_property_readonly("byte_size", &PyImageView::byte_size)
       .def_property_readonly("device_id", &PyImageView::device_id)
-      .def_property_readonly("slot_id", &PyImageView::slot_id)
-      .def_property_readonly("generation", &PyImageView::generation)
       .def_property_readonly("shape", &PyImageView::shape)
       .def_property_readonly("strides", &PyImageView::strides)
-      .def_property_readonly("dtype_code", &PyImageView::dtype_code)
+      .def_property_readonly("dtype", &PyImageView::dtype)
       .def_property_readonly("encoding", &PyImageView::encoding)
       .def_property_readonly("frame_id", &PyImageView::frame_id)
-      .def("wait", &PyImageView::wait, py::arg("stream_ptr"))
+      .def("_dlpack_device", &PyImageView::dlpack_device)
+      .def("_debug_info", &PyImageView::debug_info)
+      .def("_dlpack", &PyImageView::dlpack, py::arg("stream_ptr"),
+           py::arg("synchronize"), py::arg("versioned"))
       .def("close", &PyImageView::close);
 
   py::class_<PyBufferViewMapper>(module, "BufferViewMapper")

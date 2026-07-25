@@ -3,6 +3,8 @@
 
 #include "ros2_cuda_ipc_core/image/image_view.hpp"
 
+#include <limits>
+
 namespace ros2_cuda_ipc_core::image {
 
 uint32_t ImageView::elem_size_bytes() const noexcept {
@@ -28,11 +30,14 @@ bool ImageView::sanity_check() const noexcept {
     return false;
   }
 
-  const uint64_t last_row = (rows() - 1) * strideH();
-  const uint64_t last_col = (cols() - 1) * strideW();
-  const uint64_t last_chan = (channels() - 1) * strideC();
-  const uint64_t needed = last_row + last_col + last_chan + elem_size_bytes();
-  return core.byte_size >= needed;
+  using WideUnsigned = unsigned __int128;
+  const WideUnsigned needed =
+      (static_cast<WideUnsigned>(rows() - 1) * strideH()) +
+      (static_cast<WideUnsigned>(cols() - 1) * strideW()) +
+      (static_cast<WideUnsigned>(channels() - 1) * strideC()) +
+      elem_size_bytes();
+  return needed <= std::numeric_limits<uint64_t>::max() &&
+         needed <= core.byte_size;
 }
 
 }  // namespace ros2_cuda_ipc_core::image

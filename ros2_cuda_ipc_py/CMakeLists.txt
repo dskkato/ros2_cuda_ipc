@@ -16,11 +16,21 @@ find_package(pybind11 REQUIRED CONFIG)
 find_package(ros2_cuda_ipc_core REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 
+include(FetchContent)
+# Fetch DLPack from GitHub to try the latest version of DLPack for all distributions.
+FetchContent_Declare(
+  dlpack
+  GIT_REPOSITORY https://github.com/dmlc/dlpack
+  GIT_TAG        v1.3
+)
+FetchContent_MakeAvailable(dlpack)
+
 ament_get_python_install_dir(PYTHON_INSTALL_DIR)
 
 pybind11_add_module(_native MODULE src/native_module.cpp)
-target_link_libraries(_native PRIVATE ros2_cuda_ipc_core::ros2_cuda_ipc_core)
-target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_VERSION="0.2.0")
+target_include_directories(_native PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(_native PRIVATE ros2_cuda_ipc_core::ros2_cuda_ipc_core dlpack::dlpack)
+target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_VERSION="0.3.0")
 
 if(BUILD_TESTING)
   target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT)
@@ -33,7 +43,9 @@ install(TARGETS _native
   RUNTIME DESTINATION ${PYTHON_INSTALL_DIR}/ros2_cuda_ipc_py
 )
 
-install(PROGRAMS examples/gpu_image_subscriber.py
+install(PROGRAMS
+  examples/gpu_image_cupy_subscriber.py
+  examples/gpu_image_torch_subscriber.py
   DESTINATION lib/${PROJECT_NAME}
 )
 install(FILES README.md DESTINATION share/${PROJECT_NAME})
