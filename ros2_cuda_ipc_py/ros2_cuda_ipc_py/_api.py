@@ -11,6 +11,16 @@ MappingError = _native.MappingError
 _UINTPTR_MAX = (1 << (ctypes.sizeof(ctypes.c_void_p) * 8)) - 1
 
 
+def _debug_info(native_view):
+    """Return private native diagnostics for view representations."""
+    try:
+        return native_view._debug_info()
+    except AttributeError:
+        # Keep lightweight test doubles and older private native objects usable
+        # without making diagnostics part of the public view contract.
+        return {}
+
+
 def _dlpack_stream_pointer(stream):
     """Normalize the standard CUDA DLPack stream values.
 
@@ -78,27 +88,18 @@ class BufferView:
         return self._native.valid
 
     @property
-    def device_ptr(self):
-        return self._native.device_ptr
-
-    @property
-    def byte_size(self):
-        return self._native.byte_size
-
-    @property
     def device_id(self):
         return self._native.device_id
 
-    @property
-    def slot_id(self):
-        return self._native.slot_id
-
-    @property
-    def generation(self):
-        return self._native.generation
-
     def close(self):
         self._native.close()
+
+    def __repr__(self):
+        return (
+            "BufferView("
+            f"valid={self.valid!r}, "
+            f"debug={_debug_info(self._native)!r})"
+        )
 
     def __enter__(self):
         return self
@@ -109,17 +110,6 @@ class BufferView:
 
 class ImageView:
     """Lease-backed image metadata and framework-neutral zero-copy exports."""
-
-    _DTYPE_NAMES = {
-        0: "uint8",
-        1: "uint16",
-        2: "float16",
-        3: "float32",
-        4: "float64",
-        5: "int16",
-        6: "int32",
-        7: "uint32",
-    }
 
     def __init__(self, native_view):
         self._native = native_view
@@ -133,24 +123,8 @@ class ImageView:
         return self._native.valid
 
     @property
-    def device_ptr(self):
-        return self._native.device_ptr
-
-    @property
-    def byte_size(self):
-        return self._native.byte_size
-
-    @property
     def device_id(self):
         return self._native.device_id
-
-    @property
-    def slot_id(self):
-        return self._native.slot_id
-
-    @property
-    def generation(self):
-        return self._native.generation
 
     @property
     def shape(self):
@@ -161,18 +135,8 @@ class ImageView:
         return self._native.strides
 
     @property
-    def dtype_code(self):
-        return self._native.dtype_code
-
-    @property
     def dtype(self):
-        try:
-            return self._DTYPE_NAMES[self.dtype_code]
-        except KeyError as exc:  # The native mapper rejects this before return.
-            raise ValueError(
-                "unsupported ros2_cuda_ipc image dtype "
-                f"{self.dtype_code}"
-            ) from exc
+        return self._native.dtype
 
     @property
     def encoding(self):
@@ -187,9 +151,7 @@ class ImageView:
 
         if not self.valid:
             raise MappingError("cannot export an invalid ImageView through DLPack")
-        # kDLCUDA is 2 in the DLPack ABI (also called kDLGPU by older PyTorch
-        # headers).
-        return (2, int(self.device_id))
+        return self._native._dlpack_device()
 
     def __dlpack__(self, stream=None, max_version=None):
         """Return a zero-copy DLPack capsule for this image.
@@ -210,6 +172,18 @@ class ImageView:
 
     def close(self):
         self._native.close()
+
+    def __repr__(self):
+        return (
+            "ImageView("
+            f"valid={self.valid!r}, "
+            f"shape={self.shape!r}, "
+            f"strides={self.strides!r}, "
+            f"dtype={self.dtype!r}, "
+            f"encoding={self.encoding!r}, "
+            f"frame_id={self.frame_id!r}, "
+            f"debug={_debug_info(self._native)!r})"
+        )
 
     def __enter__(self):
         return self

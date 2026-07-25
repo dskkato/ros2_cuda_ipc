@@ -41,6 +41,12 @@ def callback(msg):
 preserves the message's `(rows, cols, channels)` shape, byte strides, and dtype,
 and the returned array keeps the native image lease alive until it is released.
 
+`ImageView` exposes semantic image metadata such as `device_id`, `shape`,
+`strides`, `dtype`, `encoding`, and `frame_id`. GPU pointers, allocation size,
+and lease-generation fields are intentionally not view attributes. Use the
+standard `__dlpack__()` and `__dlpack_device__()` protocols for framework
+interop; `repr(image)` includes a diagnostic summary when debugging is needed.
+
 Framework-neutral DLPack consumers use the standard producer protocol:
 
 ```python

@@ -5,8 +5,13 @@ import struct
 import pytest
 from ros2_cuda_ipc_msgs.msg import GpuImage
 
-from ros2_cuda_ipc_py import ImageMapper, ImageView, MappingError
 from ros2_cuda_ipc_py import _native
+from ros2_cuda_ipc_py import (
+    BufferViewMapper,
+    ImageMapper,
+    ImageView,
+    MappingError,
+)
 from ros2_cuda_ipc_py._descriptor import gpu_image_descriptor
 
 
@@ -25,10 +30,55 @@ def test_extension_imports_and_native_mapper_preserves_metadata():
     assert view.dtype == "uint8"
     assert view.encoding == "rgba8"
     assert view.frame_id == "test_frame"
+    assert view.__dlpack_device__() == (2, 0)
     assert probe.refcount() == 2
 
     view.close()
     del view, native_view
+    gc.collect()
+    assert probe.refcount() == 0
+
+
+def test_views_hide_storage_and_lease_attributes_but_keep_debug_repr():
+    native_view, probe, descriptor = _fixture()
+    image = ImageMapper().map(descriptor)
+    buffer = BufferViewMapper().map(descriptor["core"])
+    hidden = (
+        "device_ptr",
+        "byte_size",
+        "slot_id",
+        "generation",
+        "dtype_code",
+    )
+
+    for name in hidden:
+        assert not hasattr(image, name)
+        assert not hasattr(image._native, name)
+        assert not hasattr(native_view, name)
+        assert not hasattr(buffer, name)
+        assert not hasattr(buffer._native, name)
+
+    assert image.device_id == 0
+    assert buffer.device_id == 0
+
+    buffer_representation = repr(buffer)
+    assert "BufferView(" in buffer_representation
+    assert "device_id" in buffer_representation
+    assert "slot_id" in buffer_representation
+    assert "generation" in buffer_representation
+
+    representation = repr(image)
+    assert "ImageView(" in representation
+    assert "shape=(2, 3, 4)" in representation
+    assert "dtype='uint8'" in representation
+    assert "device_id" in representation
+    assert "slot_id" in representation
+    assert "generation" in representation
+
+    image.close()
+    buffer.close()
+    assert "valid=False" in repr(image)
+    del image, buffer, native_view
     gc.collect()
     assert probe.refcount() == 0
 
@@ -110,14 +160,14 @@ def test_stale_generation_is_reported_as_mapping_error():
 def test_dlpack_device_and_stream_protocol_arguments():
     class SpyNative:
         valid = True
-        device_ptr = 1
-        byte_size = 1
-        device_id = 3
         shape = (1, 1, 1)
         strides = (1, 1, 1)
-        dtype_code = 0
+        dtype = "uint8"
         encoding = ""
         frame_id = ""
+
+        def _dlpack_device(self):
+            return (2, 3)
 
         def close(self):
             self.valid = False
@@ -182,7 +232,6 @@ def test_torch_from_dlpack_is_zero_copy_and_retains_lease():
     del native_view
     tensor = torch.from_dlpack(image)
     assert tensor.is_cuda
-    assert tensor.data_ptr() == image.device_ptr
     assert tuple(tensor.shape) == image.shape
     assert tuple(tensor.stride()) == (12, 4, 1)
     assert str(tensor.dtype) == "torch.uint8"
@@ -233,7 +282,6 @@ def test_cupy_from_dlpack_is_zero_copy_and_retains_lease_when_available():
     image = ImageView._from_native(native_view)
     del native_view
     array = cp.from_dlpack(image)
-    assert array.data.ptr == image.device_ptr
     assert array.shape == image.shape
     assert array.strides == image.strides
     assert str(array.dtype) == "uint8"

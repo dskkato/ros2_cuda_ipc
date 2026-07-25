@@ -38,7 +38,7 @@ class GpuImageSubscriber(Node):
             self.get_logger().info(
                 f"received {image.encoding or '<unspecified>'} "
                 f"shape={array.shape} dtype={array.dtype} "
-                f"device_ptr=0x{image.device_ptr:x}"
+                f"device={image.device_id}"
             )
         except (MappingError, RuntimeError, TypeError, ValueError) as exc:
             self.get_logger().warning(f"skipping GPU image: {exc}")
