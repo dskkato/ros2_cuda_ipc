@@ -41,8 +41,7 @@ jobs:
           colcon build \
             --symlink-install \
             --event-handlers console_direct+ \
-            --cmake-args \
-              -DCMAKE_BUILD_TYPE=RelWithDebInfo
+            --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
 
       - name: Run tests
         run: |
