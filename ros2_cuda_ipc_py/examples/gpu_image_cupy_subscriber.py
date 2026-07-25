@@ -3,7 +3,6 @@
 
 import argparse
 
-import cupy as cp
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
@@ -12,6 +11,11 @@ from ros2_cuda_ipc_msgs.msg import GpuImage
 
 from ros2_cuda_ipc_py import ImageMapper, MappingError
 
+try:
+    import cupy as cp
+except ImportError as exc:
+    cp = None
+    _CUPY_IMPORT_ERROR = exc
 
 class GpuImageSubscriber(Node):
     def __init__(self, topic):
@@ -41,6 +45,12 @@ class GpuImageSubscriber(Node):
 
 
 def main():
+    if cp is None:
+        raise SystemExit(
+            "CuPy is required for gpu_image_cupy_subscriber.py. "
+            "Install a CuPy package compatible with your CUDA environment "
+            "(for example, cupy-cuda12x)."
+        ) from _CUPY_IMPORT_ERROR
     parser = argparse.ArgumentParser()
     parser.add_argument("--topic", default="/fanout/image_gpu")
     args, ros_args = parser.parse_known_args()

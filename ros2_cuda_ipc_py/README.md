@@ -111,7 +111,7 @@ dependency or CUDA device is unavailable.
 A runnable subscriber is installed as:
 
 ```bash
-ros2 run ros2_cuda_ipc_py gpu_image_subscriber.py --ros-args -p use_sim_time:=false
+ros2 run ros2_cuda_ipc_py gpu_image_cupy_subscriber.py --ros-args -p use_sim_time:=false
 ```
 
 The DLPack/Torch example is installed as:

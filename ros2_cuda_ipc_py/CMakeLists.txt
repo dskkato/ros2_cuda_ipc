@@ -43,7 +43,7 @@ install(TARGETS _native
 )
 
 install(PROGRAMS
-  examples/gpu_image_subscriber.py
+  examples/gpu_image_cupy_subscriber.py
   examples/gpu_image_torch_subscriber.py
   DESTINATION lib/${PROJECT_NAME}
 )
