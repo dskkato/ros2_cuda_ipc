@@ -345,9 +345,7 @@ py::capsule make_versioned_dlpack_capsule(
   managed->version = {1, 0};
   managed->manager_ctx = context.get();
   managed->deleter = &versioned_dlpack_deleter;
-  // Note that there is no guarantee that the underlying ImageView is actually
-  // read-only.  The DLPack consumer is expected to respect this flag.
-  managed->flags = DLPACK_FLAG_BITMASK_READ_ONLY;
+  managed->flags = 0;
   populate_dlpack_tensor(*managed, *context);
   auto* managed_ptr = managed.release();
   context.release();  // NOLINT(bugprone-unused-return-value) - context is now
