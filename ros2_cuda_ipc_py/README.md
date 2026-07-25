@@ -3,8 +3,7 @@
 Python subscriber support for `ros2_cuda_ipc`. The package keeps ROS 2
 subscription and QoS handling in `rclpy`, while the pybind11 extension calls
 the existing C++ subscriber mapper. DLPack is the framework-neutral tensor
-interoperability path; CuPy is one adapter built on the same native metadata
-and ownership model.
+interoperability path used by CuPy, PyTorch, and other compatible consumers.
 
 ## Requirements
 
@@ -29,19 +28,15 @@ mapper = ImageMapper()  # keep one mapper for the subscriber's lifetime
 
 def callback(msg):
     image = mapper.map(msg)
-    stream = cp.cuda.get_current_stream()
-    array = image.as_cupy(stream)
+    array = cp.from_dlpack(image)
     # array is a zero-copy view of the imported allocation.
     consume(array)
-    stream.synchronize()  # before dropping the final array/view owner
+    cp.cuda.get_current_stream().synchronize()
 ```
 
-`as_cupy()` enqueues the publisher ready-event wait on the specified CuPy
-stream, or on the current stream when omitted. It preserves the message's
-`(rows, cols, channels)` shape, byte strides, and dtype. The returned ndarray
-owns an `UnownedMemory` object whose owner is an independent native image view;
-this keeps the native view, imported allocation, and shared-memory lease alive
-until the ndarray is released, even if the original image view is closed.
+`cupy.from_dlpack(image)` consumes the standard DLPack producer protocol. It
+preserves the message's `(rows, cols, channels)` shape, byte strides, and dtype,
+and the returned array keeps the native image lease alive until it is released.
 
 Framework-neutral DLPack consumers use the standard producer protocol:
 
@@ -64,9 +59,9 @@ def callback(message):
     # work is complete. The DLPack tensor owns a retained native image view.
 ```
 
-The equivalent CuPy call is `cupy.from_dlpack(image)`. Both paths are
-zero-copy and preserve shape, dtype, device, and non-contiguous strides. The
-ownership chain is:
+CuPy and PyTorch both consume the same DLPack export. The path is zero-copy and
+preserves shape, dtype, device, and non-contiguous strides. The ownership chain
+is:
 
 ```text
 framework tensor/array
@@ -106,8 +101,8 @@ useful for tests and keeps the extension independent of generated `rclpy`
 message internals. The Python adapter converts generated ROS messages to that
 descriptor and copies only small metadata/handle fields, never the GPU payload.
 
-The current Python API supports `GpuImage`/`BufferCore` subscription mapping,
-CuPy, and DLPack consumers such as PyTorch. CuPy and PyTorch remain optional
+The current Python API supports `GpuImage`/`BufferCore` subscription mapping
+and DLPack consumers such as CuPy and PyTorch. CuPy and PyTorch remain optional
 runtime dependencies; users of only the native view or another DLPack consumer
 do not need CuPy installed. The development integration tests exercise
 PyTorch 2.6 when CUDA is available and skip framework-specific tests when a

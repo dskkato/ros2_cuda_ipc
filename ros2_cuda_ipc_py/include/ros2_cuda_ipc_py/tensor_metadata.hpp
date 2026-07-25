@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
-#include <string>
 
 #include "ros2_cuda_ipc_core/image/image_view.hpp"
 
@@ -27,10 +26,8 @@ struct TensorMetadata {
   uint64_t byte_offset = 0;
   int32_t rank = 0;
   std::array<int64_t, 3> shape{};
-  std::array<uint64_t, 3> byte_strides{};
   std::array<int64_t, 3> element_strides{};
   DLDataType dl_dtype{};
-  std::string dtype_name;
   ros2_cuda_ipc_core::image::ImageView owner;
 };
 
@@ -57,29 +54,6 @@ inline DLDataType tensor_dl_dtype(ros2_cuda_ipc_core::image::DType dtype) {
   throw std::invalid_argument("unsupported ros2_cuda_ipc image dtype");
 }
 
-inline const char* tensor_dtype_name(ros2_cuda_ipc_core::image::DType dtype) {
-  using ros2_cuda_ipc_core::image::DType;
-  switch (dtype) {
-    case DType::U8:
-      return "uint8";
-    case DType::U16:
-      return "uint16";
-    case DType::F16:
-      return "float16";
-    case DType::F32:
-      return "float32";
-    case DType::F64:
-      return "float64";
-    case DType::S16:
-      return "int16";
-    case DType::S32:
-      return "int32";
-    case DType::U32:
-      return "uint32";
-  }
-  throw std::invalid_argument("unsupported ros2_cuda_ipc image dtype");
-}
-
 inline TensorMetadata make_tensor_metadata(
     const ros2_cuda_ipc_core::image::ImageView& view) {
   if (!view.valid()) {
@@ -96,7 +70,6 @@ inline TensorMetadata make_tensor_metadata(
   result.allocation_size = view.core.byte_size;
   result.rank = 3;
   result.dl_dtype = tensor_dl_dtype(view.dtype);
-  result.dtype_name = tensor_dtype_name(view.dtype);
 
   const uint64_t element_size = view.elem_size_bytes();
   if (element_size == 0) {
@@ -127,7 +100,6 @@ inline TensorMetadata make_tensor_metadata(
           "ImageView element stride exceeds the DLPack int64 range");
     }
     result.shape[index] = static_cast<int64_t>(dimension);
-    result.byte_strides[index] = byte_stride;
     result.element_strides[index] = static_cast<int64_t>(element_stride);
     last_byte += static_cast<unsigned __int128>(dimension - 1) * byte_stride;
   }

@@ -23,7 +23,7 @@
 #include "ros2_cuda_ipc_core/subscriber/buffer_view_mapper.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
-#include "tensor_metadata.hpp"
+#include "ros2_cuda_ipc_py/tensor_metadata.hpp"
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
 #include <sys/mman.h>
@@ -224,38 +224,6 @@ std::string cuda_error_message(
   return error.to_string();
 }
 
-class PyTensorMetadata {
- public:
-  explicit PyTensorMetadata(TensorMetadata metadata)
-      : metadata_(std::move(metadata)) {}
-
-  bool valid() const noexcept { return metadata_.owner.valid(); }
-  uint64_t device_ptr() const noexcept {
-    return static_cast<uint64_t>(reinterpret_cast<uintptr_t>(metadata_.data));
-  }
-  uint64_t byte_size() const noexcept { return metadata_.allocation_size; }
-  int device_id() const noexcept { return metadata_.device_id; }
-  int rank() const noexcept { return metadata_.rank; }
-  uint64_t byte_offset() const noexcept { return metadata_.byte_offset; }
-  py::tuple shape() const {
-    return py::make_tuple(metadata_.shape[0], metadata_.shape[1],
-                          metadata_.shape[2]);
-  }
-  py::tuple byte_strides() const {
-    return py::make_tuple(metadata_.byte_strides[0], metadata_.byte_strides[1],
-                          metadata_.byte_strides[2]);
-  }
-  py::tuple element_strides() const {
-    return py::make_tuple(metadata_.element_strides[0],
-                          metadata_.element_strides[1],
-                          metadata_.element_strides[2]);
-  }
-  const std::string& dtype() const noexcept { return metadata_.dtype_name; }
-
- private:
-  TensorMetadata metadata_;
-};
-
 struct DLPackManagerContext {
   TensorMetadata metadata;
 };
@@ -394,20 +362,6 @@ class PyBufferView {
   uint32_t slot_id() const noexcept { return view_.slot_id; }
   uint32_t generation() const noexcept { return view_.generation; }
 
-  void wait(std::uintptr_t stream_ptr) const {
-    if (!view_.valid()) {
-      throw MappingError("cannot wait on an invalid BufferView");
-    }
-    const auto result = [&]() {
-      py::gil_scoped_release release;
-      return view_.enqueue_ready_event(reinterpret_cast<CUstream>(stream_ptr));
-    }();
-    if (!result) {
-      throw std::runtime_error("CUDA ready-event wait failed: " +
-                               cuda_error_message(result.error()));
-    }
-  }
-
   void close() noexcept { view_.reset(); }
 
  private:
@@ -418,12 +372,6 @@ class PyImageView {
  public:
   explicit PyImageView(ros2_cuda_ipc_core::image::ImageView view)
       : view_(std::move(view)) {}
-
-  PyImageView retain() const { return PyImageView(view_); }
-
-  PyTensorMetadata tensor_metadata() const {
-    return PyTensorMetadata(make_tensor_metadata(view_));
-  }
 
   bool valid() const noexcept { return view_.valid(); }
   uint64_t device_ptr() const noexcept {
@@ -445,20 +393,6 @@ class PyImageView {
   }
   const std::string& encoding() const noexcept { return view_.encoding; }
   const std::string& frame_id() const noexcept { return view_.header.frame_id; }
-
-  void wait(std::uintptr_t stream_ptr) const {
-    if (!view_.valid()) {
-      throw MappingError("cannot wait on an invalid ImageView");
-    }
-    const auto result = [&]() {
-      py::gil_scoped_release release;
-      return view_.enqueue_ready_event(reinterpret_cast<CUstream>(stream_ptr));
-    }();
-    if (!result) {
-      throw std::runtime_error("CUDA ready-event wait failed: " +
-                               cuda_error_message(result.error()));
-    }
-  }
 
   py::capsule dlpack(std::uintptr_t stream_ptr, bool synchronize,
                      bool versioned) const {
@@ -715,25 +649,9 @@ PYBIND11_MODULE(_native, module) {
       .def_property_readonly("device_id", &PyBufferView::device_id)
       .def_property_readonly("slot_id", &PyBufferView::slot_id)
       .def_property_readonly("generation", &PyBufferView::generation)
-      .def("wait", &PyBufferView::wait, py::arg("stream_ptr"))
       .def("close", &PyBufferView::close);
 
-  py::class_<PyTensorMetadata>(module, "_TensorMetadata")
-      .def_property_readonly("valid", &PyTensorMetadata::valid)
-      .def_property_readonly("device_ptr", &PyTensorMetadata::device_ptr)
-      .def_property_readonly("byte_size", &PyTensorMetadata::byte_size)
-      .def_property_readonly("device_id", &PyTensorMetadata::device_id)
-      .def_property_readonly("rank", &PyTensorMetadata::rank)
-      .def_property_readonly("byte_offset", &PyTensorMetadata::byte_offset)
-      .def_property_readonly("shape", &PyTensorMetadata::shape)
-      .def_property_readonly("byte_strides", &PyTensorMetadata::byte_strides)
-      .def_property_readonly("element_strides",
-                             &PyTensorMetadata::element_strides)
-      .def_property_readonly("dtype", &PyTensorMetadata::dtype);
-
   py::class_<PyImageView>(module, "ImageView")
-      .def("_retain", &PyImageView::retain)
-      .def("_tensor_metadata", &PyImageView::tensor_metadata)
       .def_property_readonly("valid", &PyImageView::valid)
       .def_property_readonly("device_ptr", &PyImageView::device_ptr)
       .def_property_readonly("byte_size", &PyImageView::byte_size)
@@ -745,7 +663,6 @@ PYBIND11_MODULE(_native, module) {
       .def_property_readonly("dtype_code", &PyImageView::dtype_code)
       .def_property_readonly("encoding", &PyImageView::encoding)
       .def_property_readonly("frame_id", &PyImageView::frame_id)
-      .def("wait", &PyImageView::wait, py::arg("stream_ptr"))
       .def("_dlpack", &PyImageView::dlpack, py::arg("stream_ptr"),
            py::arg("synchronize"), py::arg("versioned"))
       .def("close", &PyImageView::close);

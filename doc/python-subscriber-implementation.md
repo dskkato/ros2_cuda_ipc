@@ -13,8 +13,7 @@ rclpy message
     -> Python/C++ descriptor boundary
     -> C++ BufferViewMapper / ImageViewMapper
     -> Python BufferView / ImageView
-    -> shared tensor metadata
-        -> CuPy / DLPack framework object
+    -> DLPack framework object
 ```
 
 `ros2_cuda_ipc_py`はPythonとC++の境界をつなぐ薄いpackageであり、lease protocol、
@@ -42,7 +41,7 @@ node、executor、QoSの管理も`rclpy`に委ねる。
 ## 対象範囲
 
 現在の中心対象は`BufferCore`、`GpuImage`、CUDA IPC、CUDA上のframework objectである。
-CuPyは一つのadapterであり、framework-neutralな相互運用経路はDLPackである。
+framework-neutralな相互運用経路はDLPackであり、CuPyもDLPack経由で利用する。
 Python Publisher、任意のROS messageの自動変換、PointCloud2、CPU fallback、
 自動的なstream-ordered lease releaseは含めない。
 
@@ -83,34 +82,6 @@ framework object
 これはmemoryの所有権であり、CUDA kernelの完了通知ではない。最後のframework object
 だけでなく、元のviewを含む最後のnative ownerが破棄された時点でleaseが解放される。
 
-## Shared tensor metadata
-
-CuPyとDLPackは、mapped native `ImageView`から一度だけ作られるprivateな
-tensor metadataを共有する。metadataにはdevice pointer、CUDA device ID、dtype、
-rank、shape、byte stride、element stride、byte offset、allocation boundsとretained
-native ownerが含まれる。dtype、stride単位、pointer arithmetic、allocation範囲、
-imported allocationのdeviceはnative側で検証される。
-
-そのため、frameworkごとにshapeやstrideの変換を再実装せず、同じlayoutを渡す。
-
-## CuPy adapter
-
-現在実装するadapterは`GpuImage`からCuPy ndarrayを作る経路である。shape、strides、
-dtype、device pointerをmetadataとしてCuPy objectへ渡し、payloadはコピーしない。
-CuPyの`UnownedMemory.owner`には、元のPython wrapperではなくretained native
-`ImageView`を設定する。
-
-```text
-CuPy ndarray
-    -> MemoryPointer
-        -> UnownedMemory
-            -> retained native ImageView
-```
-
-`as_cupy(stream)`は、arrayを返す前にpublisherのready event waitを指定streamへ
-enqueueする。streamのdeviceはimageのdeviceと一致しなければならない。CuPyは
-optional runtime dependencyであり、native bindingはCuPyをimportまたはlinkしない。
-
 ## DLPack adapter
 
 `ImageView`はPython DLPack producer protocolを実装する。
@@ -126,9 +97,9 @@ with torch.cuda.stream(consumer_stream):
 consumer_stream.synchronize()
 ```
 
-CuPyでも同じ`ImageView`から`cupy.from_dlpack(image)`を呼べる。どちらもpayloadを
-copyせず、shared tensor metadataのshape、dtype、device、non-contiguous strideを
-framework objectへ渡す。`torch.from_dlpack(image)`と`cupy.from_dlpack(image)`は
+CuPyでは同じ`ImageView`から`cupy.from_dlpack(image)`を呼ぶ。どちらもpayloadを
+copyせず、shape、dtype、device、non-contiguous strideをframework objectへ渡す。
+`torch.from_dlpack(image)`と`cupy.from_dlpack(image)`は
 current framework versionsで利用できるlegacy DLPack capsuleを既定値として受け取り、
 `__dlpack__(max_version=(1, 0))`ではversioned DLPack v1.0 capsuleを返す。
 

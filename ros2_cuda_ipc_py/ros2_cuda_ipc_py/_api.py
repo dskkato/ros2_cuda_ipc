@@ -1,4 +1,4 @@
-"""High-level Python views and CuPy conversion."""
+"""High-level Python views and DLPack exports."""
 
 import operator
 import sys
@@ -8,19 +8,6 @@ from ._descriptor import buffer_core_descriptor, gpu_image_descriptor
 
 
 MappingError = _native.MappingError
-
-
-def _stream_pointer(cupy, stream):
-    stream_object = stream if stream is not None else cupy.cuda.get_current_stream()
-    try:
-        pointer = operator.index(getattr(stream_object, "ptr", stream_object))
-    except TypeError as exc:
-        raise TypeError(
-            "stream must be a CuPy stream or an integer pointer"
-        ) from exc
-    if pointer < 0:
-        raise ValueError("CUDA stream pointer must be non-negative")
-    return stream_object, pointer
 
 
 def _dlpack_stream_pointer(stream):
@@ -109,15 +96,6 @@ class BufferView:
     def generation(self):
         return self._native.generation
 
-    def wait(self, stream):
-        """Enqueue the producer-ready event on a CuPy stream."""
-
-        import cupy as cp
-
-        stream_object, pointer = _stream_pointer(cp, stream)
-        self._native.wait(pointer)
-        return stream_object
-
     def close(self):
         self._native.close()
 
@@ -202,63 +180,6 @@ class ImageView:
     @property
     def frame_id(self):
         return self._native.frame_id
-
-    def wait(self, stream):
-        """Enqueue the producer-ready event on ``stream``; this is non-blocking."""
-
-        import cupy as cp
-
-        stream_object, pointer = _stream_pointer(cp, stream)
-        self._native.wait(pointer)
-        return stream_object
-
-    def as_cupy(self, stream=None):
-        """Return a zero-copy CuPy ndarray with an independent native owner.
-
-        ``stream`` defaults to CuPy's current stream. The ready-event wait is
-        enqueued before the array is returned. The caller must keep the array
-        alive until all asynchronous work using it has completed; closing this
-        ImageView does not release the array's native lease early.
-        """
-
-        import cupy as cp
-
-        if not self.valid:
-            raise MappingError("cannot create a CuPy view from an invalid image")
-
-        stream_object, pointer = _stream_pointer(cp, stream)
-        stream_device = getattr(stream_object, "device_id", None)
-        if stream_device is not None:
-            stream_device = int(stream_device)
-            if stream_device == -1:
-                # CuPy uses -1 for a stream associated with the current
-                # device, so resolve that sentinel before comparing devices.
-                stream_device = int(cp.cuda.runtime.getDevice())
-            if stream_device != self.device_id:
-                raise ValueError(
-                    "CuPy stream device does not match the mapped image device "
-                    f"({stream_device} != {self.device_id})"
-                )
-
-        # The native metadata object is the shared representation used by the
-        # CuPy and DLPack adapters. It owns an independent retained native
-        # ImageView, so closing this Python view cannot release the array lease.
-        metadata = self._native._tensor_metadata()
-        self._native.wait(pointer)
-        with cp.cuda.Device(self.device_id):
-            memory = cp.cuda.UnownedMemory(
-                metadata.device_ptr,
-                metadata.byte_size,
-                metadata,
-                metadata.device_id,
-            )
-            memory_pointer = cp.cuda.MemoryPointer(memory, 0)
-            return cp.ndarray(
-                shape=tuple(metadata.shape),
-                dtype=cp.dtype(metadata.dtype),
-                memptr=memory_pointer,
-                strides=tuple(metadata.byte_strides),
-            )
 
     def __dlpack_device__(self):
         """Return the DLPack CUDA device tuple ``(device_type, device_id)``."""

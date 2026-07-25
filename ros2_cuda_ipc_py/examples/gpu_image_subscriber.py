@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Subscribe to GpuImage and consume it as a zero-copy CuPy array."""
+"""Subscribe to GpuImage and consume it as a zero-copy CuPy array via DLPack."""
 
 import argparse
 
@@ -25,13 +25,12 @@ class GpuImageSubscriber(Node):
     def _on_image(self, message):
         try:
             image = self._mapper.map(message)
-            stream = cp.cuda.get_current_stream()
-            array = image.as_cupy(stream)
+            array = cp.from_dlpack(image)
 
-            # The wait and any following work are on the same stream. The
-            # synchronization before callback return makes the example's
-            # temporary array lifetime safe for asynchronous CUDA execution.
-            stream.synchronize()
+            # CuPy passes its current stream to the DLPack producer. The
+            # synchronization before callback return makes the temporary
+            # array lifetime safe for asynchronous CUDA execution.
+            cp.cuda.get_current_stream().synchronize()
             self.get_logger().info(
                 f"received {image.encoding or '<unspecified>'} "
                 f"shape={array.shape} dtype={array.dtype} "
