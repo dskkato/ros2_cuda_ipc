@@ -33,7 +33,9 @@ install(TARGETS _native
   RUNTIME DESTINATION ${PYTHON_INSTALL_DIR}/ros2_cuda_ipc_py
 )
 
-install(PROGRAMS examples/gpu_image_subscriber.py
+install(PROGRAMS
+  examples/gpu_image_subscriber.py
+  examples/gpu_image_torch_subscriber.py
   DESTINATION lib/${PROJECT_NAME}
 )
 install(FILES README.md DESTINATION share/${PROJECT_NAME})

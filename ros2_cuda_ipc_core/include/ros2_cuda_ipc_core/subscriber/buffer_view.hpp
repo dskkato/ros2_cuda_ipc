@@ -50,6 +50,18 @@ struct BufferView {
 
   detail::CudaResult<void> enqueue_ready_event(CUstream stream) const noexcept;
 
+  // Validate that a consumer CUDA stream refers to the same device as the
+  // imported allocation.  The test-support fixture may not attach a CUDA
+  // context to its synthetic allocation; that case is intentionally treated
+  // as unverifiable and left to the caller.
+  detail::CudaResult<void> validate_stream(CUstream stream) const noexcept;
+
+  int imported_device_id() const noexcept {
+    return imported_resource_ && imported_resource_->context
+               ? imported_resource_->context->device_id()
+               : -1;
+  }
+
   void reset() noexcept;
 
   void set_ipc_handles(transport::MemoryBackendKind backend,

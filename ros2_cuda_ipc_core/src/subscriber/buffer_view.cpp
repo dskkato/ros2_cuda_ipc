@@ -70,6 +70,11 @@ BufferView& BufferView::operator=(BufferView&& other) noexcept {
 
 detail::CudaResult<void> BufferView::enqueue_ready_event(
     CUstream stream) const noexcept {
+  const auto stream_result = validate_stream(stream);
+  if (!stream_result) {
+    return stream_result;
+  }
+
   const CUevent event = ready_event();
   if (!event) {
     return detail::CudaResult<void>::success();
@@ -91,6 +96,69 @@ detail::CudaResult<void> BufferView::enqueue_ready_event(
   const CUresult result = cuStreamWaitEvent(stream, event, 0);
   if (result != CUDA_SUCCESS) {
     return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
+  }
+  return detail::CudaResult<void>::success();
+}
+
+detail::CudaResult<void> BufferView::validate_stream(
+    CUstream stream) const noexcept {
+  const auto resource_context =
+      imported_resource_ ? imported_resource_->context : nullptr;
+  if (!resource_context) {
+    // Synthetic test resources do not have a CUDA context from which the
+    // stream's device can be checked.
+    return detail::CudaResult<void>::success();
+  }
+
+  const int expected_device = resource_context->device_id();
+
+  // CU_STREAM_PER_THREAD has no context that can be queried with
+  // cuStreamGetCtx.  Both special streams are associated with the current
+  // CUDA context instead.
+  if (stream == CU_STREAM_LEGACY || stream == CU_STREAM_PER_THREAD) {
+    CUcontext current_context = nullptr;
+    CUresult result = cuCtxGetCurrent(&current_context);
+    if (result != CUDA_SUCCESS) {
+      return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
+    }
+    if (current_context == nullptr) {
+      // enqueue_ready_event() will activate the imported context before it
+      // submits the wait.  There is no foreign current context to reject.
+      return detail::CudaResult<void>::success();
+    }
+
+    CUdevice current_device = 0;
+    result = cuCtxGetDevice(&current_device);
+    if (result != CUDA_SUCCESS) {
+      return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
+    }
+    if (static_cast<int>(current_device) != expected_device) {
+      return detail::CudaResult<void>::failure(
+          detail::CudaDriverError(CUDA_ERROR_INVALID_DEVICE));
+    }
+    return detail::CudaResult<void>::success();
+  }
+
+  CUcontext stream_context = nullptr;
+  CUresult result = cuStreamGetCtx(stream, &stream_context);
+  if (result != CUDA_SUCCESS) {
+    return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
+  }
+
+  auto guard_result = detail::CudaContextGuard::push(stream_context);
+  if (!guard_result) {
+    return detail::CudaResult<void>::failure(guard_result.error());
+  }
+  auto guard = std::move(guard_result).value();
+
+  CUdevice stream_device = 0;
+  result = cuCtxGetDevice(&stream_device);
+  if (result != CUDA_SUCCESS) {
+    return detail::CudaResult<void>::failure(detail::CudaDriverError(result));
+  }
+  if (static_cast<int>(stream_device) != expected_device) {
+    return detail::CudaResult<void>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_DEVICE));
   }
   return detail::CudaResult<void>::success();
 }
