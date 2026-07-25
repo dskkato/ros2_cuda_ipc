@@ -23,7 +23,7 @@
 #include "ros2_cuda_ipc_core/subscriber/buffer_view_mapper.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
-#include "ros2_cuda_ipc_py/tensor_metadata.hpp"
+#include "ros2_cuda_ipc_py/dlpack/image_tensor_descriptor.hpp"
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
 #include <sys/mman.h>
@@ -191,8 +191,8 @@ ros2_cuda_ipc_msgs::msg::GpuImage gpu_image_from_descriptor(
 
 uint32_t dtype_size(uint8_t dtype) {
   try {
-    const auto dl_dtype =
-        tensor_dl_dtype(static_cast<ros2_cuda_ipc_core::image::DType>(dtype));
+    const auto dl_dtype = dlpack::tensor_dl_dtype(
+        static_cast<ros2_cuda_ipc_core::image::DType>(dtype));
     return dl_dtype.bits / 8;
   } catch (const std::invalid_argument&) {
     throw py::value_error("unsupported ros2_cuda_ipc image dtype " +
@@ -224,15 +224,19 @@ std::string cuda_error_message(
   return error.to_string();
 }
 
-struct DLPackManagerContext {
-  TensorMetadata metadata;
+// Lifetime object for a DLPack export. The descriptor is the value projected
+// into DLPack, while owner retains the mapped resource until the consumer
+// releases the managed tensor.
+struct DlpackExportContext {
+  dlpack::ImageTensorDescriptor tensor;
+  ros2_cuda_ipc_core::image::ImageView owner;
 };
 
 void legacy_dlpack_deleter(DLManagedTensor* managed) noexcept {
   if (managed == nullptr) {
     return;
   }
-  auto* context = static_cast<DLPackManagerContext*>(managed->manager_ctx);
+  auto* context = static_cast<DlpackExportContext*>(managed->manager_ctx);
   managed->manager_ctx = nullptr;
   try {
     delete context;
@@ -251,7 +255,7 @@ void versioned_dlpack_deleter(DLManagedTensorVersioned* managed) noexcept {
   if (managed == nullptr) {
     return;
   }
-  auto* context = static_cast<DLPackManagerContext*>(managed->manager_ctx);
+  auto* context = static_cast<DlpackExportContext*>(managed->manager_ctx);
   managed->manager_ctx = nullptr;
   try {
     delete context;
@@ -297,26 +301,31 @@ void dlpack_capsule_destructor(PyObject* capsule) noexcept {
 
 template <typename ManagedTensor>
 void populate_dlpack_tensor(ManagedTensor& managed,
-                            DLPackManagerContext& context) noexcept {
+                            DlpackExportContext& context) noexcept {
   auto& tensor = managed.dl_tensor;
-  tensor.data = context.metadata.data;
-  tensor.device = {kDLCUDA, context.metadata.device_id};
-  tensor.ndim = context.metadata.rank;
-  tensor.dtype = context.metadata.dl_dtype;
-  tensor.shape = context.metadata.shape.data();
-  tensor.strides = context.metadata.element_strides.data();
-  tensor.byte_offset = context.metadata.byte_offset;
+  tensor.data = context.tensor.data;
+  tensor.device = {kDLCUDA, context.tensor.device_id};
+  tensor.ndim = context.tensor.rank;
+  tensor.dtype = context.tensor.dl_dtype;
+  tensor.shape = context.tensor.shape.data();
+  tensor.strides = context.tensor.element_strides.data();
+  tensor.byte_offset = context.tensor.byte_offset;
 }
 
-py::capsule make_legacy_dlpack_capsule(TensorMetadata metadata) {
-  auto context = std::make_unique<DLPackManagerContext>();
-  context->metadata = std::move(metadata);
+py::capsule make_legacy_dlpack_capsule(
+    const dlpack::ImageTensorDescriptor& tensor,
+    const ros2_cuda_ipc_core::image::ImageView& owner) {
+  auto context = std::make_unique<DlpackExportContext>();
+  context->tensor = tensor;
+  context->owner = owner;
   auto managed = std::make_unique<DLManagedTensor>();
   managed->manager_ctx = context.get();
   managed->deleter = &legacy_dlpack_deleter;
   populate_dlpack_tensor(*managed, *context);
   auto* managed_ptr = managed.release();
-  context.release();
+  context.release();  // NOLINT(bugprone-unused-return-value) - context is now
+                      // owned by the DLManagedTensor and will be deleted by the
+                      // deleter.
 
   try {
     return py::capsule(managed_ptr, kDLPackName, &dlpack_capsule_destructor);
@@ -326,17 +335,24 @@ py::capsule make_legacy_dlpack_capsule(TensorMetadata metadata) {
   }
 }
 
-py::capsule make_versioned_dlpack_capsule(TensorMetadata metadata) {
-  auto context = std::make_unique<DLPackManagerContext>();
-  context->metadata = std::move(metadata);
+py::capsule make_versioned_dlpack_capsule(
+    const dlpack::ImageTensorDescriptor& tensor,
+    const ros2_cuda_ipc_core::image::ImageView& owner) {
+  auto context = std::make_unique<DlpackExportContext>();
+  context->tensor = tensor;
+  context->owner = owner;
   auto managed = std::make_unique<DLManagedTensorVersioned>();
   managed->version = {1, 0};
   managed->manager_ctx = context.get();
   managed->deleter = &versioned_dlpack_deleter;
-  managed->flags = 0;
+  // Note that there is no guarantee that the underlying ImageView is actually
+  // read-only.  The DLPack consumer is expected to respect this flag.
+  managed->flags = DLPACK_FLAG_BITMASK_READ_ONLY;
   populate_dlpack_tensor(*managed, *context);
   auto* managed_ptr = managed.release();
-  context.release();
+  context.release();  // NOLINT(bugprone-unused-return-value) - context is now
+                      // owned by the DLManagedTensor and will be deleted by the
+                      // deleter.
 
   try {
     return py::capsule(managed_ptr, kVersionedDLPackName,
@@ -403,9 +419,9 @@ class PyImageView {
     // Validate and retain the framework-independent layout before touching a
     // consumer stream. Invalid metadata must not enqueue a synchronization
     // side effect.
-    TensorMetadata metadata;
+    dlpack::ImageTensorDescriptor tensor;
     try {
-      metadata = make_tensor_metadata(view_);
+      tensor = dlpack::project_to_tensor(view_);
     } catch (const std::invalid_argument& error) {
       // The DLPack Python protocol uses BufferError for layouts that cannot
       // be represented safely as a dense strided tensor.
@@ -425,9 +441,9 @@ class PyImageView {
     }
 
     if (versioned) {
-      return make_versioned_dlpack_capsule(std::move(metadata));
+      return make_versioned_dlpack_capsule(tensor, view_);
     }
-    return make_legacy_dlpack_capsule(std::move(metadata));
+    return make_legacy_dlpack_capsule(tensor, view_);
   }
 
   void close() noexcept { view_.core.reset(); }

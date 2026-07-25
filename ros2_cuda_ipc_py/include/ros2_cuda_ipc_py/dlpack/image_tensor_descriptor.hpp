@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <cuda.h>
 #include <dlpack/dlpack.h>
 
 #include <array>
@@ -13,13 +12,12 @@
 
 #include "ros2_cuda_ipc_core/image/image_view.hpp"
 
-namespace ros2_cuda_ipc_py {
+namespace ros2_cuda_ipc_py::dlpack {
 
-// Private, framework-independent metadata for one mapped ImageView.  The
-// owner is a retained native view, not a Python object, and therefore keeps
-// the imported resource and slot lease alive for every adapter using this
-// representation.
-struct TensorMetadata {
+// A value object containing the DLPack representation projected from one
+// mapped ImageView. It deliberately does not retain the source ImageView;
+// ownership belongs to DlpackExportContext.
+struct ImageTensorDescriptor {
   void* data = nullptr;
   int device_id = -1;
   uint64_t allocation_size = 0;
@@ -28,7 +26,6 @@ struct TensorMetadata {
   std::array<int64_t, 3> shape{};
   std::array<int64_t, 3> element_strides{};
   DLDataType dl_dtype{};
-  ros2_cuda_ipc_core::image::ImageView owner;
 };
 
 inline DLDataType tensor_dl_dtype(ros2_cuda_ipc_core::image::DType dtype) {
@@ -54,32 +51,32 @@ inline DLDataType tensor_dl_dtype(ros2_cuda_ipc_core::image::DType dtype) {
   throw std::invalid_argument("unsupported ros2_cuda_ipc image dtype");
 }
 
-inline TensorMetadata make_tensor_metadata(
-    const ros2_cuda_ipc_core::image::ImageView& view) {
-  if (!view.valid()) {
+inline ImageTensorDescriptor project_to_tensor(
+    const ros2_cuda_ipc_core::image::ImageView& image) {
+  if (!image.valid()) {
     throw std::invalid_argument("cannot export an invalid ImageView");
   }
-  if (!view.sanity_check()) {
+  if (!image.sanity_check()) {
     throw std::invalid_argument(
         "ImageView shape/strides exceed the mapped allocation");
   }
 
-  TensorMetadata result;
-  result.data = view.core.device_ptr();
-  result.device_id = view.core.device_id;
-  result.allocation_size = view.core.byte_size;
+  ImageTensorDescriptor result;
+  result.data = image.core.device_ptr();
+  result.device_id = image.core.device_id;
+  result.allocation_size = image.core.byte_size;
   result.rank = 3;
-  result.dl_dtype = tensor_dl_dtype(view.dtype);
+  result.dl_dtype = tensor_dl_dtype(image.dtype);
 
-  const uint64_t element_size = view.elem_size_bytes();
+  const uint64_t element_size = image.elem_size_bytes();
   if (element_size == 0) {
     throw std::invalid_argument("ImageView dtype has zero-sized elements");
   }
 
   unsigned __int128 last_byte = 0;
   for (std::size_t index = 0; index < 3; ++index) {
-    const uint64_t dimension = view.shape[index];
-    const uint64_t byte_stride = view.strides[index];
+    const uint64_t dimension = image.shape[index];
+    const uint64_t byte_stride = image.strides[index];
     if (dimension == 0) {
       throw std::invalid_argument(
           "ImageView dimensions must be non-negative and non-zero");
@@ -120,14 +117,13 @@ inline TensorMetadata make_tensor_metadata(
     throw std::invalid_argument("ImageView pointer arithmetic overflows");
   }
 
-  const int imported_device = view.core.imported_device_id();
+  const int imported_device = image.core.imported_device_id();
   if (imported_device >= 0 && imported_device != result.device_id) {
     throw std::invalid_argument(
         "mapped image device does not match the imported CUDA allocation");
   }
 
-  result.owner = view;
   return result;
 }
 
-}  // namespace ros2_cuda_ipc_py
+}  // namespace ros2_cuda_ipc_py::dlpack
