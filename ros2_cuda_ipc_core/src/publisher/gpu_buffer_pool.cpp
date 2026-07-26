@@ -3,9 +3,10 @@
 
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 
+#include <rcutils/logging_macros.h>
+
 #include <optional>
 
-#include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/backend/cuda_ipc/memory_backend.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/memory_backend.hpp"
 
@@ -23,25 +24,23 @@ std::unique_ptr<GpuBufferPool::MemoryBackend> make_backend(
 }  // namespace
 
 GpuBufferPool::GpuBufferPool(std::size_t slot_count,
-                             transport::MemoryBackendKind backend,
-                             rclcpp::Logger logger)
-    : GpuBufferPool(slot_count, backend, std::move(logger), nullptr) {}
+                             transport::MemoryBackendKind backend)
+    : GpuBufferPool(slot_count, backend, nullptr) {}
 
 GpuBufferPool::GpuBufferPool(std::size_t slot_count,
                              transport::MemoryBackendKind backend,
-                             rclcpp::Logger logger,
                              std::unique_ptr<MemoryBackend> memory_backend)
     : slot_count_(slot_count),
       backend_kind_(backend),
-      logger_(std::move(logger)),
       memory_backend_(std::move(memory_backend)) {}
 
 GpuBufferPool::~GpuBufferPool() { destroy_slots(); }
 
 bool GpuBufferPool::initialise(uint64_t byte_size, int device_index) {
   if (slot_count_ == 0 || byte_size == 0) {
-    RCLCPP_ERROR(logger_,
-                 "GpuBufferPool requires slot_count and byte_size > 0");
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.publisher.gpu_buffer_pool",
+        "GpuBufferPool requires slot_count and byte_size > 0");
     return false;
   }
   if (initialised_ || !slots_.empty()) {
@@ -49,8 +48,9 @@ bool GpuBufferPool::initialise(uint64_t byte_size, int device_index) {
   }
   auto context_result = detail::CudaDeviceContext::retain_primary(device_index);
   if (!context_result) {
-    RCLCPP_ERROR(logger_, "Failed to retain CUDA primary context: %s",
-                 context_result.error().to_string().c_str());
+    RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.publisher.gpu_buffer_pool",
+                            "Failed to retain CUDA primary context: %s",
+                            context_result.error().to_string().c_str());
     return false;
   }
   context_ = std::move(context_result).value();
@@ -102,7 +102,8 @@ const GpuBufferPool::SlotResources* GpuBufferPool::resources(
 
 bool GpuBufferPool::allocate_slots() {
   if (!context_) {
-    RCLCPP_ERROR(logger_, "CUDA primary context is unavailable");
+    RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.publisher.gpu_buffer_pool",
+                            "CUDA primary context is unavailable");
     return false;
   }
   if (!memory_backend_) {
@@ -114,14 +115,14 @@ bool GpuBufferPool::allocate_slots() {
   {
     auto memory_guard_result = context_->push_current();
     if (!memory_guard_result) {
-      RCLCPP_ERROR(logger_, "Failed to activate CUDA context: %s",
-                   memory_guard_result.error().to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.publisher.gpu_buffer_pool",
+                              "Failed to activate CUDA context: %s",
+                              memory_guard_result.error().to_string().c_str());
       return false;
     }
     auto memory_guard = std::move(memory_guard_result).value();
-    if (!memory_backend_->allocate(byte_size_, device_index_, slots_,
-                                   logger_)) {
-      memory_backend_->destroy(slots_, logger_);
+    if (!memory_backend_->allocate(byte_size_, device_index_, slots_)) {
+      memory_backend_->destroy(slots_);
       memory_backend_.reset();
       return false;
     }
@@ -129,8 +130,9 @@ bool GpuBufferPool::allocate_slots() {
   for (auto& slot : slots_) {
     auto event_result = detail::InterprocessEvent::create(context_);
     if (!event_result) {
-      RCLCPP_ERROR(logger_, "Failed to create interprocess event: %s",
-                   event_result.error().to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.publisher.gpu_buffer_pool",
+                              "Failed to create interprocess event: %s",
+                              event_result.error().to_string().c_str());
       return false;
     }
     slot.ready_event = std::move(event_result).value();
@@ -146,15 +148,16 @@ void GpuBufferPool::destroy_slots() noexcept {
   if (context_) {
     auto guard_result = context_->push_current();
     if (!guard_result) {
-      RCLCPP_ERROR(logger_,
-                   "Failed to activate CUDA context for event cleanup: %s",
-                   guard_result.error().to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.publisher.gpu_buffer_pool",
+          "Failed to activate CUDA context for event cleanup: %s",
+          guard_result.error().to_string().c_str());
     } else {
       guard.emplace(std::move(guard_result).value());
     }
   }
   if (memory_backend_) {
-    memory_backend_->destroy(slots_, logger_);
+    memory_backend_->destroy(slots_);
     memory_backend_.reset();
   }
   slots_.clear();

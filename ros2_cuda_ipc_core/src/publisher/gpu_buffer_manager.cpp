@@ -78,13 +78,11 @@ void PublishSlot::cancel() noexcept {
   }
 }
 
-GpuBufferManager::GpuBufferManager(Config config, rclcpp::Logger logger)
+GpuBufferManager::GpuBufferManager(Config config)
     : config_(std::move(config)),
-      logger_(std::move(logger)),
-      buffer_pool_(config_.slot_count, config_.backend,
-                   logger_.get_child("GpuBufferPool")),
+      buffer_pool_(config_.slot_count, config_.backend),
       lease_manager_(config_.shm_name_prefix, config_.slot_count,
-                     config_.pending_ttl, logger_.get_child("LeaseManager")) {}
+                     config_.pending_ttl) {}
 
 GpuBufferManager::~GpuBufferManager() { reset(); }
 

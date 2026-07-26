@@ -73,8 +73,7 @@ TEST(CudaIpcMemoryDriverTest, ImportsReadsAndClosesInChildProcess) {
 
   constexpr uint64_t kByteSize = 4096;
   constexpr uint8_t kExpectedValue = 0x5a;
-  GpuBufferPool pool(1, MemoryBackendKind::CUDA_IPC,
-                     rclcpp::get_logger("CudaIpcMemoryDriverTest"));
+  GpuBufferPool pool(1, MemoryBackendKind::CUDA_IPC);
   ASSERT_TRUE(pool.initialise(kByteSize, 0));
   const auto* resources = pool.resources(0);
   ASSERT_NE(resources, nullptr);

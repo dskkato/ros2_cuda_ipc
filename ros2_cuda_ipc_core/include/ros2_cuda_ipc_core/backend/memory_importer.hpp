@@ -10,7 +10,6 @@
 #include <optional>
 #include <utility>
 
-#include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
@@ -54,8 +53,7 @@ class MemoryImporter {
 
   virtual std::optional<ImportedResources> import(
       const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
-      const CUipcEventHandle& event_handle,
-      const rclcpp::Logger& logger) const = 0;
+      const CUipcEventHandle& event_handle) const = 0;
 };
 
 bool release_imported_resources(const ImportedResources& imported) noexcept;

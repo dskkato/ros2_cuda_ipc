@@ -3,10 +3,11 @@
 
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 
+#include <rcutils/logging_macros.h>
+
 #include <atomic>
 #include <cstdint>
 #include <optional>
-#include <rclcpp/logging.hpp>
 #include <thread>
 
 namespace ros2_cuda_ipc_core::lease {
@@ -16,12 +17,6 @@ constexpr uint32_t kCancelReservationAttempts = 1024;
 
 inline std::atomic<uint32_t>& as_atomic(uint32_t& value) {
   return reinterpret_cast<std::atomic<uint32_t>&>(value);
-}
-
-rclcpp::Logger lease_logger() {
-  static rclcpp::Logger logger =
-      rclcpp::get_logger("ros2_cuda_ipc_core.LeaseHandle");
-  return logger;
 }
 
 }  // namespace
@@ -57,7 +52,8 @@ void LeaseHandle::release() noexcept {
   auto& ref = as_atomic(slot_meta_->refcnt);
   const uint32_t previous = ref.fetch_sub(1, std::memory_order_acq_rel);
   if (previous == 0) {
-    RCLCPP_ERROR(lease_logger(), "lease:refcnt_underflow slot=%u", slot_id_);
+    RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.lease_handle",
+                            "lease:refcnt_underflow slot=%u", slot_id_);
     ref.store(0, std::memory_order_release);
   }
   slot_meta_ = nullptr;
@@ -163,9 +159,10 @@ bool LeaseHandle::cancel_pending(const std::shared_ptr<LeaseMapping>& mapping,
     std::this_thread::yield();
   }
   if (!acquired) {
-    RCLCPP_ERROR(lease_logger(),
-                 "lease:cancel_reservation_contention slot=%u gen=%u", slot_id,
-                 generation);
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.lease_handle",
+        "lease:cancel_reservation_contention slot=%u gen=%u", slot_id,
+        generation);
     return false;
   }
   if (as_atomic(slot.generation).load(std::memory_order_acquire) !=
@@ -194,7 +191,8 @@ LeaseHandle LeaseHandle::acquire(const std::shared_ptr<LeaseMapping>& mapping,
   uint32_t observed_ref = ref.load(std::memory_order_acquire);
   while (true) {
     if (observed_ref == UINT32_MAX) {
-      RCLCPP_ERROR(lease_logger(), "lease:ref_overflow slot=%u", slot_id);
+      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.lease_handle",
+                              "lease:ref_overflow slot=%u", slot_id);
       return LeaseHandle{};
     }
     if (ref.compare_exchange_weak(observed_ref, observed_ref + 1,

@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_backend.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
@@ -21,10 +20,8 @@ class GpuBufferPool {
   using SlotResources = backend::SlotResources;
   using MemoryBackend = backend::MemoryBackend;
 
+  GpuBufferPool(std::size_t slot_count, transport::MemoryBackendKind backend);
   GpuBufferPool(std::size_t slot_count, transport::MemoryBackendKind backend,
-                rclcpp::Logger logger);
-  GpuBufferPool(std::size_t slot_count, transport::MemoryBackendKind backend,
-                rclcpp::Logger logger,
                 std::unique_ptr<MemoryBackend> memory_backend);
   ~GpuBufferPool();
 
@@ -52,7 +49,6 @@ class GpuBufferPool {
 
   std::size_t slot_count_;
   transport::MemoryBackendKind backend_kind_;
-  rclcpp::Logger logger_;
   std::vector<SlotResources> slots_;
   uint64_t byte_size_ = 0;
   int device_index_ = -1;

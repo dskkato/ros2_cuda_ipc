@@ -9,7 +9,6 @@
 #include <memory>
 #include <vector>
 
-#include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/detail/interprocess_event.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
@@ -32,10 +31,8 @@ class MemoryBackend {
  public:
   virtual ~MemoryBackend() = default;
   virtual bool allocate(uint64_t byte_size, int device_index,
-                        std::vector<SlotResources>& slots,
-                        rclcpp::Logger logger) = 0;
-  virtual void destroy(std::vector<SlotResources>& slots,
-                       rclcpp::Logger logger) noexcept = 0;
+                        std::vector<SlotResources>& slots) = 0;
+  virtual void destroy(std::vector<SlotResources>& slots) noexcept = 0;
 };
 
 }  // namespace ros2_cuda_ipc_core::backend

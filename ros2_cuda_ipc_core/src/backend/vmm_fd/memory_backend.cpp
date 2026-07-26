@@ -5,6 +5,7 @@
 
 #include <cuda.h>
 #include <fcntl.h>
+#include <rcutils/logging_macros.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -20,7 +21,6 @@
 #include <utility>
 #include <vector>
 
-#include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/payload.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
@@ -57,18 +57,15 @@ class UnixFdServer {
    * @param socket_path Filesystem location (e.g.
    * `/tmp/cuda_memory_pool_x.sock`) where subscribers will connect.
    * @param fd_to_send Shareable FD returned by CUDA; must be >= 0.
-   * @param logger Logger for diagnostics.
-   *
    * Invalid descriptors are rejected up front so that clients never receive an
    * unusable FD.
    */
-  UnixFdServer(std::string socket_path, int fd_to_send, rclcpp::Logger logger)
-      : path_(std::move(socket_path)),
-        fd_(fd_to_send),
-        logger_(std::move(logger)) {
+  UnixFdServer(std::string socket_path, int fd_to_send)
+      : path_(std::move(socket_path)), fd_(fd_to_send) {
     if (fd_ < 0) {
-      RCLCPP_ERROR(logger_, "Cannot start UnixFdServer at %s with invalid fd",
-                   path_.c_str());
+      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                              "Cannot start UnixFdServer at %s with invalid fd",
+                              path_.c_str());
       throw std::invalid_argument("Invalid fd for UnixFdServer");
     }
   }
@@ -100,8 +97,9 @@ class UnixFdServer {
       }
     }
     if (sock < 0) {
-      RCLCPP_ERROR(logger_, "socket(AF_UNIX) failed: %s",
-                   ros2_cuda_ipc_core::detail::errno_to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd", "socket(AF_UNIX) failed: %s",
+          ros2_cuda_ipc_core::detail::errno_to_string().c_str());
       return false;
     }
 
@@ -113,16 +111,18 @@ class UnixFdServer {
     std::strncpy(addr.sun_path, path_.c_str(), sizeof(addr.sun_path) - 1);
     // bind(2): attach socket to filesystem path so subscribers can connect.
     if (::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-      RCLCPP_ERROR(logger_, "bind(%s) failed: %s", path_.c_str(),
-                   ros2_cuda_ipc_core::detail::errno_to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd", "bind(%s) failed: %s",
+          path_.c_str(), ros2_cuda_ipc_core::detail::errno_to_string().c_str());
       ::close(sock);
       return false;
     }
 
     // listen(2): enable incoming connection queue.
     if (::listen(sock, 16) < 0) {
-      RCLCPP_ERROR(logger_, "listen(%s) failed: %s", path_.c_str(),
-                   ros2_cuda_ipc_core::detail::errno_to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd", "listen(%s) failed: %s",
+          path_.c_str(), ros2_cuda_ipc_core::detail::errno_to_string().c_str());
       ::close(sock);
       return false;
     }
@@ -168,8 +168,10 @@ class UnixFdServer {
           continue;
         }
         if (running_.load(std::memory_order_acquire)) {
-          RCLCPP_WARN(logger_, "accept(%s) failed: %s", path_.c_str(),
-                      ros2_cuda_ipc_core::detail::errno_to_string().c_str());
+          RCUTILS_LOG_WARN_NAMED(
+              "ros2_cuda_ipc_core.backend.vmm_fd", "accept(%s) failed: %s",
+              path_.c_str(),
+              ros2_cuda_ipc_core::detail::errno_to_string().c_str());
         }
         continue;
       }
@@ -200,9 +202,10 @@ class UnixFdServer {
     msg.msg_controllen = sizeof(cmsg_buf);
     cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
     if (!cmsg) {
-      RCLCPP_WARN(logger_,
-                  "sendmsg setup failed for %s: missing control message header",
-                  path_.c_str());
+      RCUTILS_LOG_WARN_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd",
+          "sendmsg setup failed for %s: missing control message header",
+          path_.c_str());
       return;
     }
     cmsg->cmsg_level = SOL_SOCKET;
@@ -210,8 +213,9 @@ class UnixFdServer {
     cmsg->cmsg_len = CMSG_LEN(sizeof(int));
     std::memcpy(CMSG_DATA(cmsg), &fd_, sizeof(int));
     if (::sendmsg(client, &msg, 0) < 0) {
-      RCLCPP_WARN(logger_, "sendmsg failed on %s: %s", path_.c_str(),
-                  ros2_cuda_ipc_core::detail::errno_to_string().c_str());
+      RCUTILS_LOG_WARN_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd", "sendmsg failed on %s: %s",
+          path_.c_str(), ros2_cuda_ipc_core::detail::errno_to_string().c_str());
     }
   }
 
@@ -220,7 +224,6 @@ class UnixFdServer {
   int listen_fd_ = -1;
   std::atomic<bool> running_{false};
   std::thread worker_;
-  rclcpp::Logger logger_;
 };
 
 /**
@@ -277,10 +280,10 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
    *    access rights, export to FD, and spin up a UnixFdServer that hands out
    *    the FD using a randomly generated UUID.
    */
-  bool allocate(uint64_t frame_size_bytes, int device_index,
-                std::vector<publisher::GpuBufferPool::SlotResources>& slots,
-                rclcpp::Logger logger) override {
-    if (!ensure_driver(logger)) {
+  bool allocate(
+      uint64_t frame_size_bytes, int device_index,
+      std::vector<publisher::GpuBufferPool::SlotResources>& slots) override {
+    if (!ensure_driver()) {
       return false;
     }
 
@@ -296,8 +299,9 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
     CUresult res = cuMemGetAllocationGranularity(
         &granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM);
     if (res != CUDA_SUCCESS) {
-      RCLCPP_ERROR(
-          logger, "cuMemGetAllocationGranularity failed: %s",
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd",
+          "cuMemGetAllocationGranularity failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
       return false;
     }
@@ -311,10 +315,11 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
       // Reserve virtual address space (no backing memory yet).
       res = cuMemAddressReserve(&address, aligned_size, 0, 0, 0);
       if (res != CUDA_SUCCESS) {
-        RCLCPP_ERROR(
-            logger, "cuMemAddressReserve failed: %s",
+        RCUTILS_LOG_ERROR_NAMED(
+            "ros2_cuda_ipc_core.backend.vmm_fd",
+            "cuMemAddressReserve failed: %s",
             ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots, logger);
+        destroy(slots);
         return false;
       }
       state->address = address;
@@ -322,19 +327,19 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
       // cuMemCreate: allocate physical memory described by prop.
       res = cuMemCreate(&state->allocation, aligned_size, &prop, 0);
       if (res != CUDA_SUCCESS) {
-        RCLCPP_ERROR(
-            logger, "cuMemCreate failed: %s",
+        RCUTILS_LOG_ERROR_NAMED(
+            "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemCreate failed: %s",
             ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots, logger);
+        destroy(slots);
         return false;
       }
 
       res = cuMemMap(address, aligned_size, 0, state->allocation, 0);
       if (res != CUDA_SUCCESS) {
-        RCLCPP_ERROR(
-            logger, "cuMemMap failed: %s",
+        RCUTILS_LOG_ERROR_NAMED(
+            "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemMap failed: %s",
             ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots, logger);
+        destroy(slots);
         return false;
       }
 
@@ -344,10 +349,10 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
       access_desc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
       res = cuMemSetAccess(address, aligned_size, &access_desc, 1);
       if (res != CUDA_SUCCESS) {
-        RCLCPP_ERROR(
-            logger, "cuMemSetAccess failed: %s",
+        RCUTILS_LOG_ERROR_NAMED(
+            "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemSetAccess failed: %s",
             ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots, logger);
+        destroy(slots);
         return false;
       }
 
@@ -357,10 +362,11 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
           &state->shareable_fd, state->allocation,
           CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR, 0);
       if (res != CUDA_SUCCESS) {
-        RCLCPP_ERROR(
-            logger, "cuMemExportToShareableHandle failed: %s",
+        RCUTILS_LOG_ERROR_NAMED(
+            "ros2_cuda_ipc_core.backend.vmm_fd",
+            "cuMemExportToShareableHandle failed: %s",
             ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots, logger);
+        destroy(slots);
         return false;
       }
       if (state->shareable_fd >= 0) {
@@ -379,11 +385,10 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
       state->uuid = uuid_str;
 
       const auto socket_path = build_socket_path(state->uuid);
-      auto child_logger = logger.get_child("FdServer");
-      state->server = std::make_unique<UnixFdServer>(
-          socket_path, state->shareable_fd, child_logger);
+      state->server =
+          std::make_unique<UnixFdServer>(socket_path, state->shareable_fd);
       if (!state->server->start()) {
-        destroy(slots, logger);
+        destroy(slots);
         return false;
       }
 
@@ -393,9 +398,10 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
       // Store UUID bytes into the ROS message payload so subscribers know which
       // socket to contact.
       if (!encode_uuid_payload(state->uuid, slot.mem_handle)) {
-        RCLCPP_ERROR(logger, "Failed to encode UUID payload for slot %u",
-                     slot.index);
-        destroy(slots, logger);
+        RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                                "Failed to encode UUID payload for slot %u",
+                                slot.index);
+        destroy(slots);
         return false;
       }
     }
@@ -408,9 +414,8 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
    * The per-slot VmmSlotState RAII cleanup tears down CUDA driver resources and
    * socket servers; here we simply drop pointers and reset bookkeeping fields.
    */
-  void destroy(std::vector<publisher::GpuBufferPool::SlotResources>& slots,
-               rclcpp::Logger logger) noexcept override {
-    (void)logger;
+  void destroy(std::vector<publisher::GpuBufferPool::SlotResources>&
+                   slots) noexcept override {
     for (auto& slot : slots) {
       slot.device_ptr = nullptr;
       if (slot.backend ==
@@ -428,13 +433,13 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
    *
    * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
    */
-  bool ensure_driver(const rclcpp::Logger& logger) {
+  bool ensure_driver() {
     static std::once_flag once;
     static CUresult status = CUDA_SUCCESS;
     std::call_once(once, [&]() { status = cuInit(0); });
     if (status != CUDA_SUCCESS) {
-      RCLCPP_ERROR(
-          logger, "cuInit failed: %s",
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd", "cuInit failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(status).c_str());
       return false;
     }

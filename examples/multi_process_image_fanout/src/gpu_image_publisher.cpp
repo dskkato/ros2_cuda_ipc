@@ -47,8 +47,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
         "shm_name_prefix", "/ros2_cuda_ipc_fanout");
     const int device_index = declare_parameter<int>("device_index", 0);
     const auto backend = ros2_cuda_ipc_core::backend::parse_memory_backend(
-        declare_parameter<std::string>("memory_backend", "cuda_ipc"),
-        get_logger());
+        declare_parameter<std::string>("memory_backend", "cuda_ipc"));
     encoding_ = declare_parameter<std::string>("encoding", kDefaultEncoding);
 
     if (width <= 0 || height <= 0) {
@@ -68,8 +67,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
         std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferManager>(
             ros2_cuda_ipc_core::publisher::GpuBufferManager::Config{
                 shm_name_prefix, slot_count, frame_size_bytes, device_index,
-                pending_ttl, backend},
-            get_logger().get_child("GpuBufferManager"));
+                pending_ttl, backend});
     if (!manager_->initialise()) {
       throw std::runtime_error("Failed to initialise GPU buffer manager");
     }

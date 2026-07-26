@@ -50,8 +50,7 @@ class GpuBufferManagerTest : public ::testing::Test {
       std::chrono::milliseconds pending_ttl = std::chrono::milliseconds(100)) {
     return GpuBufferManager(
         {shm_name_, 1, 1024, 0, pending_ttl,
-         ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC},
-        rclcpp::get_logger("GpuBufferManagerTest"));
+         ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC});
   }
   std::string shm_name_;
 };

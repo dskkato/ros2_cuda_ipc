@@ -3,6 +3,8 @@
 
 #include "ros2_cuda_ipc_core/subscriber/buffer_view_mapper.hpp"
 
+#include <rcutils/logging_macros.h>
+
 #include <cstring>
 #include <memory>
 #include <utility>
@@ -100,21 +102,22 @@ std::size_t LeaseMappingCache::size() const {
   return mappings_.size();
 }
 
-BufferViewMapper::BufferViewMapper(BufferViewMapperOptions options)
-    : options_(std::move(options)),
-      mapping_cache_(std::make_shared<LeaseMappingCache>()) {}
+BufferViewMapper::BufferViewMapper()
+    : mapping_cache_(std::make_shared<LeaseMappingCache>()) {}
 
 BufferView BufferViewMapper::map(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) const {
   if (!is_supported_backend(static_cast<uint8_t>(msg.backend))) {
-    RCLCPP_WARN(options_.logger, "Unsupported BufferCore.backend=%u",
-                static_cast<unsigned>(msg.backend));
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_view_mapper",
+                           "Unsupported BufferCore.backend=%u",
+                           static_cast<unsigned>(msg.backend));
     return {};
   }
 
   const PublisherInstanceId instance_id = msg.publisher_instance_id;
   if (is_nil(instance_id)) {
-    RCLCPP_WARN(options_.logger, "BufferCore publisher_instance_id is nil");
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_view_mapper",
+                           "BufferCore publisher_instance_id is nil");
     return {};
   }
 
@@ -122,9 +125,9 @@ BufferView BufferViewMapper::map(
   auto lease =
       lease::LeaseHandle::acquire(mapping, msg.slot_id, msg.generation);
   if (!lease.valid()) {
-    RCLCPP_WARN(options_.logger,
-                "Failed to acquire lease shm=%s slot=%u gen=%u",
-                msg.shm_name.c_str(), msg.slot_id, msg.generation);
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_view_mapper",
+                           "Failed to acquire lease shm=%s slot=%u gen=%u",
+                           msg.shm_name.c_str(), msg.slot_id, msg.generation);
     return {};
   }
 
@@ -145,7 +148,7 @@ BufferView BufferViewMapper::map(
   if (!imported) {
     const auto& importer =
         backend::get_memory_importer(static_cast<uint8_t>(msg.backend));
-    auto opened = importer.import(msg, event_handle, options_.logger);
+    auto opened = importer.import(msg, event_handle);
     if (!opened.has_value()) {
       return {};
     }

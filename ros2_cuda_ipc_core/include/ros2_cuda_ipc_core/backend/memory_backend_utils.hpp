@@ -3,17 +3,17 @@
 
 #pragma once
 
+#include <rcutils/logging_macros.h>
+
 #include <algorithm>
 #include <cctype>
 #include <string>
 
-#include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend {
 
-inline transport::MemoryBackendKind parse_memory_backend(
-    std::string name, const rclcpp::Logger& logger) {
+inline transport::MemoryBackendKind parse_memory_backend(std::string name) {
   std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
     return static_cast<char>(std::tolower(c));
   });
@@ -24,8 +24,10 @@ inline transport::MemoryBackendKind parse_memory_backend(
     return transport::MemoryBackendKind::VMM_FD;
   }
 
-  RCLCPP_WARN(logger, "Unknown memory_backend='%s'; defaulting to CUDA IPC",
-              name.c_str());
+  RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend",
+                         "Unknown memory_backend='%s'; defaulting "
+                         "to CUDA IPC",
+                         name.c_str());
   return transport::MemoryBackendKind::CUDA_IPC;
 }
 

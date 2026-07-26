@@ -24,15 +24,15 @@ class PartiallyFailingBackend
       std::shared_ptr<CleanupObservation> observation)
       : observation_(std::move(observation)) {}
 
-  bool allocate(uint64_t, int,
-                std::vector<ros2_cuda_ipc_core::backend::SlotResources>& slots,
-                rclcpp::Logger) override {
+  bool allocate(
+      uint64_t, int,
+      std::vector<ros2_cuda_ipc_core::backend::SlotResources>& slots) override {
     slots[0].device_ptr = reinterpret_cast<void*>(0x1);
     return false;
   }
 
-  void destroy(std::vector<ros2_cuda_ipc_core::backend::SlotResources>& slots,
-               rclcpp::Logger) noexcept override {
+  void destroy(std::vector<ros2_cuda_ipc_core::backend::SlotResources>&
+                   slots) noexcept override {
     ++observation_->destroy_calls;
     for (auto& slot : slots) {
       if (slot.device_ptr != nullptr) {
@@ -56,7 +56,6 @@ TEST(GpuBufferPoolTest, PartialBackendFailureIsRolledBack) {
   auto observation = std::make_shared<CleanupObservation>();
   ros2_cuda_ipc_core::publisher::GpuBufferPool pool(
       2, ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC,
-      rclcpp::get_logger("GpuBufferPoolTest"),
       std::make_unique<PartiallyFailingBackend>(observation));
   EXPECT_FALSE(pool.initialise(1024, 0));
   EXPECT_FALSE(pool.is_initialised());
