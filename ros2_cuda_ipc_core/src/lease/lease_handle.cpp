@@ -115,13 +115,13 @@ LeaseHandle::reserve_for_publish(const std::shared_ptr<LeaseMapping>& mapping) {
   const uint32_t capacity = mapping->capacity();
   const uint32_t start =
       mapping->next_slot().fetch_add(1, std::memory_order_relaxed) % capacity;
+  const uint64_t now = now_us();
   for (uint32_t offset = 0; offset < capacity; ++offset) {
     const uint32_t slot_id = (start + offset) % capacity;
     SlotMeta& slot = *mapping->slot(slot_id);
     if (slot.refcnt.load(std::memory_order_acquire) != 0) continue;
     const uint64_t published_at =
         slot.publish_timestamp_us.load(std::memory_order_acquire);
-    const uint64_t now = now_us();
     if (published_at != 0 &&
         (now < published_at || now - published_at < kGracePeriodUs))
       continue;

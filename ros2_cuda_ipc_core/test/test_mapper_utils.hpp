@@ -106,6 +106,10 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(
   if (!lease::LeaseHandle::commit_publish(mapping, reservation->slot_id,
                                           reservation->generation)) {
     ADD_FAILURE() << "LeaseHandle::commit_publish failed for " << shm_name;
+    (void)lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
+                                             reservation->generation);
+    (void)::shm_unlink(shm_name.c_str());
+    return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }
   seed_cache_for_message(msg, static_cast<uintptr_t>(0x1000 + key_seed * 0x10));
   return msg;

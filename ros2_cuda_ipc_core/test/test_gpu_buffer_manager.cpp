@@ -70,9 +70,25 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   EXPECT_EQ(descriptor->publisher_instance_id, instance_id);
   EXPECT_EQ(descriptor->byte_size, 1024u);
   EXPECT_FALSE(slot->record_ready(nullptr));
-  slot->commit_publish();
-  slot->commit_publish();
+  EXPECT_TRUE(slot->commit_publish());
+  EXPECT_TRUE(slot->commit_publish());
   EXPECT_FALSE(slot->valid());
+}
+
+TEST_F(GpuBufferManagerTest, CommitBeforeReadyHasNoSideEffects) {
+  auto manager = make_manager();
+  ASSERT_TRUE(manager.initialise());
+  auto slot = manager.acquire_for_publish();
+  ASSERT_TRUE(slot.has_value());
+
+  EXPECT_FALSE(slot->commit_publish());
+  EXPECT_TRUE(slot->valid());
+  EXPECT_NE(slot->device_ptr(), nullptr);
+  EXPECT_FALSE(manager.acquire_for_publish().has_value());
+
+  slot->cancel();
+  EXPECT_FALSE(slot->valid());
+  EXPECT_TRUE(manager.acquire_for_publish().has_value());
 }
 
 TEST_F(GpuBufferManagerTest, RuntimeCreatedStreamCanRecordReady) {
@@ -162,6 +178,7 @@ TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
   PublishSlot destination(std::move(*source));
   EXPECT_FALSE(source->valid());
   EXPECT_EQ(source->device_ptr(), nullptr);
+  EXPECT_FALSE(source->commit_publish());
   EXPECT_TRUE(destination.valid());
   destination.cancel();
   destination.cancel();

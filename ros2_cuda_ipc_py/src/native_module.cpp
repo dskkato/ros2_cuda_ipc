@@ -639,6 +639,9 @@ py::tuple make_test_image() {
   }
   if (!ros2_cuda_ipc_core::lease::LeaseHandle::commit_publish(
           mapping, reservation->slot_id, reservation->generation)) {
+    (void)ros2_cuda_ipc_core::lease::LeaseHandle::cancel_publish(
+        mapping, reservation->slot_id, reservation->generation);
+    (void)::shm_unlink(shm_name.c_str());
     throw std::runtime_error("test LeaseHandle::commit_publish failed");
   }
 
