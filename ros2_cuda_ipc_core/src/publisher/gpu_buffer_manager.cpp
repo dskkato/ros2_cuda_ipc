@@ -62,20 +62,34 @@ std::optional<transport::BufferDescriptor> PublishSlot::descriptor() const {
   return owner_->descriptor(reservation_);
 }
 
-void PublishSlot::commit_publish() noexcept {
+bool PublishSlot::commit_publish() noexcept {
   assert(owner_ != nullptr);
   assert(state_ == State::ready_recorded || state_ == State::committed);
-  if (owner_ != nullptr && state_ == State::ready_recorded) {
-    owner_->commit(reservation_);
-    state_ = State::committed;
+  if (owner_ == nullptr) {
+    return false;
   }
+  if (state_ == State::committed) {
+    return true;
+  }
+  if (state_ == State::ready_recorded && owner_->commit(reservation_)) {
+    state_ = State::committed;
+    return true;
+  }
+  // A failed commit must not make the slot inert while its reservation is
+  // still active. The cancel path is generation-checked as well, so it is
+  // safe to attempt even when the commit failed due to a stale reservation.
+  if (owner_->cancel(reservation_)) {
+    state_ = State::cancelled;
+  }
+  return false;
 }
 
 void PublishSlot::cancel() noexcept {
   if (owner_ != nullptr &&
       (state_ == State::reserved || state_ == State::ready_recorded)) {
-    owner_->cancel(reservation_);
-    state_ = State::cancelled;
+    if (owner_->cancel(reservation_)) {
+      state_ = State::cancelled;
+    }
   }
 }
 
@@ -171,14 +185,14 @@ std::optional<transport::BufferDescriptor> GpuBufferManager::descriptor(
   return result;
 }
 
-void GpuBufferManager::commit(
+bool GpuBufferManager::commit(
     const LeaseManager::Reservation& reservation) noexcept {
-  lease_manager_.commit(reservation);
+  return lease_manager_.commit(reservation);
 }
 
-void GpuBufferManager::cancel(
+bool GpuBufferManager::cancel(
     const LeaseManager::Reservation& reservation) noexcept {
-  lease_manager_.cancel(reservation);
+  return lease_manager_.cancel(reservation);
 }
 
 }  // namespace ros2_cuda_ipc_core::publisher

@@ -127,6 +127,33 @@ TEST_F(GpuBufferManagerTest, CommittedDestructionKeepsGracePeriod) {
   EXPECT_TRUE(manager.acquire_for_publish().has_value());
 }
 
+TEST_F(GpuBufferManagerTest, FailedCommitDoesNotMarkSlotCommitted) {
+  auto manager = make_manager();
+  ASSERT_TRUE(manager.initialise());
+  auto slot = manager.acquire_for_publish();
+  ASSERT_TRUE(slot.has_value());
+  ASSERT_TRUE(slot->record_ready(nullptr));
+
+  auto mapping = ros2_cuda_ipc_core::lease::LeaseMapping::attach(
+      manager.shm_name(), manager.publisher_instance_id());
+  ASSERT_TRUE(mapping);
+  const auto generation =
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_generation(mapping, 0);
+  ASSERT_TRUE(generation.has_value());
+
+  mapping->slot(0)->generation.store(*generation + 1,
+                                     std::memory_order_release);
+  EXPECT_FALSE(slot->commit_publish());
+  EXPECT_TRUE(slot->valid());
+
+  // Restore the reservation generation so its cancellation can release the
+  // temporary Publisher reference after the failed-commit check.
+  mapping->slot(0)->generation.store(*generation, std::memory_order_release);
+  slot->cancel();
+  EXPECT_FALSE(slot->valid());
+  EXPECT_TRUE(manager.acquire_for_publish().has_value());
+}
+
 TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());

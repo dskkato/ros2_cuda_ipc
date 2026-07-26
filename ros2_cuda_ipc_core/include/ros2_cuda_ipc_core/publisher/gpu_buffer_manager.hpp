@@ -59,7 +59,10 @@ class PublishSlot {
   ///
   /// Requires a successful record_ready() call. Repeated calls after commit
   /// are harmless.
-  void commit_publish() noexcept;
+  ///
+  /// @return true when the Publisher reservation was committed; false when
+  /// the reservation could not be committed.
+  bool commit_publish() noexcept;
 
   /// Cancel the reservation when it has not been committed.
   void cancel() noexcept;
@@ -154,8 +157,8 @@ class GpuBufferManager {
       const LeaseManager::Reservation& reservation, CUstream stream) noexcept;
   std::optional<transport::BufferDescriptor> descriptor(
       const LeaseManager::Reservation& reservation) const;
-  void commit(const LeaseManager::Reservation& reservation) noexcept;
-  void cancel(const LeaseManager::Reservation& reservation) noexcept;
+  bool commit(const LeaseManager::Reservation& reservation) noexcept;
+  bool cancel(const LeaseManager::Reservation& reservation) noexcept;
 
   Config config_;
   GpuBufferPool buffer_pool_;
