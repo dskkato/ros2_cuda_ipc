@@ -15,14 +15,6 @@ namespace {
 
 constexpr uint64_t kGracePeriodUs = 100000;
 
-inline std::atomic<uint32_t>& as_atomic(uint32_t& value) {
-  return reinterpret_cast<std::atomic<uint32_t>&>(value);
-}
-
-inline std::atomic<uint64_t>& as_atomic(uint64_t& value) {
-  return reinterpret_cast<std::atomic<uint64_t>&>(value);
-}
-
 uint64_t now_us() {
   return static_cast<uint64_t>(
       std::chrono::duration_cast<std::chrono::microseconds>(
@@ -35,8 +27,7 @@ bool release_publisher_reservation(const std::shared_ptr<LeaseMapping>& mapping,
                                    bool published) noexcept {
   if (!mapping || slot_id >= mapping->capacity()) return false;
   SlotMeta& slot = *mapping->slot(slot_id);
-  if (as_atomic(slot.generation).load(std::memory_order_acquire) !=
-      generation) {
+  if (slot.generation.load(std::memory_order_acquire) != generation) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.lease_handle",
         "lease:publisher_reservation_generation_mismatch slot=%u gen=%u",
@@ -44,15 +35,13 @@ bool release_publisher_reservation(const std::shared_ptr<LeaseMapping>& mapping,
     return false;
   }
   if (published) {
-    as_atomic(slot.publish_timestamp_us)
-        .store(now_us(), std::memory_order_release);
+    slot.publish_timestamp_us.store(now_us(), std::memory_order_release);
   }
-  auto& ref = as_atomic(slot.refcnt);
-  const uint32_t previous = ref.fetch_sub(1, std::memory_order_acq_rel);
+  const uint32_t previous = slot.refcnt.fetch_sub(1, std::memory_order_acq_rel);
   if (previous == 0) {
     RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.lease_handle",
                             "lease:refcnt_underflow slot=%u", slot_id);
-    ref.store(0, std::memory_order_release);
+    slot.refcnt.store(0, std::memory_order_release);
     return false;
   }
   return true;
@@ -88,12 +77,12 @@ LeaseHandle::~LeaseHandle() { release(); }
 
 void LeaseHandle::release() noexcept {
   if (!slot_meta_) return;
-  auto& ref = as_atomic(slot_meta_->refcnt);
-  const uint32_t previous = ref.fetch_sub(1, std::memory_order_acq_rel);
+  const uint32_t previous =
+      slot_meta_->refcnt.fetch_sub(1, std::memory_order_acq_rel);
   if (previous == 0) {
     RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.lease_handle",
                             "lease:refcnt_underflow slot=%u", slot_id_);
-    ref.store(0, std::memory_order_release);
+    slot_meta_->refcnt.store(0, std::memory_order_release);
   }
   slot_meta_ = nullptr;
   slot_id_ = 0;
@@ -104,22 +93,20 @@ void LeaseHandle::release() noexcept {
 std::optional<uint32_t> LeaseHandle::current_generation(
     const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
   if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
-  return as_atomic(mapping->slot(slot_id)->generation)
-      .load(std::memory_order_acquire);
+  return mapping->slot(slot_id)->generation.load(std::memory_order_acquire);
 }
 
 std::optional<uint32_t> LeaseHandle::current_refcount(
     const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
   if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
-  return as_atomic(mapping->slot(slot_id)->refcnt)
-      .load(std::memory_order_acquire);
+  return mapping->slot(slot_id)->refcnt.load(std::memory_order_acquire);
 }
 
 std::optional<uint64_t> LeaseHandle::current_publish_timestamp_us(
     const std::shared_ptr<LeaseMapping>& mapping, uint32_t slot_id) {
   if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
-  return as_atomic(mapping->slot(slot_id)->publish_timestamp_us)
-      .load(std::memory_order_acquire);
+  return mapping->slot(slot_id)->publish_timestamp_us.load(
+      std::memory_order_acquire);
 }
 
 std::optional<LeaseHandle::PublisherReservation>
@@ -131,22 +118,20 @@ LeaseHandle::reserve_for_publish(const std::shared_ptr<LeaseMapping>& mapping) {
   for (uint32_t offset = 0; offset < capacity; ++offset) {
     const uint32_t slot_id = (start + offset) % capacity;
     SlotMeta& slot = *mapping->slot(slot_id);
-    auto& ref = as_atomic(slot.refcnt);
-    if (ref.load(std::memory_order_acquire) != 0) continue;
+    if (slot.refcnt.load(std::memory_order_acquire) != 0) continue;
     const uint64_t published_at =
-        as_atomic(slot.publish_timestamp_us).load(std::memory_order_acquire);
+        slot.publish_timestamp_us.load(std::memory_order_acquire);
     const uint64_t now = now_us();
     if (published_at != 0 &&
         (now < published_at || now - published_at < kGracePeriodUs))
       continue;
     uint32_t expected = 0;
-    if (!ref.compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
-                                     std::memory_order_acquire))
+    if (!slot.refcnt.compare_exchange_strong(
+            expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
       continue;
-    auto& generation = as_atomic(slot.generation);
-    const uint32_t next = generation.load(std::memory_order_relaxed) + 1;
-    generation.store(next, std::memory_order_release);
-    as_atomic(slot.publish_timestamp_us).store(0, std::memory_order_release);
+    const uint32_t next = slot.generation.load(std::memory_order_relaxed) + 1;
+    slot.generation.store(next, std::memory_order_release);
+    slot.publish_timestamp_us.store(0, std::memory_order_release);
     mapping->next_slot().store((slot_id + 1) % capacity,
                                std::memory_order_relaxed);
     return PublisherReservation{mapping, slot_id, next};
@@ -170,25 +155,24 @@ LeaseHandle LeaseHandle::acquire(const std::shared_ptr<LeaseMapping>& mapping,
                                  uint32_t slot_id, uint32_t generation) {
   if (!mapping || slot_id >= mapping->capacity()) return LeaseHandle{};
   SlotMeta* slot = mapping->slot(slot_id);
-  auto& gen = as_atomic(slot->generation);
-  auto& ref = as_atomic(slot->refcnt);
-  if (gen.load(std::memory_order_acquire) != generation) return LeaseHandle{};
+  if (slot->generation.load(std::memory_order_acquire) != generation)
+    return LeaseHandle{};
 
-  uint32_t observed_ref = ref.load(std::memory_order_acquire);
+  uint32_t observed_ref = slot->refcnt.load(std::memory_order_acquire);
   while (true) {
     if (observed_ref == UINT32_MAX) {
       RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.lease_handle",
                               "lease:ref_overflow slot=%u", slot_id);
       return LeaseHandle{};
     }
-    if (ref.compare_exchange_weak(observed_ref, observed_ref + 1,
-                                  std::memory_order_acq_rel,
-                                  std::memory_order_acquire))
+    if (slot->refcnt.compare_exchange_weak(observed_ref, observed_ref + 1,
+                                           std::memory_order_acq_rel,
+                                           std::memory_order_acquire))
       break;
   }
-  const uint32_t recheck_gen = gen.load(std::memory_order_acquire);
+  const uint32_t recheck_gen = slot->generation.load(std::memory_order_acquire);
   if (recheck_gen != generation) {
-    ref.fetch_sub(1, std::memory_order_acq_rel);
+    slot->refcnt.fetch_sub(1, std::memory_order_acq_rel);
     return LeaseHandle{};
   }
   return LeaseHandle(mapping, slot, slot_id, generation);

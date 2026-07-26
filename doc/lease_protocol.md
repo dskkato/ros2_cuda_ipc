@@ -56,14 +56,18 @@ slot->commit_publish();
 
 ```cpp
 struct SlotMeta {
-  uint32_t generation;
-  uint32_t refcnt;
-  uint64_t publish_timestamp_us;
+  std::atomic<uint32_t> generation;
+  std::atomic<uint32_t> refcnt;
+  std::atomic<uint64_t> publish_timestamp_us;
 };
 ```
 
-shared-memory layout version は4である。attach 時には magic、layout version、capacity、
+shared-memory layout version は5である。attach 時には magic、layout version、capacity、
 Publisher instance ID を検証する。
+
+各atomicは対象platformでlock-freeであることを要求し、Publisherがshared memoryを作成
+するときに`SlotMeta`をplacement newで構築する。Subscriberは既存のslotを再構築せずに
+attachする。
 
 `publish_timestamp_us` は `steady_clock` のマイクロ秒値で、最後に commit された publish
 時刻を表す。0 はまだ publish されていない slot を表す。
