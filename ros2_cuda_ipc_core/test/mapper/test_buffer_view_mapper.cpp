@@ -51,7 +51,7 @@ TEST_F(BufferViewMapperTest, PublisherInstanceMismatchRejectsMessage) {
   const auto owner_id = test::publisher_instance_id(shm_name);
   auto mapping = lease::LeaseMapping::create(shm_name, owner_id, 1);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
 
   auto msg = test::make_cached_buffer_core_message(
@@ -62,7 +62,9 @@ TEST_F(BufferViewMapperTest, PublisherInstanceMismatchRejectsMessage) {
   EXPECT_FALSE(mapper.map(msg).valid());
   auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
   ASSERT_TRUE(refcnt.has_value());
-  EXPECT_EQ(*refcnt, 0u);
+  EXPECT_EQ(*refcnt, 1u);
+  ASSERT_TRUE(lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
+                                                 reservation->generation));
   ::shm_unlink(shm_name.c_str());
 }
 
@@ -72,7 +74,7 @@ TEST_F(BufferViewMapperTest, UnsupportedBackendReturnsInvalid) {
   auto mapping = lease::LeaseMapping::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 0);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -90,7 +92,9 @@ TEST_F(BufferViewMapperTest, UnsupportedBackendReturnsInvalid) {
 
   auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
   ASSERT_TRUE(refcnt.has_value());
-  EXPECT_EQ(refcnt.value(), 0u);
+  EXPECT_EQ(refcnt.value(), 1u);
+  ASSERT_TRUE(lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
+                                                 reservation->generation));
 
   ::shm_unlink(shm_name.c_str());
 }
@@ -101,7 +105,7 @@ TEST_F(BufferViewMapperTest, InvalidVmmPayloadReturnsInvalid) {
   auto mapping = lease::LeaseMapping::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -121,7 +125,9 @@ TEST_F(BufferViewMapperTest, InvalidVmmPayloadReturnsInvalid) {
 
   auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
   ASSERT_TRUE(refcnt.has_value());
-  EXPECT_EQ(refcnt.value(), 0u);
+  EXPECT_EQ(refcnt.value(), 1u);
+  ASSERT_TRUE(lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
+                                                 reservation->generation));
 
   ::shm_unlink(shm_name.c_str());
 }
@@ -132,7 +138,7 @@ TEST_F(BufferViewMapperTest, MissingVmmSocketReturnsInvalidAndReleasesLease) {
   auto mapping = lease::LeaseMapping::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -153,7 +159,9 @@ TEST_F(BufferViewMapperTest, MissingVmmSocketReturnsInvalidAndReleasesLease) {
 
   auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
   ASSERT_TRUE(refcnt.has_value());
-  EXPECT_EQ(refcnt.value(), 0u);
+  EXPECT_EQ(refcnt.value(), 1u);
+  ASSERT_TRUE(lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
+                                                 reservation->generation));
 
   ::shm_unlink(shm_name.c_str());
 }

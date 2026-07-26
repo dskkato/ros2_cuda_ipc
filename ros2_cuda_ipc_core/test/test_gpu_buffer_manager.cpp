@@ -46,10 +46,9 @@ class GpuBufferManagerTest : public ::testing::Test {
     }
     shm_name_ = unique_name();
   }
-  GpuBufferManager make_manager(
-      std::chrono::milliseconds pending_ttl = std::chrono::milliseconds(100)) {
+  GpuBufferManager make_manager() {
     return GpuBufferManager(
-        {shm_name_, 1, 1024, 0, pending_ttl,
+        {shm_name_, 1, 1024, 0,
          ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC});
   }
   std::string shm_name_;
@@ -59,7 +58,7 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   const auto instance_id = manager.publisher_instance_id();
-  auto slot = manager.acquire_for_publish(1);
+  auto slot = manager.acquire_for_publish();
   ASSERT_TRUE(slot.has_value());
   EXPECT_EQ(slot->descriptor(), std::nullopt);
   ASSERT_TRUE(slot->record_ready(nullptr));
@@ -79,7 +78,7 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
 TEST_F(GpuBufferManagerTest, RuntimeCreatedStreamCanRecordReady) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
-  auto slot = manager.acquire_for_publish(1);
+  auto slot = manager.acquire_for_publish();
   ASSERT_TRUE(slot.has_value());
 
   cudaStream_t stream = nullptr;
@@ -93,7 +92,7 @@ TEST_F(GpuBufferManagerTest, RuntimeCreatedStreamCanRecordReady) {
 TEST_F(GpuBufferManagerTest, DriverCreatedStreamCanRecordReady) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
-  auto slot = manager.acquire_for_publish(1);
+  auto slot = manager.acquire_for_publish();
   ASSERT_TRUE(slot.has_value());
 
   CUstream stream = nullptr;
@@ -108,28 +107,30 @@ TEST_F(GpuBufferManagerTest, UncommittedDestructionCancelsReservation) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   {
-    auto slot = manager.acquire_for_publish(1);
+    auto slot = manager.acquire_for_publish();
     ASSERT_TRUE(slot.has_value());
   }
-  EXPECT_TRUE(manager.acquire_for_publish(1).has_value());
+  EXPECT_TRUE(manager.acquire_for_publish().has_value());
 }
 
-TEST_F(GpuBufferManagerTest, CommittedDestructionKeepsPending) {
+TEST_F(GpuBufferManagerTest, CommittedDestructionKeepsGracePeriod) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   {
-    auto slot = manager.acquire_for_publish(1);
+    auto slot = manager.acquire_for_publish();
     ASSERT_TRUE(slot.has_value());
     ASSERT_TRUE(slot->record_ready(nullptr));
     slot->commit_publish();
   }
-  EXPECT_FALSE(manager.acquire_for_publish(1).has_value());
+  EXPECT_FALSE(manager.acquire_for_publish().has_value());
+  std::this_thread::sleep_for(std::chrono::milliseconds(105));
+  EXPECT_TRUE(manager.acquire_for_publish().has_value());
 }
 
 TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
-  auto source = manager.acquire_for_publish(1);
+  auto source = manager.acquire_for_publish();
   ASSERT_TRUE(source.has_value());
   PublishSlot destination(std::move(*source));
   EXPECT_FALSE(source->valid());
@@ -138,7 +139,7 @@ TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
   destination.cancel();
   destination.cancel();
   EXPECT_FALSE(destination.valid());
-  EXPECT_TRUE(manager.acquire_for_publish(1).has_value());
+  EXPECT_TRUE(manager.acquire_for_publish().has_value());
 }
 
 TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
@@ -146,23 +147,23 @@ TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   ASSERT_TRUE(manager.initialise());
   const std::string actual_name = manager.shm_name();
   const auto instance_id = manager.publisher_instance_id();
-  auto slot = manager.acquire_for_publish(1);
+  auto slot = manager.acquire_for_publish();
   ASSERT_TRUE(slot.has_value());
   auto mapping =
       ros2_cuda_ipc_core::lease::LeaseMapping::attach(actual_name, instance_id);
   ASSERT_TRUE(mapping);
-  const auto pending_before =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(mapping, 0);
-  ASSERT_TRUE(pending_before.has_value());
-  ASSERT_EQ(*pending_before, 1u);
+  const auto ref_before =
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(mapping, 0);
+  ASSERT_TRUE(ref_before.has_value());
+  ASSERT_EQ(*ref_before, 1u);
 
   manager.reset();
   slot.reset();
 
-  const auto pending_after =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_pending(mapping, 0);
-  ASSERT_TRUE(pending_after.has_value());
-  EXPECT_EQ(*pending_after, 0u);
+  const auto ref_after =
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(mapping, 0);
+  ASSERT_TRUE(ref_after.has_value());
+  EXPECT_EQ(*ref_after, 0u);
 
   // The name itself is nevertheless gone immediately after manager reset.
   const int fd = ::shm_open(actual_name.c_str(), O_RDWR, 0660);
@@ -172,16 +173,16 @@ TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   }
 }
 
-TEST_F(GpuBufferManagerTest, AcquireAutomaticallyReclaimsExpiredPending) {
-  auto manager = make_manager(std::chrono::milliseconds(1));
+TEST_F(GpuBufferManagerTest, AcquireAfterGracePeriod) {
+  auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   {
-    auto slot = manager.acquire_for_publish(1);
+    auto slot = manager.acquire_for_publish();
     ASSERT_TRUE(slot.has_value());
     ASSERT_TRUE(slot->record_ready(nullptr));
     slot->commit_publish();
   }
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  EXPECT_TRUE(manager.acquire_for_publish(1).has_value());
+  std::this_thread::sleep_for(std::chrono::milliseconds(105));
+  EXPECT_TRUE(manager.acquire_for_publish().has_value());
 }

@@ -596,7 +596,7 @@ py::tuple make_test_image() {
     throw std::runtime_error("test LeaseMapping::create failed");
   }
   const auto reservation =
-      ros2_cuda_ipc_core::lease::LeaseHandle::reserve_for_publish(mapping, 1);
+      ros2_cuda_ipc_core::lease::LeaseHandle::reserve_for_publish(mapping);
   if (!reservation) {
     throw std::runtime_error("test LeaseHandle::reserve_for_publish failed");
   }
@@ -636,6 +636,10 @@ py::tuple make_test_image() {
   auto view = mapper.map(message);
   if (!view.valid() || !view.sanity_check()) {
     throw std::runtime_error("test ImageViewMapper fixture failed");
+  }
+  if (!ros2_cuda_ipc_core::lease::LeaseHandle::commit_publish(
+          mapping, reservation->slot_id, reservation->generation)) {
+    throw std::runtime_error("test LeaseHandle::commit_publish failed");
   }
 
   py::dict core;

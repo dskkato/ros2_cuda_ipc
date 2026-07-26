@@ -18,7 +18,7 @@ namespace ros2_cuda_ipc_core::lease {
 namespace {
 
 constexpr uint32_t kShmMagic = 0x4C534531;  // 'LSE1'
-constexpr uint32_t kLayoutVersion = 3;
+constexpr uint32_t kLayoutVersion = 4;
 
 struct ShmHeader {
   uint32_t magic;
@@ -30,6 +30,10 @@ struct ShmHeader {
 
 inline std::atomic<uint32_t>& as_atomic(uint32_t& value) {
   return reinterpret_cast<std::atomic<uint32_t>&>(value);
+}
+
+inline std::atomic<uint64_t>& as_atomic(uint64_t& value) {
+  return reinterpret_cast<std::atomic<uint64_t>&>(value);
 }
 
 bool valid_layout(const struct stat& st, const ShmHeader& header,
@@ -102,8 +106,8 @@ std::shared_ptr<LeaseMapping> LeaseMapping::create(
   for (uint32_t i = 0; i < capacity; ++i) {
     as_atomic(slots[i].generation).store(0u, std::memory_order_relaxed);
     as_atomic(slots[i].refcnt).store(0u, std::memory_order_relaxed);
-    as_atomic(slots[i].pending).store(0u, std::memory_order_relaxed);
-    as_atomic(slots[i].reserved).store(0u, std::memory_order_relaxed);
+    as_atomic(slots[i].publish_timestamp_us)
+        .store(0u, std::memory_order_relaxed);
   }
 
   auto mapping = std::shared_ptr<LeaseMapping>(new LeaseMapping);

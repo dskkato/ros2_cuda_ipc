@@ -5,7 +5,6 @@
 
 #include <cuda.h>
 
-#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -107,9 +106,6 @@ class GpuBufferManager {
     /// CUDA device index on which the buffers are allocated.
     int device_index = 0;
 
-    /// Age after which stale pending reservations may be reclaimed.
-    std::chrono::milliseconds pending_ttl{0};
-
     /// Memory backend used to allocate and export the buffers.
     transport::MemoryBackendKind backend =
         transport::MemoryBackendKind::CUDA_IPC;
@@ -144,15 +140,9 @@ class GpuBufferManager {
   PublisherInstanceId publisher_instance_id() const;
 
   /// Reserve a slot for a new publish attempt.
-  ///
-  /// @param pending_count Number of subscribers that are expected to consume
-  /// the published payload.
   /// @return A publish slot when a reservation is available; std::nullopt
   /// otherwise.
-  std::optional<PublishSlot> acquire_for_publish(uint32_t pending_count);
-
-  /// Reclaim pending reservations that have exceeded the configured TTL.
-  void reclaim_stale_pending();
+  std::optional<PublishSlot> acquire_for_publish();
 
  private:
   /// Allow a slot to delegate resource operations to its owning manager
@@ -164,6 +154,7 @@ class GpuBufferManager {
       const LeaseManager::Reservation& reservation, CUstream stream) noexcept;
   std::optional<transport::BufferDescriptor> descriptor(
       const LeaseManager::Reservation& reservation) const;
+  void commit(const LeaseManager::Reservation& reservation) noexcept;
   void cancel(const LeaseManager::Reservation& reservation) noexcept;
 
   Config config_;

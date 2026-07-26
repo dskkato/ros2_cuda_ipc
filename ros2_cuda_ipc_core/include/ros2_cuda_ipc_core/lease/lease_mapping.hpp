@@ -17,9 +17,11 @@ namespace ros2_cuda_ipc_core::lease {
 struct SlotMeta {
   uint32_t generation;
   uint32_t refcnt;
-  uint32_t pending;
-  uint32_t reserved;
+  uint64_t publish_timestamp_us;
 };
+
+static_assert(sizeof(SlotMeta) == 16);
+static_assert(alignof(SlotMeta) >= alignof(uint64_t));
 
 /// Owns one POSIX shared-memory mapping.
 ///

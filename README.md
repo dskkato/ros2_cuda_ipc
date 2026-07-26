@@ -61,7 +61,6 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   publish_rate_hz:=60.0 \
   memory_backend:=cuda_ipc \
   slot_count:=4 \
-  pending_ttl_ms:=300 \
   shm_name_prefix:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```

@@ -71,7 +71,6 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   publish_rate_hz:=60.0 \
   memory_backend:=cuda_ipc \
   slot_count:=4 \
-  pending_ttl_ms:=300 \
   shm_name_prefix:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```
@@ -84,7 +83,7 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   memory_backend:=vmm_fd
 ```
 
-The `width`, `height`, `memory_backend`, `slot_count`, `pending_ttl_ms`,
+The `width`, `height`, `memory_backend`, and `slot_count`,
 `shm_name_prefix`, and `device_index` arguments are publisher-side pseudo-camera
 parameters.
 

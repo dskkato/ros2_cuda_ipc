@@ -66,6 +66,7 @@ void PublishSlot::commit_publish() noexcept {
   assert(owner_ != nullptr);
   assert(state_ == State::ready_recorded || state_ == State::committed);
   if (owner_ != nullptr && state_ == State::ready_recorded) {
+    owner_->commit(reservation_);
     state_ = State::committed;
   }
 }
@@ -81,8 +82,7 @@ void PublishSlot::cancel() noexcept {
 GpuBufferManager::GpuBufferManager(Config config)
     : config_(std::move(config)),
       buffer_pool_(config_.slot_count, config_.backend),
-      lease_manager_(config_.shm_name_prefix, config_.slot_count,
-                     config_.pending_ttl) {}
+      lease_manager_(config_.shm_name_prefix, config_.slot_count) {}
 
 GpuBufferManager::~GpuBufferManager() { reset(); }
 
@@ -115,21 +115,15 @@ PublisherInstanceId GpuBufferManager::publisher_instance_id() const {
   return lease_manager_.publisher_instance_id();
 }
 
-std::optional<PublishSlot> GpuBufferManager::acquire_for_publish(
-    uint32_t pending_count) {
+std::optional<PublishSlot> GpuBufferManager::acquire_for_publish() {
   if (!is_initialised()) {
     return std::nullopt;
   }
-  lease_manager_.reclaim_stale_pending();
-  auto reservation = lease_manager_.reserve_for_publish(pending_count);
+  auto reservation = lease_manager_.reserve_for_publish();
   if (!reservation) {
     return std::nullopt;
   }
   return PublishSlot(this, *reservation);
-}
-
-void GpuBufferManager::reclaim_stale_pending() {
-  lease_manager_.reclaim_stale_pending();
 }
 
 void* GpuBufferManager::device_ptr(
@@ -175,6 +169,11 @@ std::optional<transport::BufferDescriptor> GpuBufferManager::descriptor(
   result.memory_handle = resources->mem_handle;
   result.ready_event_handle = resources->ready_event->ipc_handle();
   return result;
+}
+
+void GpuBufferManager::commit(
+    const LeaseManager::Reservation& reservation) noexcept {
+  lease_manager_.commit(reservation);
 }
 
 void GpuBufferManager::cancel(
