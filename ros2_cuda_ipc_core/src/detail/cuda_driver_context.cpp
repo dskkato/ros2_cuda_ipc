@@ -3,19 +3,12 @@
 
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 
+#include <rcutils/logging_macros.h>
+
 #include <mutex>
 #include <string>
 
-#include "rclcpp/logging.hpp"
-
 namespace ros2_cuda_ipc_core::detail {
-namespace {
-
-rclcpp::Logger cuda_context_logger() {
-  return rclcpp::get_logger("ros2_cuda_ipc_core.cuda_context");
-}
-
-}  // namespace
 
 std::string CudaDriverError::name() const {
   const char* value = nullptr;
@@ -95,10 +88,9 @@ void CudaContextGuard::pop_noexcept() noexcept {
   }
 
   try {
-    const auto logger = cuda_context_logger();
     if (owner_thread_ != std::this_thread::get_id()) {
-      RCLCPP_ERROR(
-          logger,
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.cuda_context",
           "CUDA context guard destroyed on a different thread; refusing to "
           "pop a thread-local context stack");
       active_ = false;
@@ -112,23 +104,25 @@ void CudaContextGuard::pop_noexcept() noexcept {
     active_ = false;
     context_ = nullptr;
     if (result != CUDA_SUCCESS) {
-      RCLCPP_ERROR(logger, "cuCtxPopCurrent failed: %s",
-                   CudaDriverError(result).to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.cuda_context",
+                              "cuCtxPopCurrent failed: %s",
+                              CudaDriverError(result).to_string().c_str());
       return;
     }
     if (popped != expected) {
-      RCLCPP_ERROR(logger,
-                   "cuCtxPopCurrent returned an unexpected context "
-                   "(expected=%p, popped=%p)",
-                   static_cast<void*>(expected), static_cast<void*>(popped));
+      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.cuda_context",
+                              "cuCtxPopCurrent returned an unexpected context "
+                              "(expected=%p, popped=%p)",
+                              static_cast<void*>(expected),
+                              static_cast<void*>(popped));
     }
   } catch (...) {
     active_ = false;
     context_ = nullptr;
     try {
-      RCLCPP_ERROR(cuda_context_logger(),
-                   "CUDA context guard cleanup failed while reporting an "
-                   "error");
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.cuda_context",
+          "CUDA context guard cleanup failed while reporting an error");
     } catch (...) {
       // Destructors must not throw, including while reporting a cleanup error.
     }
@@ -139,15 +133,17 @@ CudaDeviceContext::~CudaDeviceContext() noexcept {
   const CUresult result = cuDevicePrimaryCtxRelease(device_);
   if (result != CUDA_SUCCESS) {
     try {
-      RCLCPP_ERROR(cuda_context_logger(),
-                   "cuDevicePrimaryCtxRelease(device_id=%d) failed: %s",
-                   device_id_, CudaDriverError(result).to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.cuda_context",
+          "cuDevicePrimaryCtxRelease(device_id=%d) failed: %s", device_id_,
+          CudaDriverError(result).to_string().c_str());
     } catch (...) {
       try {
-        RCLCPP_ERROR(cuda_context_logger(),
-                     "cuDevicePrimaryCtxRelease(device_id=%d) failed with "
-                     "an unformattable CUDA Driver API error",
-                     device_id_);
+        RCUTILS_LOG_ERROR_NAMED(
+            "ros2_cuda_ipc_core.cuda_context",
+            "cuDevicePrimaryCtxRelease(device_id=%d) failed with an "
+            "unformattable CUDA Driver API error",
+            device_id_);
       } catch (...) {
         // A noexcept destructor must not throw while reporting cleanup.
       }

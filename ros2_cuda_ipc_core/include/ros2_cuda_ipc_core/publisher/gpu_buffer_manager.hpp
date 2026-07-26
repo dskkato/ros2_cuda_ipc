@@ -10,7 +10,6 @@
 #include <optional>
 #include <string>
 
-#include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/publisher/lease_manager.hpp"
@@ -116,8 +115,8 @@ class GpuBufferManager {
         transport::MemoryBackendKind::CUDA_IPC;
   };
 
-  /// Construct a manager with the given configuration and logger.
-  GpuBufferManager(Config config, rclcpp::Logger logger);
+  /// Construct a manager with the given configuration.
+  explicit GpuBufferManager(Config config);
 
   /// Release manager-owned resources.
   ~GpuBufferManager();
@@ -168,7 +167,6 @@ class GpuBufferManager {
   void cancel(const LeaseManager::Reservation& reservation) noexcept;
 
   Config config_;
-  rclcpp::Logger logger_;
   GpuBufferPool buffer_pool_;
   LeaseManager lease_manager_;
 };

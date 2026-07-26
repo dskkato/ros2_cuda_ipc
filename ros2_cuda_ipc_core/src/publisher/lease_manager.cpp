@@ -4,6 +4,7 @@
 #include "ros2_cuda_ipc_core/publisher/lease_manager.hpp"
 
 #include <limits.h>
+#include <rcutils/logging_macros.h>
 #include <sys/mman.h>
 #include <uuid/uuid.h>
 
@@ -12,7 +13,6 @@
 #include <string>
 #include <utility>
 
-#include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
@@ -42,29 +42,30 @@ std::pair<PublisherInstanceId, std::string> make_instance_identity(
 }  // namespace
 
 LeaseManager::LeaseManager(std::string shm_name_prefix, std::size_t slot_count,
-                           std::chrono::milliseconds pending_ttl,
-                           rclcpp::Logger logger)
+                           std::chrono::milliseconds pending_ttl)
     : shm_name_prefix_(std::move(shm_name_prefix)),
       slot_count_(slot_count),
-      pending_ttl_(pending_ttl),
-      logger_(std::move(logger)) {}
+      pending_ttl_(pending_ttl) {}
 
 LeaseManager::~LeaseManager() { reset(); }
 
 bool LeaseManager::initialise() {
   reset();
   if (slot_count_ == 0 || slot_count_ > std::numeric_limits<uint32_t>::max()) {
-    RCLCPP_ERROR(logger_, "Invalid slot_count: %zu", slot_count_);
+    RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.publisher.lease_manager",
+                            "Invalid slot_count: %zu", slot_count_);
     return false;
   }
   if (!valid_prefix(shm_name_prefix_)) {
-    RCLCPP_ERROR(logger_, "Invalid shared-memory name prefix: %s",
-                 shm_name_prefix_.c_str());
+    RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.publisher.lease_manager",
+                            "Invalid shared-memory name prefix: %s",
+                            shm_name_prefix_.c_str());
     return false;
   }
   auto [instance_id, instance_name] = make_instance_identity(shm_name_prefix_);
   if (instance_name.size() > NAME_MAX) {
-    RCLCPP_ERROR(logger_, "Generated shared-memory name is too long");
+    RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.publisher.lease_manager",
+                            "Generated shared-memory name is too long");
     return false;
   }
   std::vector<Clock::time_point> pending_deadlines(slot_count_);
@@ -100,8 +101,9 @@ void LeaseManager::reset() noexcept {
     initialised_ = false;
   }
   if (!owned_name.empty() && ::shm_unlink(owned_name.c_str()) != 0) {
-    RCLCPP_WARN(logger_, "Failed to unlink lease shared memory name=%s",
-                owned_name.c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.publisher.lease_manager",
+                           "Failed to unlink lease shared memory name=%s",
+                           owned_name.c_str());
   }
   // Keep the mapping alive until after unlink. Reservations may still own it.
   owned_mapping.reset();
@@ -132,17 +134,18 @@ std::optional<LeaseManager::Reservation> LeaseManager::reserve_for_publish(
     return std::nullopt;
   }
   if (reservation->slot_id >= slot_count_) {
-    RCLCPP_ERROR(logger_,
-                 "Lease shared-memory capacity changed unexpectedly: "
-                 "slot=%u configured_count=%zu",
-                 reservation->slot_id, slot_count_);
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.publisher.lease_manager",
+        "Lease shared-memory capacity changed unexpectedly: "
+        "slot=%u configured_count=%zu",
+        reservation->slot_id, slot_count_);
     const bool rolled_back = lease::LeaseHandle::cancel_pending(
         reservation->mapping, reservation->slot_id, reservation->generation);
     if (!rolled_back) {
-      RCLCPP_ERROR(logger_,
-                   "Failed to roll back out-of-range reservation slot=%u "
-                   "generation=%u",
-                   reservation->slot_id, reservation->generation);
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.publisher.lease_manager",
+          "Failed to roll back out-of-range reservation slot=%u generation=%u",
+          reservation->slot_id, reservation->generation);
     }
     return std::nullopt;
   }
@@ -164,9 +167,10 @@ std::optional<LeaseManager::Reservation> LeaseManager::reserve_for_publish(
   const bool rolled_back = lease::LeaseHandle::cancel_pending(
       reservation->mapping, reservation->slot_id, reservation->generation);
   if (!rolled_back) {
-    RCLCPP_ERROR(logger_,
-                 "Failed to roll back reservation slot=%u generation=%u",
-                 reservation->slot_id, reservation->generation);
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.publisher.lease_manager",
+        "Failed to roll back reservation slot=%u generation=%u",
+        reservation->slot_id, reservation->generation);
   }
   return std::nullopt;
 }
@@ -178,8 +182,10 @@ bool LeaseManager::cancel(const Reservation& reservation) noexcept {
   const bool cancelled = lease::LeaseHandle::cancel_pending(
       reservation.mapping, reservation.slot_id, reservation.generation);
   if (!cancelled) {
-    RCLCPP_ERROR(logger_, "Failed to cancel reservation slot=%u generation=%u",
-                 reservation.slot_id, reservation.generation);
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.publisher.lease_manager",
+        "Failed to cancel reservation slot=%u generation=%u",
+        reservation.slot_id, reservation.generation);
   }
   if (cancelled) {
     std::lock_guard<std::mutex> lock(deadlines_mutex_);
@@ -212,9 +218,10 @@ void LeaseManager::reclaim_stale_pending() {
       continue;
     }
     if (lease::LeaseHandle::force_clear_pending(mapping_, slot_id)) {
-      RCLCPP_WARN(logger_,
-                  "Force-cleared pending lease slot=%u after %lld ms timeout",
-                  slot_id, static_cast<long long>(pending_ttl_.count()));
+      RCUTILS_LOG_WARN_NAMED(
+          "ros2_cuda_ipc_core.publisher.lease_manager",
+          "Force-cleared pending lease slot=%u after %lld ms timeout", slot_id,
+          static_cast<long long>(pending_ttl_.count()));
       deadline = {};
     }
   }

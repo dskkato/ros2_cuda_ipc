@@ -4,6 +4,7 @@
 #include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
 
 #include <fcntl.h>
+#include <rcutils/logging_macros.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -13,7 +14,6 @@
 #include <optional>
 #include <string>
 
-#include "rclcpp/logging.hpp"
 #include "ros2_cuda_ipc_core/backend/vmm_fd/payload.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
@@ -35,18 +35,17 @@ std::size_t align_up_size(std::size_t value, std::size_t alignment) {
 }
 
 std::optional<std::string> parse_vmm_payload(
-    const transport::MemoryHandlePayload& payload,
-    const rclcpp::Logger& logger) {
+    const transport::MemoryHandlePayload& payload) {
   auto uuid = decode_uuid_payload(payload);
   if (!uuid.has_value()) {
-    RCLCPP_WARN(logger, "Received invalid VMM_FD payload");
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                           "Received invalid VMM_FD payload");
     return std::nullopt;
   }
   return uuid;
 }
 
-std::optional<int> request_fd_from_publisher(const std::string& path,
-                                             const rclcpp::Logger& logger) {
+std::optional<int> request_fd_from_publisher(const std::string& path) {
   int sock = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (sock < 0) {
     if (errno == EINVAL || errno == EPROTOTYPE) {
@@ -57,22 +56,25 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
     }
   }
   if (sock < 0) {
-    RCLCPP_WARN(logger, "socket(AF_UNIX) failed: %s",
-                ros2_cuda_ipc_core::detail::errno_to_string().c_str());
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd", "socket(AF_UNIX) failed: %s",
+        ros2_cuda_ipc_core::detail::errno_to_string().c_str());
     return std::nullopt;
   }
 
   sockaddr_un addr{};
   addr.sun_family = AF_UNIX;
   if (path.size() >= sizeof(addr.sun_path)) {
-    RCLCPP_WARN(logger, "Socket path %s is too long", path.c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                           "Socket path %s is too long", path.c_str());
     ::close(sock);
     return std::nullopt;
   }
   std::strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
   if (::connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-    RCLCPP_WARN(logger, "connect(%s) failed: %s", path.c_str(),
-                ros2_cuda_ipc_core::detail::errno_to_string().c_str());
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd", "connect(%s) failed: %s",
+        path.c_str(), ros2_cuda_ipc_core::detail::errno_to_string().c_str());
     ::close(sock);
     return std::nullopt;
   }
@@ -87,8 +89,9 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
   msg.msg_controllen = sizeof(cmsg_buf);
   const ssize_t received = ::recvmsg(sock, &msg, 0);
   if (received <= 0) {
-    RCLCPP_WARN(logger, "recvmsg on %s failed: %s", path.c_str(),
-                ros2_cuda_ipc_core::detail::errno_to_string().c_str());
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd", "recvmsg on %s failed: %s",
+        path.c_str(), ros2_cuda_ipc_core::detail::errno_to_string().c_str());
     ::close(sock);
     return std::nullopt;
   }
@@ -96,8 +99,9 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
   cmsghdr* cmsg = CMSG_FIRSTHDR(&msg);
   if (!cmsg || cmsg->cmsg_level != SOL_SOCKET ||
       cmsg->cmsg_type != SCM_RIGHTS || cmsg->cmsg_len < CMSG_LEN(sizeof(int))) {
-    RCLCPP_WARN(logger, "recvmsg on %s missing SCM_RIGHTS payload",
-                path.c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                           "recvmsg on %s missing SCM_RIGHTS payload",
+                           path.c_str());
     ::close(sock);
     return std::nullopt;
   }
@@ -106,7 +110,8 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
   std::memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
   ::close(sock);
   if (fd < 0) {
-    RCLCPP_WARN(logger, "recvmsg returned invalid fd for %s", path.c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                           "recvmsg returned invalid fd for %s", path.c_str());
     return std::nullopt;
   }
   return fd;
@@ -116,20 +121,21 @@ std::optional<int> request_fd_from_publisher(const std::string& path,
 
 std::optional<ImportedResources> MemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
-    const CUipcEventHandle& event_handle, const rclcpp::Logger& logger) const {
-  const auto meta = parse_vmm_payload(msg.mem_handle, logger);
+    const CUipcEventHandle& event_handle) const {
+  const auto meta = parse_vmm_payload(msg.mem_handle);
   if (!meta.has_value()) {
     return std::nullopt;
   }
 
   const std::string socket_path = build_socket_path(*meta);
   if (socket_path.size() >= sizeof(sockaddr_un::sun_path)) {
-    RCLCPP_WARN(logger, "UUID %s is too long for AF_UNIX path",
-                socket_path.c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                           "UUID %s is too long for AF_UNIX path",
+                           socket_path.c_str());
     return std::nullopt;
   }
 
-  const auto fd_opt = request_fd_from_publisher(socket_path, logger);
+  const auto fd_opt = request_fd_from_publisher(socket_path);
   if (!fd_opt.has_value()) {
     return std::nullopt;
   }
@@ -137,16 +143,18 @@ std::optional<ImportedResources> MemoryImporter::import(
   auto context_result = detail::CudaDeviceContext::retain_primary(
       static_cast<int>(msg.device_id));
   if (!context_result) {
-    RCLCPP_WARN(logger, "Failed to retain CUDA primary context: %s",
-                context_result.error().to_string().c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                           "Failed to retain CUDA primary context: %s",
+                           context_result.error().to_string().c_str());
     ::close(fd_opt.value());
     return std::nullopt;
   }
   auto context = std::move(context_result).value();
   auto guard_result = context->push_current();
   if (!guard_result) {
-    RCLCPP_WARN(logger, "Failed to activate CUDA context: %s",
-                guard_result.error().to_string().c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                           "Failed to activate CUDA context: %s",
+                           guard_result.error().to_string().c_str());
     ::close(fd_opt.value());
     return std::nullopt;
   }
@@ -162,8 +170,9 @@ std::optional<ImportedResources> MemoryImporter::import(
                                      CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR);
   ::close(fd_opt.value());
   if (cu_res != CUDA_SUCCESS) {
-    RCLCPP_WARN(
-        logger, "cuMemImportFromShareableHandle failed: %s",
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd",
+        "cuMemImportFromShareableHandle failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
     return std::nullopt;
   }
@@ -177,8 +186,9 @@ std::optional<ImportedResources> MemoryImporter::import(
   cu_res = cuMemGetAllocationGranularity(&granularity, &prop,
                                          CU_MEM_ALLOC_GRANULARITY_MINIMUM);
   if (cu_res != CUDA_SUCCESS) {
-    RCLCPP_WARN(
-        logger, "cuMemGetAllocationGranularity failed: %s",
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd",
+        "cuMemGetAllocationGranularity failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
     cuMemRelease(imported.vmm_allocation);
     return std::nullopt;
@@ -193,8 +203,8 @@ std::optional<ImportedResources> MemoryImporter::import(
   cu_res = cuMemAddressReserve(&imported.vmm_address, imported.allocation_size,
                                0, 0, 0);
   if (cu_res != CUDA_SUCCESS) {
-    RCLCPP_WARN(
-        logger, "cuMemAddressReserve failed: %s",
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemAddressReserve failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
     cuMemRelease(imported.vmm_allocation);
     return std::nullopt;
@@ -203,8 +213,8 @@ std::optional<ImportedResources> MemoryImporter::import(
   cu_res = cuMemMap(imported.vmm_address, imported.allocation_size, 0,
                     imported.vmm_allocation, 0);
   if (cu_res != CUDA_SUCCESS) {
-    RCLCPP_WARN(
-        logger, "cuMemMap failed: %s",
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemMap failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
     cuMemAddressFree(imported.vmm_address, imported.allocation_size);
     cuMemRelease(imported.vmm_allocation);
@@ -217,8 +227,8 @@ std::optional<ImportedResources> MemoryImporter::import(
   cu_res = cuMemSetAccess(imported.vmm_address, imported.allocation_size,
                           &access_desc, 1);
   if (cu_res != CUDA_SUCCESS) {
-    RCLCPP_WARN(
-        logger, "cuMemSetAccess failed: %s",
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemSetAccess failed: %s",
         ros2_cuda_ipc_core::detail::cu_result_to_string(cu_res).c_str());
     cuMemUnmap(imported.vmm_address, imported.allocation_size);
     cuMemAddressFree(imported.vmm_address, imported.allocation_size);
@@ -228,10 +238,11 @@ std::optional<ImportedResources> MemoryImporter::import(
 
   cu_res = cuIpcOpenEventHandle(&imported.event, event_handle);
   if (cu_res != CUDA_SUCCESS) {
-    RCLCPP_WARN(logger, "cuIpcOpenEventHandle failed: %s",
-                ros2_cuda_ipc_core::detail::CudaDriverError(cu_res)
-                    .to_string()
-                    .c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                           "cuIpcOpenEventHandle failed: %s",
+                           ros2_cuda_ipc_core::detail::CudaDriverError(cu_res)
+                               .to_string()
+                               .c_str());
     cuMemUnmap(imported.vmm_address, imported.allocation_size);
     cuMemAddressFree(imported.vmm_address, imported.allocation_size);
     cuMemRelease(imported.vmm_allocation);

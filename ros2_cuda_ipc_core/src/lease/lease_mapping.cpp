@@ -4,6 +4,7 @@
 #include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
 
 #include <fcntl.h>
+#include <rcutils/logging_macros.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -12,7 +13,6 @@
 #include <cerrno>
 #include <cstdint>
 #include <limits>
-#include <rclcpp/logging.hpp>
 
 namespace ros2_cuda_ipc_core::lease {
 namespace {
@@ -30,12 +30,6 @@ struct ShmHeader {
 
 inline std::atomic<uint32_t>& as_atomic(uint32_t& value) {
   return reinterpret_cast<std::atomic<uint32_t>&>(value);
-}
-
-rclcpp::Logger mapping_logger() {
-  static rclcpp::Logger logger =
-      rclcpp::get_logger("ros2_cuda_ipc_core.LeaseMapping");
-  return logger;
 }
 
 bool valid_layout(const struct stat& st, const ShmHeader& header,
@@ -74,23 +68,24 @@ std::shared_ptr<LeaseMapping> LeaseMapping::create(
       sizeof(ShmHeader) + static_cast<std::size_t>(capacity) * sizeof(SlotMeta);
   const int fd = shm_open(shm_name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0660);
   if (fd < 0) {
-    RCLCPP_ERROR(mapping_logger(),
-                 "lease:create shm_open failed name=%s errno=%d",
-                 shm_name.c_str(), errno);
+    RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.lease_mapping",
+                            "lease:create shm_open failed name=%s errno=%d",
+                            shm_name.c_str(), errno);
     return nullptr;
   }
   if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
-    RCLCPP_ERROR(mapping_logger(),
-                 "lease:create ftruncate failed name=%s errno=%d",
-                 shm_name.c_str(), errno);
+    RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.lease_mapping",
+                            "lease:create ftruncate failed name=%s errno=%d",
+                            shm_name.c_str(), errno);
     close(fd);
     shm_unlink(shm_name.c_str());
     return nullptr;
   }
   void* addr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (addr == MAP_FAILED) {
-    RCLCPP_ERROR(mapping_logger(), "lease:create mmap failed name=%s errno=%d",
-                 shm_name.c_str(), errno);
+    RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.lease_mapping",
+                            "lease:create mmap failed name=%s errno=%d",
+                            shm_name.c_str(), errno);
     close(fd);
     shm_unlink(shm_name.c_str());
     return nullptr;
@@ -129,29 +124,32 @@ std::shared_ptr<LeaseMapping> LeaseMapping::attach(
   }
   const int fd = shm_open(shm_name.c_str(), O_RDWR, 0660);
   if (fd < 0) {
-    RCLCPP_WARN(mapping_logger(),
-                "lease:attach shm_open failed name=%s errno=%d",
-                shm_name.c_str(), errno);
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.lease_mapping",
+                           "lease:attach shm_open failed name=%s errno=%d",
+                           shm_name.c_str(), errno);
     return nullptr;
   }
   struct stat st{};
   if (fstat(fd, &st) != 0) {
-    RCLCPP_WARN(mapping_logger(), "lease:attach fstat failed name=%s errno=%d",
-                shm_name.c_str(), errno);
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.lease_mapping",
+                           "lease:attach fstat failed name=%s errno=%d",
+                           shm_name.c_str(), errno);
     close(fd);
     return nullptr;
   }
   if (st.st_size < static_cast<off_t>(sizeof(ShmHeader))) {
-    RCLCPP_WARN(mapping_logger(), "lease:attach segment too small name=%s",
-                shm_name.c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.lease_mapping",
+                           "lease:attach segment too small name=%s",
+                           shm_name.c_str());
     close(fd);
     return nullptr;
   }
   void* addr =
       mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (addr == MAP_FAILED) {
-    RCLCPP_WARN(mapping_logger(), "lease:attach mmap failed name=%s errno=%d",
-                shm_name.c_str(), errno);
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.lease_mapping",
+                           "lease:attach mmap failed name=%s errno=%d",
+                           shm_name.c_str(), errno);
     close(fd);
     return nullptr;
   }
@@ -161,16 +159,18 @@ std::shared_ptr<LeaseMapping> LeaseMapping::attach(
   std::size_t expected_size = 0;
   if (header->magic != kShmMagic || header->layout_version != kLayoutVersion ||
       header->publisher_instance_id != expected_instance_id) {
-    RCLCPP_WARN(mapping_logger(),
-                "lease:attach header or publisher instance mismatch name=%s "
-                "magic=%u ver=%u",
-                shm_name.c_str(), header->magic, header->layout_version);
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.lease_mapping",
+        "lease:attach header or publisher instance mismatch name=%s "
+        "magic=%u ver=%u",
+        shm_name.c_str(), header->magic, header->layout_version);
     munmap(addr, st.st_size);
     return nullptr;
   }
   if (!valid_layout(st, *header, &expected_size)) {
-    RCLCPP_WARN(mapping_logger(), "lease:attach invalid layout name=%s",
-                shm_name.c_str());
+    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.lease_mapping",
+                           "lease:attach invalid layout name=%s",
+                           shm_name.c_str());
     munmap(addr, st.st_size);
     return nullptr;
   }

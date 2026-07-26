@@ -11,7 +11,6 @@
 #include <string>
 #include <vector>
 
-#include "rclcpp/logger.hpp"
 #include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
 #include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
 
@@ -28,7 +27,7 @@ class LeaseManager {
   };
 
   LeaseManager(std::string shm_name_prefix, std::size_t slot_count,
-               std::chrono::milliseconds pending_ttl, rclcpp::Logger logger);
+               std::chrono::milliseconds pending_ttl);
 
   ~LeaseManager();
 
@@ -50,7 +49,6 @@ class LeaseManager {
   PublisherInstanceId publisher_instance_id_{};
   std::size_t slot_count_;
   std::chrono::milliseconds pending_ttl_;
-  rclcpp::Logger logger_;
   mutable std::mutex deadlines_mutex_;
   std::vector<std::chrono::steady_clock::time_point> pending_deadlines_;
   std::shared_ptr<lease::LeaseMapping> mapping_;

@@ -65,9 +65,7 @@ int main(int argc, char** argv) {
   std::memcpy(&event_handle, payload.event_handle.data(), sizeof(event_handle));
 
   ros2_cuda_ipc_core::backend::cuda_ipc::MemoryImporter importer;
-  auto imported = importer.import(
-      msg, event_handle,
-      rclcpp::get_logger("ros2_cuda_ipc_core.cuda_ipc_import_helper"));
+  auto imported = importer.import(msg, event_handle);
   if (!imported.has_value()) {
     return 5;
   }

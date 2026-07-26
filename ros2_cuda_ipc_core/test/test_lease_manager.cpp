@@ -32,8 +32,7 @@ TEST(LeaseManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
   for (int iteration = 0; iteration < 1000; ++iteration) {
     const std::string prefix = make_unique_shm_name();
     ros2_cuda_ipc_core::publisher::LeaseManager manager(
-        prefix, 1, std::chrono::milliseconds(100),
-        rclcpp::get_logger("LeaseManagerTest"));
+        prefix, 1, std::chrono::milliseconds(100));
     ASSERT_TRUE(manager.initialise());
     std::atomic<bool> start{false};
     std::optional<ros2_cuda_ipc_core::publisher::LeaseManager::Reservation>
@@ -69,11 +68,9 @@ TEST(LeaseManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
 TEST(LeaseManagerTest, SamePrefixProducesDistinctInstances) {
   const std::string prefix = make_unique_shm_name();
   ros2_cuda_ipc_core::publisher::LeaseManager first(
-      prefix, 1, std::chrono::milliseconds(100),
-      rclcpp::get_logger("LeaseManagerTest"));
+      prefix, 1, std::chrono::milliseconds(100));
   ros2_cuda_ipc_core::publisher::LeaseManager second(
-      prefix, 2, std::chrono::milliseconds(100),
-      rclcpp::get_logger("LeaseManagerTest"));
+      prefix, 2, std::chrono::milliseconds(100));
   ASSERT_TRUE(first.initialise());
   ASSERT_TRUE(second.initialise());
   EXPECT_NE(first.shm_name(), second.shm_name());
@@ -82,8 +79,7 @@ TEST(LeaseManagerTest, SamePrefixProducesDistinctInstances) {
 
 TEST(LeaseManagerTest, ResetUnlinksAndReinitialiseChangesIdentity) {
   ros2_cuda_ipc_core::publisher::LeaseManager manager(
-      make_unique_shm_name(), 1, std::chrono::milliseconds(100),
-      rclcpp::get_logger("LeaseManagerTest"));
+      make_unique_shm_name(), 1, std::chrono::milliseconds(100));
   ASSERT_TRUE(manager.initialise());
   const std::string old_name = manager.shm_name();
   const auto old_id = manager.publisher_instance_id();
@@ -103,8 +99,7 @@ TEST(LeaseManagerTest, ResetUnlinksAndReinitialiseChangesIdentity) {
 
 TEST(LeaseManagerTest, InvalidPrefixFailsClosed) {
   ros2_cuda_ipc_core::publisher::LeaseManager manager(
-      "/invalid/prefix", 1, std::chrono::milliseconds(100),
-      rclcpp::get_logger("LeaseManagerTest"));
+      "/invalid/prefix", 1, std::chrono::milliseconds(100));
   EXPECT_FALSE(manager.initialise());
   EXPECT_TRUE(manager.shm_name().empty());
   EXPECT_TRUE(ros2_cuda_ipc_core::is_nil(manager.publisher_instance_id()));

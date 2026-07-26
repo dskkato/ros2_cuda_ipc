@@ -3,10 +3,10 @@
 
 #include "ros2_cuda_ipc_core/detail/interprocess_event.hpp"
 
+#include <rcutils/logging_macros.h>
+
 #include <cstring>
 #include <utility>
-
-#include "rclcpp/logging.hpp"
 
 namespace ros2_cuda_ipc_core::detail {
 
@@ -88,26 +88,27 @@ void InterprocessEvent::reset_noexcept() noexcept {
   }
   try {
     if (!context_) {
-      RCLCPP_ERROR(
-          rclcpp::get_logger("ros2_cuda_ipc_core.interprocess_event"),
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.interprocess_event",
           "Cannot destroy interprocess event without its CUDA context");
       event_ = nullptr;
       return;
     }
     auto guard_result = context_->push_current();
     if (!guard_result) {
-      RCLCPP_ERROR(rclcpp::get_logger("ros2_cuda_ipc_core.interprocess_event"),
-                   "Failed to activate CUDA context for event cleanup: %s",
-                   guard_result.error().to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.interprocess_event",
+          "Failed to activate CUDA context for event cleanup: %s",
+          guard_result.error().to_string().c_str());
       event_ = nullptr;
       return;
     }
     auto guard = std::move(guard_result).value();
     const CUresult result = cuEventDestroy(event_);
     if (result != CUDA_SUCCESS) {
-      RCLCPP_ERROR(rclcpp::get_logger("ros2_cuda_ipc_core.interprocess_event"),
-                   "cuEventDestroy failed: %s",
-                   CudaDriverError(result).to_string().c_str());
+      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.interprocess_event",
+                              "cuEventDestroy failed: %s",
+                              CudaDriverError(result).to_string().c_str());
     }
   } catch (...) {
     // Destruction and error reporting must not escape a noexcept boundary.
