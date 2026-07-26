@@ -13,12 +13,13 @@
 #include <cerrno>
 #include <cstdint>
 #include <limits>
+#include <new>
 
 namespace ros2_cuda_ipc_core::lease {
 namespace {
 
 constexpr uint32_t kShmMagic = 0x4C534531;  // 'LSE1'
-constexpr uint32_t kLayoutVersion = 3;
+constexpr uint32_t kLayoutVersion = 5;
 
 struct ShmHeader {
   uint32_t magic;
@@ -27,10 +28,6 @@ struct ShmHeader {
   uint32_t consumer_count;
   PublisherInstanceId publisher_instance_id;
 };
-
-inline std::atomic<uint32_t>& as_atomic(uint32_t& value) {
-  return reinterpret_cast<std::atomic<uint32_t>&>(value);
-}
 
 bool valid_layout(const struct stat& st, const ShmHeader& header,
                   std::size_t* expected_size) {
@@ -98,13 +95,11 @@ std::shared_ptr<LeaseMapping> LeaseMapping::create(
   header->capacity = capacity;
   header->consumer_count = 0;
   header->publisher_instance_id = instance_id;
-  auto* slots = reinterpret_cast<SlotMeta*>(header + 1);
+  auto* slot_storage = static_cast<std::byte*>(addr) + sizeof(ShmHeader);
   for (uint32_t i = 0; i < capacity; ++i) {
-    as_atomic(slots[i].generation).store(0u, std::memory_order_relaxed);
-    as_atomic(slots[i].refcnt).store(0u, std::memory_order_relaxed);
-    as_atomic(slots[i].pending).store(0u, std::memory_order_relaxed);
-    as_atomic(slots[i].reserved).store(0u, std::memory_order_relaxed);
+    ::new (static_cast<void*>(slot_storage + i * sizeof(SlotMeta))) SlotMeta{};
   }
+  auto* slots = reinterpret_cast<SlotMeta*>(slot_storage);
 
   auto mapping = std::shared_ptr<LeaseMapping>(new LeaseMapping);
   mapping->shm_name_ = shm_name;

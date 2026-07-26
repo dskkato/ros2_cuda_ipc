@@ -96,13 +96,21 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(
     ADD_FAILURE() << "LeaseMapping::create failed for " << shm_name;
     return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   if (!reservation.has_value()) {
     ADD_FAILURE() << "LeaseHandle::reserve_for_publish failed for " << shm_name;
     return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }
   auto msg = make_cached_buffer_core_message(shm_name, reservation->slot_id,
                                              reservation->generation, key_seed);
+  if (!lease::LeaseHandle::commit_publish(mapping, reservation->slot_id,
+                                          reservation->generation)) {
+    ADD_FAILURE() << "LeaseHandle::commit_publish failed for " << shm_name;
+    (void)lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
+                                             reservation->generation);
+    (void)::shm_unlink(shm_name.c_str());
+    return ros2_cuda_ipc_msgs::msg::BufferCore{};
+  }
   seed_cache_for_message(msg, static_cast<uintptr_t>(0x1000 + key_seed * 0x10));
   return msg;
 }

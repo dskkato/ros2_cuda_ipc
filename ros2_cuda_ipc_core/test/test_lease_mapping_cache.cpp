@@ -116,10 +116,11 @@ TEST(LeaseMappingCacheTest, ReusesMappingAcrossCallbackLocalLeases) {
   auto first = cache.get_or_attach(logical_shm_name, instance_id);
   ASSERT_TRUE(first);
 
-  auto reservation = lease::LeaseHandle::reserve_for_publish(first, 0);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(first);
   ASSERT_TRUE(reservation.has_value());
   const auto slot_id = reservation->slot_id;
   const auto generation = reservation->generation;
+  ASSERT_TRUE(lease::LeaseHandle::commit_publish(first, slot_id, generation));
   reservation.reset();
 
   for (int i = 0; i < 1000; ++i) {
@@ -171,10 +172,11 @@ TEST(LeaseMappingCacheTest, ClearPreservesMappingForActiveLease) {
   auto mapping =
       cache.get_or_attach("/logical_lease_cache_active", instance_id);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
   const auto slot_id = reservation->slot_id;
   const auto generation = reservation->generation;
+  ASSERT_TRUE(lease::LeaseHandle::commit_publish(mapping, slot_id, generation));
   reservation.reset();
 
   std::weak_ptr<lease::LeaseMapping> weak_mapping = mapping;

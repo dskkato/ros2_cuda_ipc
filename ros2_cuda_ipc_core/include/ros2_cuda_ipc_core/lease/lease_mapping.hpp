@@ -15,11 +15,15 @@ namespace ros2_cuda_ipc_core::lease {
 
 /// Metadata for one slot in the shared-memory lease pool.
 struct SlotMeta {
-  uint32_t generation;
-  uint32_t refcnt;
-  uint32_t pending;
-  uint32_t reserved;
+  std::atomic<uint32_t> generation{0};
+  std::atomic<uint32_t> refcnt{0};
+  std::atomic<uint64_t> publish_timestamp_us{0};
 };
+
+static_assert(std::atomic<uint32_t>::is_always_lock_free);
+static_assert(std::atomic<uint64_t>::is_always_lock_free);
+static_assert(sizeof(SlotMeta) == 16);
+static_assert(alignof(SlotMeta) >= alignof(std::atomic<uint64_t>));
 
 /// Owns one POSIX shared-memory mapping.
 ///

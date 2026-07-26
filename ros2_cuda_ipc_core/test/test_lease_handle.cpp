@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <chrono>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -23,41 +24,59 @@ std::string make_unique_shm_name(const std::string& prefix) {
   return oss.str();
 }
 
+void cancel(
+    const std::shared_ptr<ros2_cuda_ipc_core::lease::LeaseMapping>& mapping,
+    const std::optional<
+        ros2_cuda_ipc_core::lease::LeaseHandle::PublisherReservation>&
+        reservation) {
+  if (reservation) {
+    EXPECT_TRUE(ros2_cuda_ipc_core::lease::LeaseHandle::cancel_publish(
+        mapping, reservation->slot_id, reservation->generation));
+  }
+}
+
 }  // namespace
 
 namespace ros2_cuda_ipc_core {
+
 TEST(LeaseHandleTest, AcquireReleaseLifecycle) {
   const std::string shm_name = make_unique_shm_name("lease_ut");
   auto mapping = lease::LeaseMapping::create(
       shm_name, test::publisher_instance_id(shm_name), 2);
   ASSERT_TRUE(mapping);
 
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 0);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
+  EXPECT_EQ(lease::LeaseHandle::current_refcount(mapping, reservation->slot_id),
+            std::optional<uint32_t>(1));
 
+  std::optional<lease::LeaseHandle::PublisherReservation> other;
   {
     auto lease = lease::LeaseHandle::acquire(mapping, reservation->slot_id,
                                              reservation->generation);
     ASSERT_TRUE(lease.valid());
 
-    auto other = lease::LeaseHandle::reserve_for_publish(mapping, 0);
+    other = lease::LeaseHandle::reserve_for_publish(mapping);
     ASSERT_TRUE(other.has_value());
     EXPECT_NE(other->slot_id, reservation->slot_id);
 
     auto ref =
         lease::LeaseHandle::current_refcount(mapping, reservation->slot_id);
     ASSERT_TRUE(ref.has_value());
-    EXPECT_EQ(ref.value(), 1u);
+    EXPECT_EQ(ref.value(), 2u);
   }
 
   auto ref_after =
       lease::LeaseHandle::current_refcount(mapping, reservation->slot_id);
   ASSERT_TRUE(ref_after.has_value());
-  EXPECT_EQ(ref_after.value(), 0u);
+  EXPECT_EQ(ref_after.value(), 1u);
 
-  auto reservation_after = lease::LeaseHandle::reserve_for_publish(mapping, 0);
+  cancel(mapping, reservation);
+  cancel(mapping, other);
+  auto reservation_after = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation_after.has_value());
   EXPECT_EQ(reservation_after->slot_id, reservation->slot_id);
+  cancel(mapping, reservation_after);
 
   ::shm_unlink(shm_name.c_str());
 }
@@ -68,12 +87,12 @@ TEST(LeaseHandleTest, GenerationMismatchReturnsInvalid) {
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
 
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 0);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
-
   auto lease = lease::LeaseHandle::acquire(mapping, reservation->slot_id,
                                            reservation->generation + 1);
   EXPECT_FALSE(lease.valid());
+  cancel(mapping, reservation);
 
   ::shm_unlink(shm_name.c_str());
 }
@@ -84,14 +103,14 @@ TEST(LeaseHandleTest, PublisherInstanceMismatchReturnsInvalid) {
   const auto other_id = test::publisher_instance_id(shm_name + "_other");
   auto mapping = lease::LeaseMapping::create(shm_name, owner_id, 1);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
 
-  auto wrong_mapping = lease::LeaseMapping::attach(shm_name, other_id);
-  EXPECT_FALSE(wrong_mapping);
-  auto pending = lease::LeaseHandle::current_pending(mapping, 0);
-  ASSERT_TRUE(pending.has_value());
-  EXPECT_EQ(*pending, 1u);
+  EXPECT_FALSE(lease::LeaseMapping::attach(shm_name, other_id));
+  auto ref = lease::LeaseHandle::current_refcount(mapping, 0);
+  ASSERT_TRUE(ref.has_value());
+  EXPECT_EQ(*ref, 1u);
+  cancel(mapping, reservation);
   ::shm_unlink(shm_name.c_str());
 }
 
@@ -102,9 +121,6 @@ TEST(LeaseHandleTest, HeaderPublisherInstanceMismatchReturnsInvalid) {
   const auto other_id = test::publisher_instance_id(shm_name + "_other");
   auto mapping = lease::LeaseMapping::create(shm_name, owner_id, 1);
   ASSERT_TRUE(mapping);
-
-  // Generation zero is valid in a newly-created slot. No mapping has been
-  // cached yet, so this exercises validation against the mapped header.
   EXPECT_FALSE(lease::LeaseMapping::attach(shm_name, other_id));
   ::shm_unlink(shm_name.c_str());
 }
@@ -118,17 +134,19 @@ TEST(LeaseHandleTest, SameSlotAndGenerationAreSeparatedByInstance) {
   auto second_mapping = lease::LeaseMapping::create(second_name, second_id, 1);
   ASSERT_TRUE(first_mapping);
   ASSERT_TRUE(second_mapping);
-  auto first = lease::LeaseHandle::reserve_for_publish(first_mapping, 1);
-  auto second = lease::LeaseHandle::reserve_for_publish(second_mapping, 1);
+  auto first = lease::LeaseHandle::reserve_for_publish(first_mapping);
+  auto second = lease::LeaseHandle::reserve_for_publish(second_mapping);
   ASSERT_TRUE(first.has_value());
   ASSERT_TRUE(second.has_value());
   ASSERT_EQ(first->slot_id, second->slot_id);
   ASSERT_EQ(first->generation, second->generation);
 
   EXPECT_FALSE(lease::LeaseMapping::attach(first_name, second_id));
-  EXPECT_TRUE(lease::LeaseHandle::acquire(first_mapping, first->slot_id,
-                                          first->generation)
-                  .valid());
+  auto lease = lease::LeaseHandle::acquire(first_mapping, first->slot_id,
+                                           first->generation);
+  EXPECT_TRUE(lease.valid());
+  cancel(first_mapping, first);
+  cancel(second_mapping, second);
   ::shm_unlink(first_name.c_str());
   ::shm_unlink(second_name.c_str());
 }
@@ -144,8 +162,6 @@ TEST(LeaseHandleTest, ExplicitMappingSeparatesReusedNameByInstance) {
   ASSERT_TRUE(new_mapping);
 
   EXPECT_TRUE(lease::LeaseHandle::acquire(new_mapping, 0, 0).valid());
-  // The old mapping remains usable because its owner still holds it; the new
-  // instance is a separate mapping even though the POSIX name was reused.
   EXPECT_TRUE(lease::LeaseHandle::acquire(old_mapping, 0, 0).valid());
   old_mapping.reset();
   new_mapping.reset();
@@ -158,7 +174,7 @@ TEST(LeaseHandleTest, MappingLifetimeFollowsUsersAfterUnlink) {
   auto mapping = lease::LeaseMapping::create(shm_name, instance_id, 1);
   ASSERT_TRUE(mapping);
   std::weak_ptr<lease::LeaseMapping> weak_mapping = mapping;
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation);
   {
     auto lease = lease::LeaseHandle::acquire(mapping, reservation->slot_id,
@@ -168,105 +184,90 @@ TEST(LeaseHandleTest, MappingLifetimeFollowsUsersAfterUnlink) {
     mapping.reset();
     EXPECT_FALSE(weak_mapping.expired());
   }
+  EXPECT_TRUE(lease::LeaseHandle::cancel_publish(
+      reservation->mapping, reservation->slot_id, reservation->generation));
   reservation.reset();
   EXPECT_TRUE(weak_mapping.expired());
 }
 
-TEST(LeaseHandleTest, PendingPreventsSlotReuse) {
-  const std::string shm_name = make_unique_shm_name("lease_pending");
+TEST(LeaseHandleTest, PublisherReservationUsesReferenceCount) {
+  const std::string shm_name = make_unique_shm_name("lease_reservation_ref");
   auto mapping = lease::LeaseMapping::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
 
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 2);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
+  EXPECT_EQ(lease::LeaseHandle::current_refcount(mapping, 0),
+            std::optional<uint32_t>(1));
+  EXPECT_FALSE(lease::LeaseHandle::reserve_for_publish(mapping).has_value());
+  cancel(mapping, reservation);
+  EXPECT_EQ(lease::LeaseHandle::current_refcount(mapping, 0),
+            std::optional<uint32_t>(0));
+  ::shm_unlink(shm_name.c_str());
+}
 
-  auto next = lease::LeaseHandle::reserve_for_publish(mapping, 0);
-  EXPECT_FALSE(next.has_value());
+TEST(LeaseHandleTest, CommitAppliesFixedGracePeriod) {
+  const std::string shm_name = make_unique_shm_name("lease_grace");
+  auto mapping = lease::LeaseMapping::create(
+      shm_name, test::publisher_instance_id(shm_name), 1);
+  ASSERT_TRUE(mapping);
 
-  EXPECT_TRUE(lease::LeaseHandle::force_clear_pending(mapping, 0));
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
+  ASSERT_TRUE(reservation.has_value());
+  ASSERT_TRUE(lease::LeaseHandle::commit_publish(mapping, reservation->slot_id,
+                                                 reservation->generation));
+  EXPECT_EQ(lease::LeaseHandle::current_refcount(mapping, 0),
+            std::optional<uint32_t>(0));
+  const auto timestamp =
+      lease::LeaseHandle::current_publish_timestamp_us(mapping, 0);
+  ASSERT_TRUE(timestamp.has_value());
+  EXPECT_NE(*timestamp, 0u);
+  EXPECT_FALSE(lease::LeaseHandle::reserve_for_publish(mapping).has_value());
 
-  next = lease::LeaseHandle::reserve_for_publish(mapping, 0);
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  auto next = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(next.has_value());
-  EXPECT_EQ(next->slot_id, reservation->slot_id);
-
+  cancel(mapping, next);
   ::shm_unlink(shm_name.c_str());
 }
 
-TEST(LeaseHandleTest, PendingDecrementedOnAcquire) {
-  const std::string shm_name = make_unique_shm_name("lease_pending_dec");
+TEST(LeaseHandleTest, ActiveLeaseBlocksReuseAfterGracePeriod) {
+  const std::string shm_name = make_unique_shm_name("lease_active");
   auto mapping = lease::LeaseMapping::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
 
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 2);
+  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
-
-  {
-    auto lease = lease::LeaseHandle::acquire(mapping, reservation->slot_id,
-                                             reservation->generation);
-    ASSERT_TRUE(lease.valid());
-    auto pending =
-        lease::LeaseHandle::current_pending(mapping, reservation->slot_id);
-    ASSERT_TRUE(pending.has_value());
-    EXPECT_EQ(pending.value(), 1u);
-  }
-
-  {
-    auto lease = lease::LeaseHandle::acquire(mapping, reservation->slot_id,
-                                             reservation->generation);
-    ASSERT_TRUE(lease.valid());
-    auto pending =
-        lease::LeaseHandle::current_pending(mapping, reservation->slot_id);
-    ASSERT_TRUE(pending.has_value());
-    EXPECT_EQ(pending.value(), 0u);
-  }
-
-  {
-    auto lease = lease::LeaseHandle::acquire(mapping, reservation->slot_id,
-                                             reservation->generation);
-    ASSERT_TRUE(lease.valid());
-    auto pending =
-        lease::LeaseHandle::current_pending(mapping, reservation->slot_id);
-    ASSERT_TRUE(pending.has_value());
-    EXPECT_EQ(pending.value(), 0u);
-  }
-
+  ASSERT_TRUE(lease::LeaseHandle::commit_publish(mapping, reservation->slot_id,
+                                                 reservation->generation));
+  std::optional<lease::LeaseHandle> lease;
+  lease.emplace(lease::LeaseHandle::acquire(mapping, reservation->slot_id,
+                                            reservation->generation));
+  ASSERT_TRUE(lease->valid());
+  std::this_thread::sleep_for(std::chrono::milliseconds(105));
+  EXPECT_FALSE(lease::LeaseHandle::reserve_for_publish(mapping).has_value());
+  lease.reset();
+  auto next = lease::LeaseHandle::reserve_for_publish(mapping);
+  ASSERT_TRUE(next.has_value());
+  cancel(mapping, next);
   ::shm_unlink(shm_name.c_str());
 }
 
-TEST(LeaseHandleTest, ForceClearPendingResetsCounterWhenIdle) {
-  const std::string shm_name = make_unique_shm_name("lease_force_clear");
-  auto mapping = lease::LeaseMapping::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 2);
-  ASSERT_TRUE(reservation.has_value());
-
-  auto pending = lease::LeaseHandle::current_pending(mapping, 0);
-  ASSERT_TRUE(pending.has_value());
-  EXPECT_EQ(pending.value(), 2u);
-
-  EXPECT_TRUE(lease::LeaseHandle::force_clear_pending(mapping, 0));
-
-  pending = lease::LeaseHandle::current_pending(mapping, 0);
-  ASSERT_TRUE(pending.has_value());
-  EXPECT_EQ(pending.value(), 0u);
-
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(LeaseHandleTest, AtomicPublisherReservationExcludesSubscriberAcquire) {
+TEST(LeaseHandleTest, PublisherAndSubscriberRaceIsGenerationSafe) {
   const std::string shm_name = make_unique_shm_name("lease_reserve_race");
   auto mapping = lease::LeaseMapping::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
 
-  for (int iteration = 0; iteration < 1000; ++iteration) {
-    auto initial = lease::LeaseHandle::reserve_for_publish(mapping, 0);
-    ASSERT_TRUE(initial.has_value());
+  auto initial = lease::LeaseHandle::reserve_for_publish(mapping);
+  ASSERT_TRUE(initial.has_value());
+  ASSERT_TRUE(lease::LeaseHandle::commit_publish(mapping, initial->slot_id,
+                                                 initial->generation));
+  std::this_thread::sleep_for(std::chrono::milliseconds(105));
 
+  for (int iteration = 0; iteration < 1000; ++iteration) {
     std::atomic<bool> start{false};
     std::optional<lease::LeaseHandle::PublisherReservation> publisher;
     std::optional<lease::LeaseHandle> subscriber;
@@ -274,7 +275,7 @@ TEST(LeaseHandleTest, AtomicPublisherReservationExcludesSubscriberAcquire) {
       while (!start.load(std::memory_order_acquire)) {
         std::this_thread::yield();
       }
-      publisher = lease::LeaseHandle::reserve_for_publish(mapping, 0);
+      publisher = lease::LeaseHandle::reserve_for_publish(mapping);
     });
     std::thread subscriber_thread([&]() {
       while (!start.load(std::memory_order_acquire)) {
@@ -288,6 +289,10 @@ TEST(LeaseHandleTest, AtomicPublisherReservationExcludesSubscriberAcquire) {
     subscriber_thread.join();
 
     EXPECT_FALSE(publisher.has_value() && subscriber->valid());
+    if (publisher) {
+      cancel(mapping, publisher);
+    }
+    subscriber.reset();
   }
   ::shm_unlink(shm_name.c_str());
 }
@@ -304,75 +309,20 @@ TEST(LeaseHandleTest, OnlyOnePublisherCanReserveSingleSlot) {
     while (!start.load(std::memory_order_acquire)) {
       std::this_thread::yield();
     }
-    first = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+    first = lease::LeaseHandle::reserve_for_publish(mapping);
   });
   std::thread b([&]() {
     while (!start.load(std::memory_order_acquire)) {
       std::this_thread::yield();
     }
-    second = lease::LeaseHandle::reserve_for_publish(mapping, 1);
+    second = lease::LeaseHandle::reserve_for_publish(mapping);
   });
   start.store(true, std::memory_order_release);
   a.join();
   b.join();
   EXPECT_NE(first.has_value(), second.has_value());
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(LeaseHandleTest, CancelDoesNotClearNewerGeneration) {
-  const std::string shm_name = make_unique_shm_name("lease_cancel_generation");
-  auto mapping = lease::LeaseMapping::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-  auto old = lease::LeaseHandle::reserve_for_publish(mapping, 0);
-  ASSERT_TRUE(old.has_value());
-  auto current = lease::LeaseHandle::reserve_for_publish(mapping, 1);
-  ASSERT_TRUE(current.has_value());
-
-  EXPECT_FALSE(lease::LeaseHandle::cancel_pending(mapping, old->slot_id,
-                                                  old->generation));
-  auto pending = lease::LeaseHandle::current_pending(mapping, 0);
-  ASSERT_TRUE(pending.has_value());
-  EXPECT_EQ(*pending, 1u);
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(LeaseHandleTest, CancelRetriesTransientReservationContention) {
-  const std::string shm_name = make_unique_shm_name("lease_cancel_contention");
-  auto mapping = lease::LeaseMapping::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-
-  for (int iteration = 0; iteration < 1000; ++iteration) {
-    auto reservation = lease::LeaseHandle::reserve_for_publish(mapping, 1);
-    ASSERT_TRUE(reservation.has_value());
-
-    std::atomic<bool> start{false};
-    bool cancelled = false;
-    std::thread cancel_thread([&]() {
-      while (!start.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
-      }
-      cancelled = lease::LeaseHandle::cancel_pending(
-          mapping, reservation->slot_id, reservation->generation);
-    });
-    std::thread reclaim_thread([&]() {
-      while (!start.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
-      }
-      lease::LeaseHandle::force_clear_pending(mapping, reservation->slot_id);
-    });
-
-    start.store(true, std::memory_order_release);
-    cancel_thread.join();
-    reclaim_thread.join();
-    EXPECT_TRUE(cancelled);
-
-    const auto pending =
-        lease::LeaseHandle::current_pending(mapping, reservation->slot_id);
-    ASSERT_TRUE(pending.has_value());
-    EXPECT_EQ(*pending, 0u);
-  }
+  cancel(mapping, first);
+  cancel(mapping, second);
   ::shm_unlink(shm_name.c_str());
 }
 

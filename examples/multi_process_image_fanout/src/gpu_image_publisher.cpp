@@ -41,8 +41,6 @@ class GpuImagePublisherNode : public rclcpp::Node {
     const int width = declare_parameter<int>("width", 1920);
     const int height = declare_parameter<int>("height", 1080);
     const int slot_count_parameter = declare_parameter<int>("slot_count", 4);
-    const auto pending_ttl = std::chrono::milliseconds(
-        declare_parameter<int>("pending_ttl_ms", 300));
     const auto shm_name_prefix = declare_parameter<std::string>(
         "shm_name_prefix", "/ros2_cuda_ipc_fanout");
     const int device_index = declare_parameter<int>("device_index", 0);
@@ -67,7 +65,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
         std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferManager>(
             ros2_cuda_ipc_core::publisher::GpuBufferManager::Config{
                 shm_name_prefix, slot_count, frame_size_bytes, device_index,
-                pending_ttl, backend});
+                backend});
     if (!manager_->initialise()) {
       throw std::runtime_error("Failed to initialise GPU buffer manager");
     }
@@ -117,11 +115,10 @@ class GpuImagePublisherNode : public rclcpp::Node {
   void on_timer() {
     NvtxScopedRange timer_range("GpuImagePublisherNode::on_timer");
 
-    const std::size_t subscribers = publisher_->get_subscription_count();
     std::optional<ros2_cuda_ipc_core::publisher::PublishSlot> slot;
     {
       NvtxScopedRange acquire_range("GpuImagePublisherNode::acquire_slot");
-      slot = manager_->acquire_for_publish(static_cast<uint32_t>(subscribers));
+      slot = manager_->acquire_for_publish();
     }
     if (!slot) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,

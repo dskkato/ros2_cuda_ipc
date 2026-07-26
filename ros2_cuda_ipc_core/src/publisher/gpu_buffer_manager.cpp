@@ -3,7 +3,6 @@
 
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_manager.hpp"
 
-#include <cassert>
 #include <utility>
 
 namespace ros2_cuda_ipc_core::publisher {
@@ -62,27 +61,42 @@ std::optional<transport::BufferDescriptor> PublishSlot::descriptor() const {
   return owner_->descriptor(reservation_);
 }
 
-void PublishSlot::commit_publish() noexcept {
-  assert(owner_ != nullptr);
-  assert(state_ == State::ready_recorded || state_ == State::committed);
-  if (owner_ != nullptr && state_ == State::ready_recorded) {
-    state_ = State::committed;
+bool PublishSlot::commit_publish() noexcept {
+  if (owner_ == nullptr) {
+    return false;
   }
+  if (state_ == State::committed) {
+    return true;
+  }
+  if (state_ != State::ready_recorded) {
+    return false;
+  }
+  if (owner_->commit(reservation_)) {
+    state_ = State::committed;
+    return true;
+  }
+  // A failed commit must not make the slot inert while its reservation is
+  // still active. The cancel path is generation-checked as well, so it is
+  // safe to attempt even when the commit failed due to a stale reservation.
+  if (owner_->cancel(reservation_)) {
+    state_ = State::cancelled;
+  }
+  return false;
 }
 
 void PublishSlot::cancel() noexcept {
   if (owner_ != nullptr &&
       (state_ == State::reserved || state_ == State::ready_recorded)) {
-    owner_->cancel(reservation_);
-    state_ = State::cancelled;
+    if (owner_->cancel(reservation_)) {
+      state_ = State::cancelled;
+    }
   }
 }
 
 GpuBufferManager::GpuBufferManager(Config config)
     : config_(std::move(config)),
       buffer_pool_(config_.slot_count, config_.backend),
-      lease_manager_(config_.shm_name_prefix, config_.slot_count,
-                     config_.pending_ttl) {}
+      lease_manager_(config_.shm_name_prefix, config_.slot_count) {}
 
 GpuBufferManager::~GpuBufferManager() { reset(); }
 
@@ -115,21 +129,15 @@ PublisherInstanceId GpuBufferManager::publisher_instance_id() const {
   return lease_manager_.publisher_instance_id();
 }
 
-std::optional<PublishSlot> GpuBufferManager::acquire_for_publish(
-    uint32_t pending_count) {
+std::optional<PublishSlot> GpuBufferManager::acquire_for_publish() {
   if (!is_initialised()) {
     return std::nullopt;
   }
-  lease_manager_.reclaim_stale_pending();
-  auto reservation = lease_manager_.reserve_for_publish(pending_count);
+  auto reservation = lease_manager_.reserve_for_publish();
   if (!reservation) {
     return std::nullopt;
   }
   return PublishSlot(this, *reservation);
-}
-
-void GpuBufferManager::reclaim_stale_pending() {
-  lease_manager_.reclaim_stale_pending();
 }
 
 void* GpuBufferManager::device_ptr(
@@ -177,9 +185,14 @@ std::optional<transport::BufferDescriptor> GpuBufferManager::descriptor(
   return result;
 }
 
-void GpuBufferManager::cancel(
+bool GpuBufferManager::commit(
     const LeaseManager::Reservation& reservation) noexcept {
-  lease_manager_.cancel(reservation);
+  return lease_manager_.commit(reservation);
+}
+
+bool GpuBufferManager::cancel(
+    const LeaseManager::Reservation& reservation) noexcept {
+  return lease_manager_.cancel(reservation);
 }
 
 }  // namespace ros2_cuda_ipc_core::publisher
