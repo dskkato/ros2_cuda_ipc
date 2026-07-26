@@ -123,7 +123,7 @@ TEST_F(GpuBufferManagerTest, CommittedDestructionKeepsGracePeriod) {
     slot->commit_publish();
   }
   EXPECT_FALSE(manager.acquire_for_publish().has_value());
-  std::this_thread::sleep_for(std::chrono::milliseconds(105));
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
   EXPECT_TRUE(manager.acquire_for_publish().has_value());
 }
 

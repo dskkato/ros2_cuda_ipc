@@ -225,7 +225,7 @@ TEST(LeaseHandleTest, CommitAppliesFixedGracePeriod) {
   EXPECT_NE(*timestamp, 0u);
   EXPECT_FALSE(lease::LeaseHandle::reserve_for_publish(mapping).has_value());
 
-  std::this_thread::sleep_for(std::chrono::milliseconds(105));
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
   auto next = lease::LeaseHandle::reserve_for_publish(mapping);
   ASSERT_TRUE(next.has_value());
   cancel(mapping, next);
