@@ -30,12 +30,12 @@ auto slot = manager.acquire_for_publish();
 launch_gpu_work(slot->device_ptr(), stream);
 auto descriptor = slot->prepare_publish(stream);
 publisher->publish(make_message(descriptor.value()));
-slot->commit_publish();
 ```
 
-`prepare_publish(stream)` records the slot's ready event and returns its
-transport descriptor as one operation. A failed result leaves the reservation
-cancellable and must not be published.
+`prepare_publish(stream)` records the ready event, builds the transport
+descriptor, and commits the reservation before returning. A successful result
+must be passed to the middleware immediately. A failed result does not return
+a usable descriptor.
 
 The public ready-event APIs use the CUDA Driver API stream type `CUstream`.
 Applications that use the CUDA Runtime API include
@@ -43,8 +43,9 @@ Applications that use the CUDA Runtime API include
 passed directly to `prepare_publish()` and `enqueue_ready_event()`. The stream is
 owned by the application and is only borrowed by the core library.
 
-Destroying an uncommitted `PublishSlot` cancels its reservation. Descriptor
-creation is rejected until the ready event has been recorded successfully.
+Destroying an uncommitted `PublishSlot` cancels its reservation. The normal
+`prepare_publish()` path commits before returning; the lower-level
+`record_ready()` and `descriptor()` APIs remain available for compatibility.
 The protocol guarantees and known limitations are specified in
 [doc/lease_protocol.md](doc/lease_protocol.md).
 

@@ -46,7 +46,6 @@ auto slot = manager.acquire_for_publish();
 launch_gpu_work(slot->device_ptr(), stream);
 auto descriptor = slot->prepare_publish(stream);
 publisher->publish(make_message(descriptor.value()));
-slot->commit_publish();
 ```
 
 ## 4. Process-shared slot state
@@ -69,7 +68,8 @@ Publisher instance ID を検証する。
 attachする。
 
 `publish_timestamp_us` は `steady_clock` のマイクロ秒値で、最後に commit された publish
-時刻を表す。0 はまだ publish されていない slot を表す。
+時刻を表す。通常の `prepare_publish()` では、実際の middleware 呼び出しの直前に commit
+される。0 はまだ publish 準備されていない slot を表す。
 
 slot の再利用条件は次である。
 
@@ -103,15 +103,17 @@ Subscriber は `refcnt != 0` だけを理由に拒否せず、generation の前�
 ### 5.2 GPU work と ready event
 
 Publisher は取得した device pointer へ GPU work を enqueue し、同じ依存関係を持つ
-CUDA stream で `prepare_publish()` を呼ぶ。この操作が ready event を記録し、成功時に
-transport descriptor を返す。ready event 記録成功前に descriptor を作成する経路はない。
+CUDA stream で `prepare_publish()` を呼ぶ。この操作が ready event を記録し、descriptor
+を作成し、Publisher reservation を commit してから descriptor を返す。成功した
+descriptor は直ちに middleware へ渡す。publish failure は想定しない。
 
 ready event の記録前に reservation が破棄された場合、`PublishSlot` の destructor が
 cancel を実行する。
 
-### 5.3 commit
+### 5.3 prepare と commit
 
-`commit_publish()` は ROS publish API が message を middleware へ引き渡した後に呼ぶ。
+`prepare_publish()` は descriptor 作成後、ROS publish API を呼ぶ前に
+`commit_publish()` を実行する。
 
 commit は次の順で処理する。
 
@@ -120,7 +122,8 @@ commit は次の順で処理する。
 3. Publisher reservation の `refcnt` を1減少させる。
 
 commit 後も、Subscriber lease が残っていれば slot は再利用できない。commit は GPU work
-完了、Subscriber への配送完了、Subscriber の lease 取得完了を意味しない。
+完了、Subscriber への配送完了、Subscriber の lease 取得完了を意味しない。middleware
+publish が失敗しない前提のため、commit 時刻は実際の publish 呼び出しよりわずかに早い。
 
 ### 5.4 cancel
 

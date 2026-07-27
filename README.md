@@ -124,6 +124,10 @@ auto descriptor = slot.prepare_publish(stream);
 view.enqueue_ready_event(stream);
 ```
 
+`prepare_publish()` records the ready event, creates the descriptor, and marks
+the slot published before returning. Pass the successful result to the
+middleware immediately; no separate `commit_publish()` call is required.
+
 `cudaStream_t` streams created by the CUDA Runtime API and `CUstream` streams
 created by the Driver API are compatible handles, so no cast is needed in
 normal Runtime API user code. `nullptr` remains the default stream; the

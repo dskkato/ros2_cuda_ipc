@@ -60,6 +60,10 @@ detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
     return detail::CudaResult<transport::BufferDescriptor>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
+  if (!commit_publish()) {
+    return detail::CudaResult<transport::BufferDescriptor>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+  }
   return detail::CudaResult<transport::BufferDescriptor>::success(
       std::move(*result));
 }

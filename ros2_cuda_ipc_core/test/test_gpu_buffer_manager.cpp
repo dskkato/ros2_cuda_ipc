@@ -75,7 +75,7 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   EXPECT_FALSE(slot->valid());
 }
 
-TEST_F(GpuBufferManagerTest, PreparePublishRecordsReadyAndReturnsDescriptor) {
+TEST_F(GpuBufferManagerTest, PreparePublishCommitsAndReturnsDescriptor) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   auto slot = manager.acquire_for_publish();
@@ -84,7 +84,8 @@ TEST_F(GpuBufferManagerTest, PreparePublishRecordsReadyAndReturnsDescriptor) {
   auto result = slot->prepare_publish(nullptr);
   ASSERT_TRUE(result) << result.error().to_string();
   EXPECT_EQ(result.value().slot_id, 0u);
-  EXPECT_TRUE(slot->valid());
+  EXPECT_FALSE(slot->valid());
+  EXPECT_FALSE(manager.acquire_for_publish().has_value());
   EXPECT_TRUE(slot->commit_publish());
 }
 

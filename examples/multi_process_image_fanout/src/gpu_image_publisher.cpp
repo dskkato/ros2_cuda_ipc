@@ -159,7 +159,6 @@ class GpuImagePublisherNode : public rclcpp::Node {
     message.header.frame_id = frame_id_;
 
     publisher_->publish(message);
-    slot->commit_publish();
     ++frame_index_;
   }
 
