@@ -30,11 +30,16 @@ std::string unique_name() {
 
 using ros2_cuda_ipc_core::publisher::GpuBufferManager;
 using ros2_cuda_ipc_core::publisher::PublishSlot;
+using ros2_cuda_ipc_core::publisher::WriteHandle;
 
 static_assert(!std::is_copy_constructible_v<PublishSlot>);
 static_assert(!std::is_copy_assignable_v<PublishSlot>);
 static_assert(std::is_nothrow_move_constructible_v<PublishSlot>);
 static_assert(std::is_nothrow_move_assignable_v<PublishSlot>);
+static_assert(!std::is_copy_constructible_v<WriteHandle>);
+static_assert(!std::is_copy_assignable_v<WriteHandle>);
+static_assert(std::is_nothrow_move_constructible_v<WriteHandle>);
+static_assert(std::is_nothrow_move_assignable_v<WriteHandle>);
 
 class GpuBufferManagerTest : public ::testing::Test {
  protected:
@@ -61,7 +66,13 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   auto slot = manager.acquire_for_publish();
   ASSERT_TRUE(slot.has_value());
   EXPECT_EQ(slot->descriptor(), std::nullopt);
-  ASSERT_TRUE(slot->record_ready(nullptr));
+  {
+    auto write = slot->write(nullptr);
+    ASSERT_TRUE(write.has_value());
+    EXPECT_NE(write->data(), nullptr);
+    EXPECT_EQ(slot->descriptor(), std::nullopt);
+    EXPECT_FALSE(slot->write(nullptr).has_value());
+  }
   auto descriptor = slot->descriptor();
   ASSERT_TRUE(descriptor.has_value());
   EXPECT_EQ(descriptor->slot_id, 0u);
@@ -69,26 +80,27 @@ TEST_F(GpuBufferManagerTest, DescriptorIsGatedByReadyRecording) {
   EXPECT_EQ(descriptor->lease_shm_name, manager.shm_name());
   EXPECT_EQ(descriptor->publisher_instance_id, instance_id);
   EXPECT_EQ(descriptor->byte_size, 1024u);
-  EXPECT_FALSE(slot->record_ready(nullptr));
-  EXPECT_TRUE(slot->commit_publish());
-  EXPECT_TRUE(slot->commit_publish());
-  EXPECT_FALSE(slot->valid());
+  EXPECT_FALSE(slot->ready_error().has_value());
+  EXPECT_FALSE(slot->write(nullptr).has_value());
+  EXPECT_TRUE(slot->valid());
 }
 
-TEST_F(GpuBufferManagerTest, CommitBeforeReadyHasNoSideEffects) {
+TEST_F(GpuBufferManagerTest, WriteHandleIsMoveOnlyAndRecordsOnce) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   auto slot = manager.acquire_for_publish();
   ASSERT_TRUE(slot.has_value());
 
-  EXPECT_FALSE(slot->commit_publish());
-  EXPECT_TRUE(slot->valid());
-  EXPECT_NE(slot->device_ptr(), nullptr);
-  EXPECT_FALSE(manager.acquire_for_publish().has_value());
-
-  slot->cancel();
-  EXPECT_FALSE(slot->valid());
-  EXPECT_TRUE(manager.acquire_for_publish().has_value());
+  {
+    auto source = slot->write(nullptr);
+    ASSERT_TRUE(source.has_value());
+    WriteHandle destination(std::move(*source));
+    EXPECT_FALSE(source->valid());
+    EXPECT_EQ(source->data(), nullptr);
+    EXPECT_TRUE(destination.valid());
+    EXPECT_NE(destination.data<uint8_t>(), nullptr);
+  }
+  EXPECT_TRUE(slot->descriptor().has_value());
 }
 
 TEST_F(GpuBufferManagerTest, RuntimeCreatedStreamCanRecordReady) {
@@ -99,8 +111,11 @@ TEST_F(GpuBufferManagerTest, RuntimeCreatedStreamCanRecordReady) {
 
   cudaStream_t stream = nullptr;
   ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
-  const auto result = slot->record_ready(stream);
-  ASSERT_TRUE(result) << result.error().to_string();
+  {
+    auto write = slot->write(stream);
+    ASSERT_TRUE(write.has_value());
+  }
+  ASSERT_FALSE(slot->ready_error().has_value());
   ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
   ASSERT_EQ(cudaStreamDestroy(stream), cudaSuccess);
 }
@@ -113,61 +128,58 @@ TEST_F(GpuBufferManagerTest, DriverCreatedStreamCanRecordReady) {
 
   CUstream stream = nullptr;
   ASSERT_EQ(cuStreamCreate(&stream, CU_STREAM_DEFAULT), CUDA_SUCCESS);
-  const auto result = slot->record_ready(stream);
-  ASSERT_TRUE(result) << result.error().to_string();
+  {
+    auto write = slot->write(stream);
+    ASSERT_TRUE(write.has_value());
+  }
+  ASSERT_FALSE(slot->ready_error().has_value());
   ASSERT_EQ(cuStreamSynchronize(stream), CUDA_SUCCESS);
   ASSERT_EQ(cuStreamDestroy(stream), CUDA_SUCCESS);
 }
 
-TEST_F(GpuBufferManagerTest, UncommittedDestructionCancelsReservation) {
+TEST_F(GpuBufferManagerTest, DestructionWithoutWriteStartsPublishTimestamp) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   {
     auto slot = manager.acquire_for_publish();
     ASSERT_TRUE(slot.has_value());
-  }
-  EXPECT_TRUE(manager.acquire_for_publish().has_value());
-}
-
-TEST_F(GpuBufferManagerTest, CommittedDestructionKeepsGracePeriod) {
-  auto manager = make_manager();
-  ASSERT_TRUE(manager.initialise());
-  {
-    auto slot = manager.acquire_for_publish();
-    ASSERT_TRUE(slot.has_value());
-    ASSERT_TRUE(slot->record_ready(nullptr));
-    slot->commit_publish();
   }
   EXPECT_FALSE(manager.acquire_for_publish().has_value());
-  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  std::this_thread::sleep_for(std::chrono::milliseconds(105));
   EXPECT_TRUE(manager.acquire_for_publish().has_value());
 }
 
-TEST_F(GpuBufferManagerTest, FailedCommitDoesNotMarkSlotCommitted) {
+TEST_F(GpuBufferManagerTest, PublishTimestampAtSlotDestruction) {
+  auto manager = make_manager();
+  ASSERT_TRUE(manager.initialise());
+  {
+    auto slot = manager.acquire_for_publish();
+    ASSERT_TRUE(slot.has_value());
+    std::this_thread::sleep_for(std::chrono::milliseconds(105));
+    {
+      auto write = slot->write(nullptr);
+      ASSERT_TRUE(write.has_value());
+    }
+  }
+  EXPECT_FALSE(manager.acquire_for_publish().has_value());
+  std::this_thread::sleep_for(std::chrono::milliseconds(105));
+  EXPECT_TRUE(manager.acquire_for_publish().has_value());
+}
+
+TEST_F(GpuBufferManagerTest, ReadyRecordingFailureIsStoredOnSlot) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   auto slot = manager.acquire_for_publish();
   ASSERT_TRUE(slot.has_value());
-  ASSERT_TRUE(slot->record_ready(nullptr));
+  auto write = slot->write(nullptr);
+  ASSERT_TRUE(write.has_value());
 
-  auto mapping = ros2_cuda_ipc_core::lease::LeaseMapping::attach(
-      manager.shm_name(), manager.publisher_instance_id());
-  ASSERT_TRUE(mapping);
-  const auto generation =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_generation(mapping, 0);
-  ASSERT_TRUE(generation.has_value());
+  manager.reset();
+  write.reset();
 
-  mapping->slot(0)->generation.store(*generation + 1,
-                                     std::memory_order_release);
-  EXPECT_FALSE(slot->commit_publish());
-  EXPECT_TRUE(slot->valid());
-
-  // Restore the reservation generation so its cancellation can release the
-  // temporary Publisher reference after the failed-commit check.
-  mapping->slot(0)->generation.store(*generation, std::memory_order_release);
-  slot->cancel();
-  EXPECT_FALSE(slot->valid());
-  EXPECT_TRUE(manager.acquire_for_publish().has_value());
+  ASSERT_TRUE(slot->ready_error().has_value());
+  EXPECT_EQ(slot->ready_error()->code(), CUDA_ERROR_INVALID_HANDLE);
+  EXPECT_EQ(slot->descriptor(), std::nullopt);
 }
 
 TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
@@ -177,16 +189,16 @@ TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
   ASSERT_TRUE(source.has_value());
   PublishSlot destination(std::move(*source));
   EXPECT_FALSE(source->valid());
-  EXPECT_EQ(source->device_ptr(), nullptr);
-  EXPECT_FALSE(source->commit_publish());
   EXPECT_TRUE(destination.valid());
-  destination.cancel();
-  destination.cancel();
-  EXPECT_FALSE(destination.valid());
-  EXPECT_TRUE(manager.acquire_for_publish().has_value());
+  {
+    auto write = destination.write(nullptr);
+    ASSERT_TRUE(write.has_value());
+    EXPECT_NE(write->data(), nullptr);
+  }
+  EXPECT_TRUE(destination.descriptor().has_value());
 }
 
-TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
+TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationRelease) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   const std::string actual_name = manager.shm_name();
@@ -217,14 +229,14 @@ TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   }
 }
 
-TEST_F(GpuBufferManagerTest, AcquireAfterGracePeriod) {
+TEST_F(GpuBufferManagerTest, AcquireAfterPublishTimestamp) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   {
     auto slot = manager.acquire_for_publish();
     ASSERT_TRUE(slot.has_value());
-    ASSERT_TRUE(slot->record_ready(nullptr));
-    slot->commit_publish();
+    auto write = slot->write(nullptr);
+    ASSERT_TRUE(write.has_value());
   }
 
   std::this_thread::sleep_for(std::chrono::milliseconds(105));

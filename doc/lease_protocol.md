@@ -17,8 +17,9 @@ Publisher 再起動後の状態引き継ぎは対象外である。
 | generation | slot が publish 用に取得されるたびに増加する世代番号 |
 | reservation | Publisher が保持する `slot_id` と `generation` |
 | refcnt | Subscriber lease と Publisher reservation の合計参照数 |
-| grace period | publish 後に slot を再利用しない固定期間（100 ms） |
+| grace period | Publisher reservation 解放後に slot を再利用しない固定期間（100 ms） |
 | lease | Subscriber が buffer を読み取り中であることを表す RAII 所有権 |
+| write handle | device pointer への一時的な書き込み権。破棄時に ready event を記録する |
 
 `pending` や ROS subscription count は lease protocol の状態として使用しない。実際に
 lease を取得した Subscriber だけが `refcnt` に反映される。
@@ -32,6 +33,7 @@ Publisher process
     LeaseManager        reservation と publish lifecycle を管理
       LeaseHandle       process-shared metadata を操作
     PublishSlot         1回の publish 試行を表す move-only object
+      WriteHandle       CUDA stream と device pointer の scoped access
 
 Subscriber process
   BufferViewMapper
@@ -43,11 +45,12 @@ Publisher は次の順で API を使用する。
 
 ```cpp
 auto slot = manager.acquire_for_publish();
-launch_gpu_work(slot->device_ptr(), stream);
-slot->record_ready(stream);
+{
+  auto write = slot->write(stream);
+  launch_gpu_work(write->data(), stream);
+}
 auto descriptor = slot->descriptor();
 publisher->publish(make_message(*descriptor));
-slot->commit_publish();
 ```
 
 ## 4. Process-shared slot state
@@ -69,8 +72,10 @@ Publisher instance ID を検証する。
 するときに`SlotMeta`をplacement newで構築する。Subscriberは既存のslotを再構築せずに
 attachする。
 
-`publish_timestamp_us` は `steady_clock` のマイクロ秒値で、最後に commit された publish
-時刻を表す。0 はまだ publish されていない slot を表す。
+`publish_timestamp_us` は `steady_clock` のマイクロ秒値で、Publisher reservation
+解放時に開始した再利用抑止期間の起点を表す。0 は grace period が設定されていない
+slot を表す。publish 前の早期終了にも grace period を適用するため、実際の ROS publish
+時刻とは限らない。
 
 slot の再利用条件は次である。
 
@@ -90,7 +95,7 @@ refcnt == 0 &&
 `acquire_for_publish()` は round-robin で候補を探索し、各 slot に対して次を行う。
 
 1. `refcnt == 0` を確認する。
-2. timestamp が0、または publish から100 ms以上経過していることを確認する。
+2. timestamp が0、または publish 開始から100 ms以上経過していることを確認する。
 3. `refcnt` を CAS で `0 -> 1` に変更する。
 4. CAS に失敗したら次の候補へ進む。
 5. `generation` を1増加する。
@@ -103,35 +108,30 @@ Subscriber は `refcnt != 0` だけを理由に拒否せず、generation の前�
 
 ### 5.2 GPU work と ready event
 
-Publisher は取得した device pointer へ GPU work を enqueue し、同じ依存関係を持つ
-CUDA stream で `record_ready()` を呼ぶ。`descriptor()` は ready event 記録成功前には
-失敗する。
+Publisher は `slot->write(stream)` で move-only `WriteHandle` を取得し、その
+`data()` から得た device pointer へ GPU work を enqueue する。WriteHandle の
+destructor は同じ CUDA stream へ ready event を記録する。
 
-ready event の記録前に reservation が破棄された場合、`PublishSlot` の destructor が
-cancel を実行する。
+WriteHandle は親 PublishSlot を借用する。PublishSlot は handle より長生きし、handle が
+有効な間は move してはならない。1つの PublishSlot から取得できる WriteHandle は1回
+だけである。`descriptor()` は handle の破棄と ready event 記録成功前には失敗する。
+event 記録失敗は `ready_error()` から取得できる。
 
-### 5.3 commit
+### 5.3 reservation release
 
-`commit_publish()` は ROS publish API が message を middleware へ引き渡した後に呼ぶ。
-
-commit は次の順で処理する。
+`PublishSlot` の destructor は、ROS publish の実行有無にかかわらず次を行う。
 
 1. reservation の generation が現在の generation と一致することを確認する。
 2. `publish_timestamp_us` を現在時刻へ更新する。
 3. Publisher reservation の `refcnt` を1減少させる。
 
-commit 後も、Subscriber lease が残っていれば slot は再利用できない。commit は GPU work
-完了、Subscriber への配送完了、Subscriber の lease 取得完了を意味しない。
+Subscriber lease が残っていれば slot は再利用できない。slot の破棄は GPU work 完了、
+Subscriber への配送完了、Subscriber の lease 取得完了を意味しない。
 
-### 5.4 cancel
-
-未commitの `PublishSlot` を破棄するか `cancel()` を呼ぶと、Publisher reservation の
-`refcnt` だけを減少させる。cancel では publish timestamp を更新しないため、未公開の
-reservation は grace period を追加で発生させない。
-
-reservation の generation が一致しない場合は新しい generation の refcount を誤って
-減らさず、エラーとして扱う。通常の API lifecycle では reservation が保持されている間
-に別 generation へ進むことはない。
+publish 前の早期 return や ready event 記録失敗でも grace period を適用する。これに
+より未公開 slot にも一時的な backpressure が発生するが、明示的な commit/cancel の
+呼び忘れを排除する。reservation 取得処理自体の rollback では内部 cancel を使用し、
+grace period を開始しない。
 
 ## 6. Subscriber acquire と release
 
@@ -184,7 +184,7 @@ lease が成立することを防ぐ。
 | --- | --- |
 | reusable slot がない | Publisher の acquire が失敗する |
 | GPU resource 初期化失敗 | 作成済み resource を rollback する |
-| ready event 記録失敗 | 未commit reservation を destructor が cancel する |
+| ready event 記録失敗 | descriptor を無効にし、slot 破棄時に grace period 付きで reservation を解放する |
 | generation mismatch | Subscriber acquire または reservation 完了を失敗させる |
 | Subscriber process crash | refcnt が残り、slot が再利用不能になる可能性がある |
 | 100 ms を超える message 遅延 | slot 再利用後は generation mismatch で drop される可能性がある |

@@ -130,8 +130,13 @@ class GpuImagePublisherNode : public rclcpp::Node {
     {
       NvtxScopedRange kernel_range(
           "GpuImagePublisherNode::generate_rgba_pattern_kernel");
+      auto write = slot->write(stream_);
+      if (!write) {
+        RCLCPP_ERROR(get_logger(), "Failed to acquire GPU write handle");
+        return;
+      }
       error = launch_generate_rgba_pattern_kernel(
-          static_cast<uint8_t*>(slot->device_ptr()), static_cast<int>(width_),
+          write->data<uint8_t>(), static_cast<int>(width_),
           static_cast<int>(height_), width_ * kBytesPerPixel, frame_index_,
           stream_);
     }
@@ -140,18 +145,12 @@ class GpuImagePublisherNode : public rclcpp::Node {
       return;
     }
 
-    {
-      NvtxScopedRange event_range("GpuImagePublisherNode::record_ready");
-      auto result = slot->record_ready(stream_);
-      if (!result) {
-        RCLCPP_WARN(get_logger(), "record_ready failed: %s",
-                    result.error().to_string().c_str());
-        return;
-      }
-    }
-
     const auto descriptor = slot->descriptor();
     if (!descriptor) {
+      if (const auto ready_error = slot->ready_error()) {
+        RCLCPP_WARN(get_logger(), "ready event recording failed: %s",
+                    ready_error->to_string().c_str());
+      }
       RCLCPP_ERROR(get_logger(), "Failed to create GPU buffer descriptor");
       return;
     }
@@ -167,7 +166,6 @@ class GpuImagePublisherNode : public rclcpp::Node {
     message.header.frame_id = frame_id_;
 
     publisher_->publish(message);
-    slot->commit_publish();
     ++frame_index_;
   }
 

@@ -55,8 +55,7 @@ class LeaseHandle {
   static std::optional<PublisherReservation> reserve_for_publish(
       const std::shared_ptr<LeaseMapping>& mapping);
 
-  /// Mark a Publisher reservation as published and release its temporary
-  /// reference.
+  /// Start the reuse grace period and release a Publisher reservation.
   ///
   /// @param mapping Shared-memory mapping containing the slot metadata.
   /// @param slot_id Slot index inside the mapping.

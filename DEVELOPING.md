@@ -21,27 +21,33 @@ who want to try the demo first.
 - `ros2_cuda_ipc_core::publisher::GpuBufferPool`: publisher-side GPU resource ownership.
 - `ros2_cuda_ipc_core::publisher::LeaseManager`: publisher reservation, generation, and grace-period state.
 - `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher-facing buffer manager.
-- `ros2_cuda_ipc_core::publisher::PublishSlot`: one move-only publish attempt with RAII cancellation.
+- `ros2_cuda_ipc_core::publisher::PublishSlot`: one move-only publish attempt with RAII reservation release.
+- `ros2_cuda_ipc_core::publisher::WriteHandle`: scoped device access that records the ready event on destruction.
 
 Publisher code should follow this order:
 
 ```cpp
 auto slot = manager.acquire_for_publish();
-launch_gpu_work(slot->device_ptr(), stream);
-slot->record_ready(stream);
+{
+  auto write = slot->write(stream);
+  launch_gpu_work(write->data(), stream);
+}
 auto descriptor = slot->descriptor();
 publisher->publish(make_message(*descriptor));
-slot->commit_publish();
 ```
 
 The public ready-event APIs use the CUDA Driver API stream type `CUstream`.
 Applications that use the CUDA Runtime API include
 `<cuda_runtime_api.h>` themselves; a Runtime-created `cudaStream_t` can be
-passed directly to `record_ready()` and `enqueue_ready_event()`. The stream is
+passed directly to `write()` and `enqueue_ready_event()`. The stream is
 owned by the application and is only borrowed by the core library.
 
-Destroying an uncommitted `PublishSlot` cancels its reservation. Descriptor
-creation is rejected until the ready event has been recorded successfully.
+Destroying a `WriteHandle` records the ready event. The parent `PublishSlot`
+must outlive the handle and must not be moved while the handle is active.
+Destroying the slot starts the reuse grace period and releases its Publisher
+reservation, including on early returns where no message was published.
+Descriptor creation is rejected until the ready event has been recorded
+successfully; `ready_error()` reports recording failures.
 The protocol guarantees and known limitations are specified in
 [doc/lease_protocol.md](doc/lease_protocol.md).
 
