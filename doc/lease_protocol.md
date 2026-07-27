@@ -44,9 +44,8 @@ Publisher は次の順で API を使用する。
 ```cpp
 auto slot = manager.acquire_for_publish();
 launch_gpu_work(slot->device_ptr(), stream);
-slot->record_ready(stream);
-auto descriptor = slot->descriptor();
-publisher->publish(make_message(*descriptor));
+auto descriptor = slot->prepare_publish(stream);
+publisher->publish(make_message(descriptor.value()));
 slot->commit_publish();
 ```
 
@@ -104,8 +103,8 @@ Subscriber は `refcnt != 0` だけを理由に拒否せず、generation の前�
 ### 5.2 GPU work と ready event
 
 Publisher は取得した device pointer へ GPU work を enqueue し、同じ依存関係を持つ
-CUDA stream で `record_ready()` を呼ぶ。`descriptor()` は ready event 記録成功前には
-失敗する。
+CUDA stream で `prepare_publish()` を呼ぶ。この操作が ready event を記録し、成功時に
+transport descriptor を返す。ready event 記録成功前に descriptor を作成する経路はない。
 
 ready event の記録前に reservation が破棄された場合、`PublishSlot` の destructor が
 cancel を実行する。

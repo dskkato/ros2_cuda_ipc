@@ -44,7 +44,22 @@ class PublishSlot {
   /// @return Device pointer when the slot is usable; nullptr otherwise.
   void* device_ptr() const noexcept;
 
+  /// Record the ready event and build the transport descriptor.
+  ///
+  /// This is the normal publishing path: the ready event and descriptor are
+  /// produced as one operation so a descriptor cannot be obtained without its
+  /// corresponding ready event.
+  ///
+  /// @return The descriptor when the event was recorded successfully; a CUDA
+  /// driver error otherwise. The reservation remains cancellable on failure.
+  detail::CudaResult<transport::BufferDescriptor> prepare_publish(
+      CUstream stream) noexcept;
+
   /// Record that the slot's GPU payload is ready on the given stream.
+  ///
+  /// This lower-level operation is retained for compatibility; normal
+  /// publishers should use prepare_publish() to record the event and obtain
+  /// the descriptor together.
   ///
   /// @return A Driver API result. A failed result is returned when the slot
   /// is not in the reserved state or the event cannot be recorded.
@@ -52,13 +67,16 @@ class PublishSlot {
 
   /// Build the transport descriptor after the ready event has been recorded.
   ///
+  /// This lower-level operation is retained for compatibility; normal
+  /// publishers should use prepare_publish().
+  ///
   /// @return Descriptor when the slot is ready; std::nullopt otherwise.
   std::optional<transport::BufferDescriptor> descriptor() const;
 
   /// Mark the descriptor as handed to the middleware.
   ///
-  /// Requires a successful record_ready() call. Repeated calls after commit
-  /// are harmless.
+  /// Requires a successful prepare_publish() or record_ready() call.
+  /// Repeated calls after commit are harmless.
   ///
   /// @return true when the Publisher reservation was committed; false when
   /// the reservation could not be committed.

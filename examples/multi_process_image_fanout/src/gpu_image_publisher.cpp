@@ -140,24 +140,16 @@ class GpuImagePublisherNode : public rclcpp::Node {
       return;
     }
 
-    {
-      NvtxScopedRange event_range("GpuImagePublisherNode::record_ready");
-      auto result = slot->record_ready(stream_);
-      if (!result) {
-        RCLCPP_WARN(get_logger(), "record_ready failed: %s",
-                    result.error().to_string().c_str());
-        return;
-      }
-    }
-
-    const auto descriptor = slot->descriptor();
+    NvtxScopedRange descriptor_range("GpuImagePublisherNode::prepare_publish");
+    auto descriptor = slot->prepare_publish(stream_);
     if (!descriptor) {
-      RCLCPP_ERROR(get_logger(), "Failed to create GPU buffer descriptor");
+      RCLCPP_WARN(get_logger(), "prepare_publish failed: %s",
+                  descriptor.error().to_string().c_str());
       return;
     }
 
     ros2_cuda_ipc_msgs::msg::GpuImage message;
-    ros2_cuda_ipc_core::transport::fill_buffer_core_message(*descriptor,
+    ros2_cuda_ipc_core::transport::fill_buffer_core_message(descriptor.value(),
                                                             message.core);
     message.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::image::DType::U8);
     message.shape = {height_, width_, kDefaultChannels};

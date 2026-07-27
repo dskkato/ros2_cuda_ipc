@@ -28,16 +28,19 @@ Publisher code should follow this order:
 ```cpp
 auto slot = manager.acquire_for_publish();
 launch_gpu_work(slot->device_ptr(), stream);
-slot->record_ready(stream);
-auto descriptor = slot->descriptor();
-publisher->publish(make_message(*descriptor));
+auto descriptor = slot->prepare_publish(stream);
+publisher->publish(make_message(descriptor.value()));
 slot->commit_publish();
 ```
+
+`prepare_publish(stream)` records the slot's ready event and returns its
+transport descriptor as one operation. A failed result leaves the reservation
+cancellable and must not be published.
 
 The public ready-event APIs use the CUDA Driver API stream type `CUstream`.
 Applications that use the CUDA Runtime API include
 `<cuda_runtime_api.h>` themselves; a Runtime-created `cudaStream_t` can be
-passed directly to `record_ready()` and `enqueue_ready_event()`. The stream is
+passed directly to `prepare_publish()` and `enqueue_ready_event()`. The stream is
 owned by the application and is only borrowed by the core library.
 
 Destroying an uncommitted `PublishSlot` cancels its reservation. Descriptor

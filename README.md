@@ -120,7 +120,7 @@ The public ready-event APIs use the CUDA Driver API stream type `CUstream`:
 cudaStream_t stream = nullptr;
 cudaStreamCreate(&stream);
 
-slot.record_ready(stream);
+auto descriptor = slot.prepare_publish(stream);
 view.enqueue_ready_event(stream);
 ```
 

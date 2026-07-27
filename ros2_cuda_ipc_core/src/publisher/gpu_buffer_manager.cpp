@@ -42,6 +42,28 @@ void* PublishSlot::device_ptr() const noexcept {
   return valid() ? owner_->device_ptr(reservation_) : nullptr;
 }
 
+detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
+    CUstream stream) noexcept {
+  if (owner_ == nullptr || state_ != State::reserved) {
+    return detail::CudaResult<transport::BufferDescriptor>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+  }
+
+  auto ready_result = record_ready(stream);
+  if (!ready_result) {
+    return detail::CudaResult<transport::BufferDescriptor>::failure(
+        ready_result.error());
+  }
+
+  auto result = descriptor();
+  if (!result) {
+    return detail::CudaResult<transport::BufferDescriptor>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+  }
+  return detail::CudaResult<transport::BufferDescriptor>::success(
+      std::move(*result));
+}
+
 detail::CudaResult<void> PublishSlot::record_ready(CUstream stream) noexcept {
   if (owner_ == nullptr || state_ != State::reserved) {
     return detail::CudaResult<void>::failure(
