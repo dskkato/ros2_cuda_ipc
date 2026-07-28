@@ -110,31 +110,26 @@ ros2 topic echo /fanout/inference_like/status
 - Python binding design: [doc/python-subscriber-implementation.md](doc/python-subscriber-implementation.md)
 - CUDA IPC / VMM-FD checks: [utils/cuda_ipc_poc/README.md](utils/cuda_ipc_poc/README.md)
 
-## Stream API
-
-The public ready-event APIs use the CUDA Driver API stream type `CUstream`:
+## Publisher API
 
 ```cpp
-#include <cuda_runtime_api.h>
+auto slot = manager.acquire_for_publish();
+launch_gpu_work(slot->device_ptr(), stream);
 
-cudaStream_t stream = nullptr;
-cudaStreamCreate(&stream);
+auto descriptor = slot->prepare_publish(stream);
+if (!descriptor) {
+  return;
+}
 
-slot.record_ready(stream);
-view.enqueue_ready_event(stream);
+publisher->publish(make_message(descriptor.value()));
 ```
 
-`cudaStream_t` streams created by the CUDA Runtime API and `CUstream` streams
-created by the Driver API are compatible handles, so no cast is needed in
-normal Runtime API user code. `nullptr` remains the default stream; the
-corresponding special stream values are also accepted. The application owns
-the stream and is responsible for creating and destroying it; the core only
-borrows it while calling `cuEventRecord()` and `cuStreamWaitEvent()`.
+Pass the stream that carries the producer work dependency to
+`prepare_publish()`. On success, publish the returned descriptor. On failure,
+that slot is not reused until `GpuBufferManager::reset()`.
 
-The core implementation uses the CUDA Driver API and links to the CUDA driver,
-not `libcudart.so`. Runtime API applications must include
-`<cuda_runtime_api.h>` explicitly; this declaration is not supplied
-incidentally by core public headers.
+The API accepts Driver API `CUstream` values and Runtime API `cudaStream_t`
+values directly. The application retains ownership of the stream.
 
 ## License
 

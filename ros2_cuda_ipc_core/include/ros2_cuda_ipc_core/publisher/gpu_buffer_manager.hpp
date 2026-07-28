@@ -23,8 +23,8 @@ class GpuBufferManager;
 ///
 /// The owning GpuBufferManager must outlive every PublishSlot created from
 /// it. Calling GpuBufferManager::reset() invalidates slot resource
-/// operations, but slot destruction can still cancel its shared-memory
-/// reservation while the manager object remains alive.
+/// operations. Destruction cancels an ordinary uncommitted reservation, while
+/// a failed preparation intentionally retains its reservation until reset.
 class PublishSlot {
  public:
   /// Move a publish slot while transferring ownership of its reservation.
@@ -36,35 +36,26 @@ class PublishSlot {
   PublishSlot(const PublishSlot&) = delete;
   PublishSlot& operator=(const PublishSlot&) = delete;
 
-  /// Cancel an uncommitted reservation on destruction.
-  ~PublishSlot();
+  /// Cancel an ordinary uncommitted reservation on destruction.
+  ~PublishSlot() noexcept;
 
   /// Return the device pointer associated with the reserved slot.
   ///
   /// @return Device pointer when the slot is usable; nullptr otherwise.
   void* device_ptr() const noexcept;
 
-  /// Record that the slot's GPU payload is ready on the given stream.
+  /// Build the descriptor, record the ready event, and commit the reservation.
   ///
-  /// @return A Driver API result. A failed result is returned when the slot
-  /// is not in the reserved state or the event cannot be recorded.
-  detail::CudaResult<void> record_ready(CUstream stream) noexcept;
+  /// A successful return commits the Publisher reservation. A failed
+  /// preparation leaves the slot unavailable until GpuBufferManager::reset().
+  /// The subsequent middleware publish result does not affect slot lifecycle.
+  ///
+  /// @return The descriptor when preparation and commit succeed; a failed
+  /// result otherwise.
+  [[nodiscard]] detail::CudaResult<transport::BufferDescriptor> prepare_publish(
+      CUstream stream) noexcept;
 
-  /// Build the transport descriptor after the ready event has been recorded.
-  ///
-  /// @return Descriptor when the slot is ready; std::nullopt otherwise.
-  std::optional<transport::BufferDescriptor> descriptor() const;
-
-  /// Mark the descriptor as handed to the middleware.
-  ///
-  /// Requires a successful record_ready() call. Repeated calls after commit
-  /// are harmless.
-  ///
-  /// @return true when the Publisher reservation was committed; false when
-  /// the reservation could not be committed.
-  bool commit_publish() noexcept;
-
-  /// Cancel the reservation when it has not been committed.
+  /// Cancel an active reservation. A failed preparation cannot be cancelled.
   void cancel() noexcept;
 
   /// Check whether the slot can still be used for publishing.
@@ -74,21 +65,14 @@ class PublishSlot {
   /// Allow the manager to construct slots only from valid reservations.
   friend class GpuBufferManager;
 
-  enum class State {
-    reserved,
-    ready_recorded,
-    committed,
-    cancelled,
-    moved_from
-  };
-
   PublishSlot(GpuBufferManager* owner,
               LeaseManager::Reservation reservation) noexcept;
   void move_from(PublishSlot&& other) noexcept;
+  void quarantine(const char* step,
+                  const detail::CudaDriverError* error = nullptr) noexcept;
 
   GpuBufferManager* owner_ = nullptr;
   LeaseManager::Reservation reservation_{};
-  State state_ = State::moved_from;
 };
 
 /// Owns the GPU buffer pool and shared-memory slot reservations used for
@@ -145,7 +129,7 @@ class GpuBufferManager {
   /// Reserve a slot for a new publish attempt.
   /// @return A publish slot when a reservation is available; std::nullopt
   /// otherwise.
-  std::optional<PublishSlot> acquire_for_publish();
+  [[nodiscard]] std::optional<PublishSlot> acquire_for_publish();
 
  private:
   /// Allow a slot to delegate resource operations to its owning manager
@@ -155,8 +139,8 @@ class GpuBufferManager {
   void* device_ptr(const LeaseManager::Reservation& reservation) const noexcept;
   detail::CudaResult<void> record_ready(
       const LeaseManager::Reservation& reservation, CUstream stream) noexcept;
-  std::optional<transport::BufferDescriptor> descriptor(
-      const LeaseManager::Reservation& reservation) const;
+  std::optional<transport::BufferDescriptor> try_build_descriptor(
+      const LeaseManager::Reservation& reservation) const noexcept;
   bool commit(const LeaseManager::Reservation& reservation) noexcept;
   bool cancel(const LeaseManager::Reservation& reservation) noexcept;
 

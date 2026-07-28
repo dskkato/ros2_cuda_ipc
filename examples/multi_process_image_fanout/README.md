@@ -39,7 +39,7 @@ results.
 ## CUDA stream API
 
 The example uses CUDA Runtime API streams for its kernels and passes the same
-`cudaStream_t` values directly to the core's `record_ready()` and
+`cudaStream_t` values directly to the core's `prepare_publish()` and
 `enqueue_ready_event()` APIs. Each application source includes
 `<cuda_runtime_api.h>` explicitly. The core API is declared in terms of
 `CUstream`, and the application remains responsible for stream ownership.
