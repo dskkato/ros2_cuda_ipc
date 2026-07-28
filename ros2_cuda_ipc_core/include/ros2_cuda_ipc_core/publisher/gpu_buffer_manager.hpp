@@ -139,8 +139,8 @@ class GpuBufferManager {
   void* device_ptr(const LeaseManager::Reservation& reservation) const noexcept;
   detail::CudaResult<void> record_ready(
       const LeaseManager::Reservation& reservation, CUstream stream) noexcept;
-  std::optional<transport::BufferDescriptor> build_descriptor(
-      const LeaseManager::Reservation& reservation) const;
+  std::optional<transport::BufferDescriptor> try_build_descriptor(
+      const LeaseManager::Reservation& reservation) const noexcept;
   bool commit(const LeaseManager::Reservation& reservation) noexcept;
   bool cancel(const LeaseManager::Reservation& reservation) noexcept;
 

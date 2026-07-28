@@ -46,7 +46,7 @@ detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
 
-  auto descriptor = owner_->build_descriptor(reservation_);
+  auto descriptor = owner_->try_build_descriptor(reservation_);
   if (!descriptor) {
     quarantine("descriptor creation");
     return detail::CudaResult<transport::BufferDescriptor>::failure(
@@ -170,8 +170,9 @@ detail::CudaResult<void> GpuBufferManager::record_ready(
   return buffer_pool_.record_ready(reservation.slot_id, stream);
 }
 
-std::optional<transport::BufferDescriptor> GpuBufferManager::build_descriptor(
-    const LeaseManager::Reservation& reservation) const {
+std::optional<transport::BufferDescriptor>
+GpuBufferManager::try_build_descriptor(
+    const LeaseManager::Reservation& reservation) const noexcept {
   const auto* resources = buffer_pool_.resources(reservation.slot_id);
   if (resources == nullptr || !resources->ready_event) {
     return std::nullopt;
