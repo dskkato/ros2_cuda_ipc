@@ -45,6 +45,9 @@ Publisher は次の順で API を使用する。
 auto slot = manager.acquire_for_publish();
 launch_gpu_work(slot->device_ptr(), stream);
 auto descriptor = slot->prepare_publish(stream);
+if (!descriptor) {
+  return;
+}
 publisher->publish(make_message(descriptor.value()));
 ```
 
@@ -103,23 +106,9 @@ Subscriber は `refcnt != 0` だけを理由に拒否せず、generation の前�
 ### 5.2 GPU work と ready event
 
 Publisher は取得した device pointer へ GPU work を enqueue し、同じ依存関係を持つ
-CUDA stream で `prepare_publish()` を呼ぶ。この操作が ready event を記録し、descriptor
+CUDA stream で `prepare_publish()` を呼ぶ。この操作は ready event を記録し、descriptor
 を作成し、Publisher reservation を commit してから descriptor を返す。成功した
-descriptor は直ちに middleware へ渡す。publish failure は想定しない。
-
-ready event の記録に失敗した場合、slot は `quarantined` へ遷移する。GPU work の完了を
-証明できないため、reservation は解放せず、slot は `GpuBufferManager::reset()` まで
-再利用しない。失敗時は descriptor を返さず、commit もしない。
-
-ready event の記録以外の preparation failure では、成功していない後続処理を行わず、
-reservation は通常のcancel経路で解放される。
-
-### 5.3 prepare と commit
-
-`prepare_publish()` は descriptor 作成後、ROS publish API を呼ぶ前に内部の reservation
-commit 処理を実行する。
-
-commit は次の順で処理する。
+descriptor は直ちに middleware へ渡す。commit は次の処理を行う。
 
 1. reservation の generation が現在の generation と一致することを確認する。
 2. `publish_timestamp_us` を現在時刻へ更新する。
@@ -129,32 +118,17 @@ commit 後も、Subscriber lease が残っていれば slot は再利用でき�
 完了、Subscriber への配送完了、Subscriber の lease 取得完了を意味しない。middleware
 publish が失敗しない前提のため、commit 時刻は実際の publish 呼び出しよりわずかに早い。
 
-### 5.4 cancel
+準備処理のいずれかが失敗した場合、`prepare_publish()` は descriptor を返さない。
+その slot の reservation は解放せず、GPU work の完了を確認できない slot を再利用しない。
+失敗した slot は `GpuBufferManager::reset()` まで再利用されない。呼び出し側は失敗を
+publishせず、必要に応じて manager を reset して再初期化する。
 
-未commitの `PublishSlot` を破棄するか `cancel()` を呼ぶと、Publisher reservation の
-`refcnt` だけを減少させる。cancel では publish timestamp を更新しないため、未公開の
-reservation は grace period を追加で発生させない。
+### 5.3 cancel
 
-reservation の generation が一致しない場合は新しい generation の refcount を誤って
-減らさず、エラーとして扱う。通常の API lifecycle では reservation が保持されている間
-に別 generation へ進むことはない。
-
-### 5.5 quarantine
-
-ready event 記録失敗時の `PreparePublishErrorCode` は
-`kReadyEventRecordFailed` で、元の `CudaDriverError` を参照できる。slot の状態は
-`quarantined` となり、次を満たす。
-
-* descriptorを返さない
-* reservationをcommitまたはcancelしない
-* destructorでもreservationを解放しない
-* `valid()` は false を返す
-* grace period経過だけでは再利用されない
-* `GpuBufferManager::reset()` 後の再初期化でのみpoolを再構築する
-
-quarantined slot は自動回復や自動再利用を行わない。全slotが使用中またはquarantined
-の場合、`acquire_for_publish()` は失敗する。アプリケーションがreset、node再起動、
-process再起動などの復旧方針を決定する。
+`prepare_publish()` 前に `PublishSlot` を破棄するか `cancel()` を呼ぶと、Publisher
+reservation の `refcnt` だけを減少させる。cancel では publish timestamp を更新しないため、
+未公開の reservation は grace period を追加で発生させない。準備に失敗した slot は既に
+再利用禁止になっているため、destructor と `cancel()` は reservation を解放しない。
 
 ## 6. Subscriber acquire と release
 

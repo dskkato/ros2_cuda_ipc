@@ -9,32 +9,9 @@
 
 namespace ros2_cuda_ipc_core::publisher {
 
-std::string PreparePublishError::to_string() const {
-  std::string result;
-  switch (code_) {
-    case PreparePublishErrorCode::kInvalidState:
-      result = "invalid_state";
-      break;
-    case PreparePublishErrorCode::kReadyEventRecordFailed:
-      result = "ready_event_record_failed";
-      break;
-    case PreparePublishErrorCode::kDescriptorCreationFailed:
-      result = "descriptor_creation_failed";
-      break;
-    case PreparePublishErrorCode::kReservationCommitFailed:
-      result = "reservation_commit_failed";
-      break;
-  }
-  if (cuda_error_) {
-    result += ": ";
-    result += cuda_error_->to_string();
-  }
-  return result;
-}
-
 PublishSlot::PublishSlot(GpuBufferManager* owner,
                          LeaseManager::Reservation reservation) noexcept
-    : owner_(owner), reservation_(reservation), state_(State::reserved) {}
+    : owner_(owner), reservation_(std::move(reservation)) {}
 
 PublishSlot::PublishSlot(PublishSlot&& other) noexcept {
   move_from(std::move(other));
@@ -52,110 +29,74 @@ PublishSlot::~PublishSlot() noexcept { cancel(); }
 
 void PublishSlot::move_from(PublishSlot&& other) noexcept {
   owner_ = other.owner_;
-  reservation_ = other.reservation_;
-  state_ = other.state_;
+  reservation_ = std::move(other.reservation_);
   other.owner_ = nullptr;
-  other.state_ = State::moved_from;
 }
 
-bool PublishSlot::valid() const noexcept {
-  return owner_ != nullptr &&
-         (state_ == State::reserved || state_ == State::ready_recorded);
-}
+bool PublishSlot::valid() const noexcept { return owner_ != nullptr; }
 
 void* PublishSlot::device_ptr() const noexcept {
   return valid() ? owner_->device_ptr(reservation_) : nullptr;
 }
 
-PreparePublishResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
+detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
     CUstream stream) noexcept {
-  if (owner_ == nullptr || state_ != State::reserved) {
-    return PreparePublishResult<transport::BufferDescriptor>::failure(
-        PreparePublishError(PreparePublishErrorCode::kInvalidState));
+  if (owner_ == nullptr) {
+    return detail::CudaResult<transport::BufferDescriptor>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
 
-  auto ready_result = record_ready(stream);
+  auto ready_result = owner_->record_ready(reservation_, stream);
   if (!ready_result) {
-    return PreparePublishResult<transport::BufferDescriptor>::failure(
-        PreparePublishError(
-            PreparePublishErrorCode::kReadyEventRecordFailed,
-            std::optional<detail::CudaDriverError>(ready_result.error())));
+    quarantine("ready event recording", &ready_result.error());
+    return detail::CudaResult<transport::BufferDescriptor>::failure(
+        ready_result.error());
   }
 
-  auto result = descriptor();
+  auto result = owner_->descriptor(reservation_);
   if (!result) {
-    return PreparePublishResult<transport::BufferDescriptor>::failure(
-        PreparePublishError(
-            PreparePublishErrorCode::kDescriptorCreationFailed));
+    quarantine("descriptor creation");
+    return detail::CudaResult<transport::BufferDescriptor>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
-  if (!commit_publish()) {
-    return PreparePublishResult<transport::BufferDescriptor>::failure(
-        PreparePublishError(PreparePublishErrorCode::kReservationCommitFailed));
+  if (!owner_->commit(reservation_)) {
+    quarantine("reservation commit");
+    return detail::CudaResult<transport::BufferDescriptor>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
-  return PreparePublishResult<transport::BufferDescriptor>::success(
+  owner_ = nullptr;
+  return detail::CudaResult<transport::BufferDescriptor>::success(
       std::move(*result));
 }
 
-detail::CudaResult<void> PublishSlot::record_ready(CUstream stream) noexcept {
-  if (owner_ == nullptr || state_ != State::reserved) {
-    return detail::CudaResult<void>::failure(
-        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+void PublishSlot::quarantine(const char* step,
+                             const detail::CudaDriverError* error) noexcept {
+  owner_ = nullptr;
+  if (error != nullptr) {
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.publisher.gpu_buffer_manager",
+        "Publish preparation failed during %s for slot %u generation %u "
+        "publisher=%s. The slot will not be reused until "
+        "GpuBufferManager is reset. CUDA error: %s",
+        step, reservation_.slot_id, reservation_.generation,
+        reservation_.shm_name.c_str(), error->to_string().c_str());
+    return;
   }
-  auto result = owner_->record_ready(reservation_, stream);
-  if (result) {
-    state_ = State::ready_recorded;
-  } else {
-    quarantine(result.error());
-  }
-  return result;
-}
-
-std::optional<transport::BufferDescriptor> PublishSlot::descriptor() const {
-  if (owner_ == nullptr || state_ != State::ready_recorded) {
-    return std::nullopt;
-  }
-  return owner_->descriptor(reservation_);
-}
-
-bool PublishSlot::commit_publish() noexcept {
-  if (owner_ == nullptr) {
-    return false;
-  }
-  if (state_ == State::committed) {
-    return true;
-  }
-  if (state_ != State::ready_recorded) {
-    return false;
-  }
-  if (owner_->commit(reservation_)) {
-    state_ = State::committed;
-    return true;
-  }
-  // A failed commit must not make the slot inert while its reservation is
-  // still active. The cancel path is generation-checked as well, so it is
-  // safe to attempt even when the commit failed due to a stale reservation.
-  if (owner_->cancel(reservation_)) {
-    state_ = State::cancelled;
-  }
-  return false;
-}
-
-void PublishSlot::quarantine(const detail::CudaDriverError& error) noexcept {
-  state_ = State::quarantined;
   RCUTILS_LOG_ERROR_NAMED(
       "ros2_cuda_ipc_core.publisher.gpu_buffer_manager",
-      "Ready event recording failed for slot %u generation %u publisher=%s. "
-      "The slot has been quarantined and will not be reused until "
-      "GpuBufferManager is reset. CUDA error: %s",
-      reservation_.slot_id, reservation_.generation,
-      reservation_.shm_name.c_str(), error.to_string().c_str());
+      "Publish preparation failed during %s for slot %u generation %u "
+      "publisher=%s. The slot will not be reused until "
+      "GpuBufferManager is reset.",
+      step, reservation_.slot_id, reservation_.generation,
+      reservation_.shm_name.c_str());
 }
 
 void PublishSlot::cancel() noexcept {
-  if (owner_ != nullptr &&
-      (state_ == State::reserved || state_ == State::ready_recorded)) {
+  if (owner_ != nullptr) {
     if (owner_->cancel(reservation_)) {
-      state_ = State::cancelled;
+      owner_ = nullptr;
+    } else {
+      quarantine("reservation cancellation");
     }
   }
 }

@@ -13,13 +13,12 @@
 namespace {
 
 using ros2_cuda_ipc_core::detail::CudaResult;
-using ros2_cuda_ipc_core::publisher::PreparePublishResult;
 using ros2_cuda_ipc_core::publisher::PublishSlot;
 using ros2_cuda_ipc_core::subscriber::BufferView;
 using BufferDescriptor = ros2_cuda_ipc_core::transport::BufferDescriptor;
 
 using PreparePublish =
-    PreparePublishResult<BufferDescriptor> (PublishSlot::*)(CUstream) noexcept;
+    CudaResult<BufferDescriptor> (PublishSlot::*)(CUstream) noexcept;
 using EnqueueReadyEvent =
     CudaResult<void> (BufferView::*)(CUstream) const noexcept;
 

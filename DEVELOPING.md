@@ -48,9 +48,9 @@ Destroying an uncommitted `PublishSlot` cancels its reservation. The normal
 descriptor construction, and reservation commit are internal implementation
 steps and are not separate publisher-facing operations.
 
-If ready-event recording fails, the slot is quarantined. Its publisher
-reservation is intentionally retained until `GpuBufferManager::reset()` so an
-allocation with unverified GPU work cannot be reused.
+If preparation fails, no descriptor is returned and that slot is not reused
+until `GpuBufferManager::reset()`. This keeps an allocation with unverified GPU
+work from being reused.
 The protocol guarantees and known limitations are specified in
 [doc/lease_protocol.md](doc/lease_protocol.md).
 

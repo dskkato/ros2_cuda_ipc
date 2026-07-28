@@ -30,20 +30,7 @@ std::string unique_name() {
 }  // namespace
 
 using ros2_cuda_ipc_core::publisher::GpuBufferManager;
-using ros2_cuda_ipc_core::publisher::PreparePublishErrorCode;
 using ros2_cuda_ipc_core::publisher::PublishSlot;
-
-TEST(PreparePublishErrorTest, FormatsFailureCodes) {
-  using Error = ros2_cuda_ipc_core::publisher::PreparePublishError;
-  EXPECT_EQ(Error(PreparePublishErrorCode::kInvalidState).to_string(),
-            "invalid_state");
-  EXPECT_EQ(
-      Error(PreparePublishErrorCode::kDescriptorCreationFailed).to_string(),
-      "descriptor_creation_failed");
-  EXPECT_EQ(
-      Error(PreparePublishErrorCode::kReservationCommitFailed).to_string(),
-      "reservation_commit_failed");
-}
 
 static_assert(!std::is_copy_constructible_v<PublishSlot>);
 static_assert(!std::is_copy_assignable_v<PublishSlot>);
@@ -90,7 +77,7 @@ TEST_F(GpuBufferManagerTest, PreparePublishOnCommittedSlotReturnsInvalidState) {
   ASSERT_TRUE(slot->prepare_publish(nullptr));
   const auto result = slot->prepare_publish(nullptr);
   ASSERT_FALSE(result);
-  EXPECT_EQ(result.error().code(), PreparePublishErrorCode::kInvalidState);
+  EXPECT_NE(result.error().to_string().find("CUDA_ERROR"), std::string::npos);
 }
 
 TEST_F(GpuBufferManagerTest, ReadyEventFailureQuarantinesSlot) {
@@ -109,13 +96,7 @@ TEST_F(GpuBufferManagerTest, ReadyEventFailureQuarantinesSlot) {
     const auto result = slot->prepare_publish(
         reinterpret_cast<CUstream>(static_cast<uintptr_t>(1)));
     ASSERT_FALSE(result);
-    EXPECT_EQ(result.error().code(),
-              PreparePublishErrorCode::kReadyEventRecordFailed);
-    EXPECT_NE(result.error().to_string().find("ready_event_record_failed"),
-              std::string::npos);
-    ASSERT_TRUE(result.error().cuda_error().has_value());
-    EXPECT_NE(result.error().cuda_error()->to_string().find("CUDA_ERROR"),
-              std::string::npos);
+    EXPECT_NE(result.error().to_string().find("CUDA_ERROR"), std::string::npos);
     EXPECT_FALSE(slot->valid());
   }
 
@@ -181,35 +162,6 @@ TEST_F(GpuBufferManagerTest, CommittedDestructionKeepsGracePeriod) {
   EXPECT_TRUE(manager.acquire_for_publish().has_value());
 }
 
-TEST_F(GpuBufferManagerTest, FailedCommitDoesNotMarkSlotCommitted) {
-  auto manager = make_manager();
-  ASSERT_TRUE(manager.initialise());
-  auto slot = manager.acquire_for_publish();
-  ASSERT_TRUE(slot.has_value());
-
-  auto mapping = ros2_cuda_ipc_core::lease::LeaseMapping::attach(
-      manager.shm_name(), manager.publisher_instance_id());
-  ASSERT_TRUE(mapping);
-  const auto generation =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_generation(mapping, 0);
-  ASSERT_TRUE(generation.has_value());
-
-  mapping->slot(0)->generation.store(*generation + 1,
-                                     std::memory_order_release);
-  const auto result = slot->prepare_publish(nullptr);
-  ASSERT_FALSE(result);
-  EXPECT_EQ(result.error().code(),
-            PreparePublishErrorCode::kReservationCommitFailed);
-  EXPECT_TRUE(slot->valid());
-
-  // Restore the reservation generation so its cancellation can release the
-  // temporary Publisher reference after the failed-commit check.
-  mapping->slot(0)->generation.store(*generation, std::memory_order_release);
-  slot->cancel();
-  EXPECT_FALSE(slot->valid());
-  EXPECT_TRUE(manager.acquire_for_publish().has_value());
-}
-
 TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
@@ -220,7 +172,7 @@ TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
   EXPECT_EQ(source->device_ptr(), nullptr);
   const auto result = source->prepare_publish(nullptr);
   ASSERT_FALSE(result);
-  EXPECT_EQ(result.error().code(), PreparePublishErrorCode::kInvalidState);
+  EXPECT_NE(result.error().to_string().find("CUDA_ERROR"), std::string::npos);
   EXPECT_TRUE(destination.valid());
   destination.cancel();
   destination.cancel();
