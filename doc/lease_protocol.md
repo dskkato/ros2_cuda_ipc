@@ -107,13 +107,17 @@ CUDA stream で `prepare_publish()` を呼ぶ。この操作が ready event を�
 を作成し、Publisher reservation を commit してから descriptor を返す。成功した
 descriptor は直ちに middleware へ渡す。publish failure は想定しない。
 
-ready event の記録前に reservation が破棄された場合、`PublishSlot` の destructor が
-cancel を実行する。
+ready event の記録に失敗した場合、slot は `quarantined` へ遷移する。GPU work の完了を
+証明できないため、reservation は解放せず、slot は `GpuBufferManager::reset()` まで
+再利用しない。失敗時は descriptor を返さず、commit もしない。
+
+ready event の記録以外の preparation failure では、成功していない後続処理を行わず、
+reservation は通常のcancel経路で解放される。
 
 ### 5.3 prepare と commit
 
-`prepare_publish()` は descriptor 作成後、ROS publish API を呼ぶ前に
-`commit_publish()` を実行する。
+`prepare_publish()` は descriptor 作成後、ROS publish API を呼ぶ前に内部の reservation
+commit 処理を実行する。
 
 commit は次の順で処理する。
 
@@ -134,6 +138,23 @@ reservation は grace period を追加で発生させない。
 reservation の generation が一致しない場合は新しい generation の refcount を誤って
 減らさず、エラーとして扱う。通常の API lifecycle では reservation が保持されている間
 に別 generation へ進むことはない。
+
+### 5.5 quarantine
+
+ready event 記録失敗時の `PreparePublishErrorCode` は
+`kReadyEventRecordFailed` で、元の `CudaDriverError` を参照できる。slot の状態は
+`quarantined` となり、次を満たす。
+
+* descriptorを返さない
+* reservationをcommitまたはcancelしない
+* destructorでもreservationを解放しない
+* `valid()` は false を返す
+* grace period経過だけでは再利用されない
+* `GpuBufferManager::reset()` 後の再初期化でのみpoolを再構築する
+
+quarantined slot は自動回復や自動再利用を行わない。全slotが使用中またはquarantined
+の場合、`acquire_for_publish()` は失敗する。アプリケーションがreset、node再起動、
+process再起動などの復旧方針を決定する。
 
 ## 6. Subscriber acquire と release
 

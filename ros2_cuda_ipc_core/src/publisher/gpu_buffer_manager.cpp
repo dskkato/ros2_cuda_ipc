@@ -3,9 +3,34 @@
 
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_manager.hpp"
 
+#include <rcutils/logging_macros.h>
+
 #include <utility>
 
 namespace ros2_cuda_ipc_core::publisher {
+
+std::string PreparePublishError::to_string() const {
+  std::string result;
+  switch (code_) {
+    case PreparePublishErrorCode::kInvalidState:
+      result = "invalid_state";
+      break;
+    case PreparePublishErrorCode::kReadyEventRecordFailed:
+      result = "ready_event_record_failed";
+      break;
+    case PreparePublishErrorCode::kDescriptorCreationFailed:
+      result = "descriptor_creation_failed";
+      break;
+    case PreparePublishErrorCode::kReservationCommitFailed:
+      result = "reservation_commit_failed";
+      break;
+  }
+  if (cuda_error_) {
+    result += ": ";
+    result += cuda_error_->to_string();
+  }
+  return result;
+}
 
 PublishSlot::PublishSlot(GpuBufferManager* owner,
                          LeaseManager::Reservation reservation) noexcept
@@ -23,7 +48,7 @@ PublishSlot& PublishSlot::operator=(PublishSlot&& other) noexcept {
   return *this;
 }
 
-PublishSlot::~PublishSlot() { cancel(); }
+PublishSlot::~PublishSlot() noexcept { cancel(); }
 
 void PublishSlot::move_from(PublishSlot&& other) noexcept {
   owner_ = other.owner_;
@@ -42,29 +67,32 @@ void* PublishSlot::device_ptr() const noexcept {
   return valid() ? owner_->device_ptr(reservation_) : nullptr;
 }
 
-detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
+PreparePublishResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
     CUstream stream) noexcept {
   if (owner_ == nullptr || state_ != State::reserved) {
-    return detail::CudaResult<transport::BufferDescriptor>::failure(
-        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+    return PreparePublishResult<transport::BufferDescriptor>::failure(
+        PreparePublishError(PreparePublishErrorCode::kInvalidState));
   }
 
   auto ready_result = record_ready(stream);
   if (!ready_result) {
-    return detail::CudaResult<transport::BufferDescriptor>::failure(
-        ready_result.error());
+    return PreparePublishResult<transport::BufferDescriptor>::failure(
+        PreparePublishError(
+            PreparePublishErrorCode::kReadyEventRecordFailed,
+            std::optional<detail::CudaDriverError>(ready_result.error())));
   }
 
   auto result = descriptor();
   if (!result) {
-    return detail::CudaResult<transport::BufferDescriptor>::failure(
-        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+    return PreparePublishResult<transport::BufferDescriptor>::failure(
+        PreparePublishError(
+            PreparePublishErrorCode::kDescriptorCreationFailed));
   }
   if (!commit_publish()) {
-    return detail::CudaResult<transport::BufferDescriptor>::failure(
-        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+    return PreparePublishResult<transport::BufferDescriptor>::failure(
+        PreparePublishError(PreparePublishErrorCode::kReservationCommitFailed));
   }
-  return detail::CudaResult<transport::BufferDescriptor>::success(
+  return PreparePublishResult<transport::BufferDescriptor>::success(
       std::move(*result));
 }
 
@@ -76,6 +104,8 @@ detail::CudaResult<void> PublishSlot::record_ready(CUstream stream) noexcept {
   auto result = owner_->record_ready(reservation_, stream);
   if (result) {
     state_ = State::ready_recorded;
+  } else {
+    quarantine(result.error());
   }
   return result;
 }
@@ -108,6 +138,17 @@ bool PublishSlot::commit_publish() noexcept {
     state_ = State::cancelled;
   }
   return false;
+}
+
+void PublishSlot::quarantine(const detail::CudaDriverError& error) noexcept {
+  state_ = State::quarantined;
+  RCUTILS_LOG_ERROR_NAMED(
+      "ros2_cuda_ipc_core.publisher.gpu_buffer_manager",
+      "Ready event recording failed for slot %u generation %u publisher=%s. "
+      "The slot has been quarantined and will not be reused until "
+      "GpuBufferManager is reset. CUDA error: %s",
+      reservation_.slot_id, reservation_.generation,
+      reservation_.shm_name.c_str(), error.to_string().c_str());
 }
 
 void PublishSlot::cancel() noexcept {

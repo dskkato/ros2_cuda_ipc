@@ -44,8 +44,13 @@ passed directly to `prepare_publish()` and `enqueue_ready_event()`. The stream i
 owned by the application and is only borrowed by the core library.
 
 Destroying an uncommitted `PublishSlot` cancels its reservation. The normal
-`prepare_publish()` path commits before returning; the lower-level
-`record_ready()` and `descriptor()` APIs remain available for compatibility.
+`prepare_publish()` path commits before returning. Ready-event recording,
+descriptor construction, and reservation commit are internal implementation
+steps and are not separate publisher-facing operations.
+
+If ready-event recording fails, the slot is quarantined. Its publisher
+reservation is intentionally retained until `GpuBufferManager::reset()` so an
+allocation with unverified GPU work cannot be reused.
 The protocol guarantees and known limitations are specified in
 [doc/lease_protocol.md](doc/lease_protocol.md).
 
