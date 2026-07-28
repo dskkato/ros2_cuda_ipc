@@ -70,9 +70,8 @@ Publisher instance ID を検証する。
 するときに`SlotMeta`をplacement newで構築する。Subscriberは既存のslotを再構築せずに
 attachする。
 
-`publish_timestamp_us` は `steady_clock` のマイクロ秒値で、最後に commit された publish
-時刻を表す。通常の `prepare_publish()` では、実際の middleware 呼び出しの直前に commit
-される。0 はまだ publish 準備されていない slot を表す。
+`publish_timestamp_us` は `steady_clock` のマイクロ秒値で、最後に成功した
+`prepare_publish()` の commit 時刻を表す。0 はまだ commit されていない slot を表す。
 
 slot の再利用条件は次である。
 
@@ -106,22 +105,21 @@ Subscriber は `refcnt != 0` だけを理由に拒否せず、generation の前�
 ### 5.2 GPU work と ready event
 
 Publisher は取得した device pointer へ GPU work を enqueue し、同じ依存関係を持つ
-CUDA stream で `prepare_publish()` を呼ぶ。この操作は ready event を記録し、descriptor
-を作成し、Publisher reservation を commit してから descriptor を返す。成功した
-descriptor は直ちに middleware へ渡す。commit は次の処理を行う。
+CUDA stream で `prepare_publish()` を呼ぶ。この操作は descriptor を作成し、ready event
+を記録し、Publisher reservation を commit してから descriptor を返す。commit は次の
+処理を行う。
 
 1. reservation の generation が現在の generation と一致することを確認する。
 2. `publish_timestamp_us` を現在時刻へ更新する。
 3. Publisher reservation の `refcnt` を1減少させる。
 
-commit 後も、Subscriber lease が残っていれば slot は再利用できない。commit は GPU work
-完了、Subscriber への配送完了、Subscriber の lease 取得完了を意味しない。middleware
-publish が失敗しない前提のため、commit 時刻は実際の publish 呼び出しよりわずかに早い。
+commit は Publisher reservation を解放する。Subscriber lease が残っていれば slot は
+再利用できない。`prepare_publish()` 後の middleware publish 結果は slot lifecycle へ
+反映されない。descriptor が middleware へ渡されなかった場合も通常の再利用条件に従う。
 
 準備処理のいずれかが失敗した場合、`prepare_publish()` は descriptor を返さない。
-その slot の reservation は解放せず、GPU work の完了を確認できない slot を再利用しない。
-失敗した slot は `GpuBufferManager::reset()` まで再利用されない。呼び出し側は失敗を
-publishせず、必要に応じて manager を reset して再初期化する。
+その slot の reservation は解放せず、`GpuBufferManager::reset()` まで再利用しない。
+library は自動回復を行わない。
 
 ### 5.3 cancel
 
@@ -181,7 +179,7 @@ lease が成立することを防ぐ。
 | --- | --- |
 | reusable slot がない | Publisher の acquire が失敗する |
 | GPU resource 初期化失敗 | 作成済み resource を rollback する |
-| ready event 記録失敗 | 未commit reservation を destructor が cancel する |
+| preparation 失敗 | reservation を保持し、manager reset まで再利用しない |
 | generation mismatch | Subscriber acquire または reservation 完了を失敗させる |
 | Subscriber process crash | refcnt が残り、slot が再利用不能になる可能性がある |
 | 100 ms を超える message 遅延 | slot 再利用後は generation mismatch で drop される可能性がある |

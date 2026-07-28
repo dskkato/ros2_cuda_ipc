@@ -46,6 +46,13 @@ detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
 
+  auto descriptor = owner_->build_descriptor(reservation_);
+  if (!descriptor) {
+    quarantine("descriptor creation");
+    return detail::CudaResult<transport::BufferDescriptor>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+  }
+
   auto ready_result = owner_->record_ready(reservation_, stream);
   if (!ready_result) {
     quarantine("ready event recording", &ready_result.error());
@@ -53,12 +60,6 @@ detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
         ready_result.error());
   }
 
-  auto result = owner_->descriptor(reservation_);
-  if (!result) {
-    quarantine("descriptor creation");
-    return detail::CudaResult<transport::BufferDescriptor>::failure(
-        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
-  }
   if (!owner_->commit(reservation_)) {
     quarantine("reservation commit");
     return detail::CudaResult<transport::BufferDescriptor>::failure(
@@ -66,7 +67,7 @@ detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
   }
   owner_ = nullptr;
   return detail::CudaResult<transport::BufferDescriptor>::success(
-      std::move(*result));
+      std::move(*descriptor));
 }
 
 void PublishSlot::quarantine(const char* step,
@@ -75,20 +76,20 @@ void PublishSlot::quarantine(const char* step,
   if (error != nullptr) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.publisher.gpu_buffer_manager",
-        "Publish preparation failed during %s for slot %u generation %u "
-        "publisher=%s. The slot will not be reused until "
+        "Failed to safely release or publish slot %u generation %u "
+        "publisher=%s during %s. The slot will not be reused until "
         "GpuBufferManager is reset. CUDA error: %s",
-        step, reservation_.slot_id, reservation_.generation,
-        reservation_.shm_name.c_str(), error->to_string().c_str());
+        reservation_.slot_id, reservation_.generation,
+        reservation_.shm_name.c_str(), step, error->to_string().c_str());
     return;
   }
   RCUTILS_LOG_ERROR_NAMED(
       "ros2_cuda_ipc_core.publisher.gpu_buffer_manager",
-      "Publish preparation failed during %s for slot %u generation %u "
-      "publisher=%s. The slot will not be reused until "
+      "Failed to safely release or publish slot %u generation %u "
+      "publisher=%s during %s. The slot will not be reused until "
       "GpuBufferManager is reset.",
-      step, reservation_.slot_id, reservation_.generation,
-      reservation_.shm_name.c_str());
+      reservation_.slot_id, reservation_.generation,
+      reservation_.shm_name.c_str(), step);
 }
 
 void PublishSlot::cancel() noexcept {
@@ -169,7 +170,7 @@ detail::CudaResult<void> GpuBufferManager::record_ready(
   return buffer_pool_.record_ready(reservation.slot_id, stream);
 }
 
-std::optional<transport::BufferDescriptor> GpuBufferManager::descriptor(
+std::optional<transport::BufferDescriptor> GpuBufferManager::build_descriptor(
     const LeaseManager::Reservation& reservation) const {
   const auto* resources = buffer_pool_.resources(reservation.slot_id);
   if (resources == nullptr || !resources->ready_event) {

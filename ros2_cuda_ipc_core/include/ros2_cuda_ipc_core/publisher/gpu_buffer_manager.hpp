@@ -44,14 +44,14 @@ class PublishSlot {
   /// @return Device pointer when the slot is usable; nullptr otherwise.
   void* device_ptr() const noexcept;
 
-  /// Record the ready event, build the descriptor, and commit the reservation.
+  /// Build the descriptor, record the ready event, and commit the reservation.
   ///
-  /// This is the normal publishing path. A successful return marks the slot
-  /// as published before the caller hands the descriptor to middleware.
-  /// Callers should publish the returned descriptor immediately.
+  /// A successful return commits the Publisher reservation. A failed
+  /// preparation leaves the slot unavailable until GpuBufferManager::reset().
+  /// The subsequent middleware publish result does not affect slot lifecycle.
   ///
-  /// @return The descriptor when preparation and commit succeed; a CUDA driver
-  /// error otherwise.
+  /// @return The descriptor when preparation and commit succeed; a failed
+  /// result otherwise.
   [[nodiscard]] detail::CudaResult<transport::BufferDescriptor> prepare_publish(
       CUstream stream) noexcept;
 
@@ -139,7 +139,7 @@ class GpuBufferManager {
   void* device_ptr(const LeaseManager::Reservation& reservation) const noexcept;
   detail::CudaResult<void> record_ready(
       const LeaseManager::Reservation& reservation, CUstream stream) noexcept;
-  std::optional<transport::BufferDescriptor> descriptor(
+  std::optional<transport::BufferDescriptor> build_descriptor(
       const LeaseManager::Reservation& reservation) const;
   bool commit(const LeaseManager::Reservation& reservation) noexcept;
   bool cancel(const LeaseManager::Reservation& reservation) noexcept;

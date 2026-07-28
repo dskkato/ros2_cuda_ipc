@@ -10,7 +10,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -68,7 +67,7 @@ TEST_F(GpuBufferManagerTest, PreparePublishCommitsAndReturnsDescriptor) {
   EXPECT_FALSE(manager.acquire_for_publish().has_value());
 }
 
-TEST_F(GpuBufferManagerTest, PreparePublishOnCommittedSlotReturnsInvalidState) {
+TEST_F(GpuBufferManagerTest, PreparePublishOnCompletedSlotFails) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
   auto slot = manager.acquire_for_publish();
@@ -76,8 +75,7 @@ TEST_F(GpuBufferManagerTest, PreparePublishOnCommittedSlotReturnsInvalidState) {
 
   ASSERT_TRUE(slot->prepare_publish(nullptr));
   const auto result = slot->prepare_publish(nullptr);
-  ASSERT_FALSE(result);
-  EXPECT_NE(result.error().to_string().find("CUDA_ERROR"), std::string::npos);
+  EXPECT_FALSE(result);
 }
 
 TEST_F(GpuBufferManagerTest, ReadyEventFailureQuarantinesSlot) {
@@ -93,8 +91,27 @@ TEST_F(GpuBufferManagerTest, ReadyEventFailureQuarantinesSlot) {
     auto slot = manager.acquire_for_publish();
     ASSERT_TRUE(slot.has_value());
 
-    const auto result = slot->prepare_publish(
-        reinterpret_cast<CUstream>(static_cast<uintptr_t>(1)));
+    CUdevice device = 0;
+    ASSERT_EQ(cuDeviceGet(&device, 0), CUDA_SUCCESS);
+    CUcontext foreign_context = nullptr;
+#if CUDA_VERSION >= 13000
+    ASSERT_EQ(cuCtxCreate(&foreign_context, nullptr, 0, device), CUDA_SUCCESS);
+#else
+    ASSERT_EQ(cuCtxCreate(&foreign_context, 0, device), CUDA_SUCCESS);
+#endif
+    CUstream foreign_stream = nullptr;
+    ASSERT_EQ(cuStreamCreate(&foreign_stream, CU_STREAM_DEFAULT), CUDA_SUCCESS);
+    CUcontext popped_context = nullptr;
+    ASSERT_EQ(cuCtxPopCurrent(&popped_context), CUDA_SUCCESS);
+    ASSERT_EQ(popped_context, foreign_context);
+
+    const auto result = slot->prepare_publish(foreign_stream);
+    ASSERT_EQ(cuCtxPushCurrent(foreign_context), CUDA_SUCCESS);
+    ASSERT_EQ(cuStreamDestroy(foreign_stream), CUDA_SUCCESS);
+    ASSERT_EQ(cuCtxPopCurrent(&popped_context), CUDA_SUCCESS);
+    ASSERT_EQ(popped_context, foreign_context);
+    ASSERT_EQ(cuCtxDestroy(foreign_context), CUDA_SUCCESS);
+
     ASSERT_FALSE(result);
     EXPECT_NE(result.error().to_string().find("CUDA_ERROR"), std::string::npos);
     EXPECT_FALSE(slot->valid());
@@ -104,6 +121,41 @@ TEST_F(GpuBufferManagerTest, ReadyEventFailureQuarantinesSlot) {
       ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(mapping, 0);
   ASSERT_TRUE(refcount.has_value());
   EXPECT_EQ(*refcount, 1u);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  EXPECT_FALSE(manager.acquire_for_publish().has_value());
+
+  manager.reset();
+  ASSERT_TRUE(manager.initialise());
+  EXPECT_TRUE(manager.acquire_for_publish().has_value());
+}
+
+TEST_F(GpuBufferManagerTest, CommitFailureQuarantinesSlot) {
+  auto manager = make_manager();
+  ASSERT_TRUE(manager.initialise());
+  auto mapping = ros2_cuda_ipc_core::lease::LeaseMapping::attach(
+      manager.shm_name(), manager.publisher_instance_id());
+  ASSERT_TRUE(mapping);
+  auto slot = manager.acquire_for_publish();
+  ASSERT_TRUE(slot.has_value());
+
+  const auto generation =
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_generation(mapping, 0);
+  ASSERT_TRUE(generation.has_value());
+  mapping->slot(0)->generation.store(*generation + 1,
+                                     std::memory_order_release);
+
+  const auto result = slot->prepare_publish(nullptr);
+  ASSERT_FALSE(result);
+  EXPECT_FALSE(slot->valid());
+  slot.reset();
+
+  const auto refcount =
+      ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(mapping, 0);
+  ASSERT_TRUE(refcount.has_value());
+  EXPECT_EQ(*refcount, 1u);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
   EXPECT_FALSE(manager.acquire_for_publish().has_value());
 
   manager.reset();
@@ -171,8 +223,7 @@ TEST_F(GpuBufferManagerTest, MovedFromSlotIsInert) {
   EXPECT_FALSE(source->valid());
   EXPECT_EQ(source->device_ptr(), nullptr);
   const auto result = source->prepare_publish(nullptr);
-  ASSERT_FALSE(result);
-  EXPECT_NE(result.error().to_string().find("CUDA_ERROR"), std::string::npos);
+  EXPECT_FALSE(result);
   EXPECT_TRUE(destination.valid());
   destination.cancel();
   destination.cancel();
