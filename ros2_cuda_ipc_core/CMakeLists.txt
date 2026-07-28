@@ -84,8 +84,8 @@ install(DIRECTORY include/
   # cache, and lease handle must not be installed as public headers.
   PATTERN "subscriber/buffer_view.hpp" EXCLUDE
   PATTERN "subscriber/buffer_view_mapper.hpp" EXCLUDE
-  PATTERN "subscriber/ipc_handle_cache.hpp" EXCLUDE
-  PATTERN "lease/lease_handle.hpp" EXCLUDE
+  # PATTERN "subscriber/ipc_handle_cache.hpp" EXCLUDE
+  # PATTERN "lease/lease_handle.hpp" EXCLUDE
   PATTERN "detail/subscriber_read_handle.hpp" EXCLUDE
 )
 
