@@ -52,6 +52,10 @@ def test_views_expose_storage_and_lease_metadata_without_debug_helpers():
     assert buffer.device_ptr != 0
     assert not hasattr(image, "device_ptr")
     assert not hasattr(image._native, "device_ptr")
+    assert not hasattr(image, "slot_id")
+    assert not hasattr(image, "generation")
+    assert not hasattr(image._native, "slot_id")
+    assert not hasattr(image._native, "generation")
     assert image.dtype == "uint8"
     assert not hasattr(image, "dtype_code")
     assert not hasattr(image._native, "dtype_code")

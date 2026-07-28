@@ -125,14 +125,6 @@ class ImageView:
         return self._native.device_id
 
     @property
-    def slot_id(self):
-        return self._native.slot_id
-
-    @property
-    def generation(self):
-        return self._native.generation
-
-    @property
     def shape(self):
         return self._native.shape
 

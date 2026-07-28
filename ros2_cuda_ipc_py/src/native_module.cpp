@@ -398,8 +398,6 @@ class PyImageView {
         valid_(view_->valid()),
         byte_size_(view_->core.byte_size()),
         device_id_(view_->core.device_id()),
-        slot_id_(0),
-        generation_(0),
         shape_(view_->shape),
         strides_(view_->strides),
         dtype_(view_->dtype),
@@ -409,8 +407,6 @@ class PyImageView {
   bool valid() const noexcept { return valid_; }
   uint64_t byte_size() const noexcept { return byte_size_; }
   int device_id() const noexcept { return device_id_; }
-  uint32_t slot_id() const noexcept { return slot_id_; }
-  uint32_t generation() const noexcept { return generation_; }
   py::tuple dlpack_device() const {
     if (!valid_) {
       throw MappingError("cannot export an invalid ImageView through DLPack");
@@ -518,8 +514,6 @@ class PyImageView {
   bool consumed_ = false;
   uint64_t byte_size_ = 0;
   int device_id_ = -1;
-  uint32_t slot_id_ = 0;
-  uint32_t generation_ = 0;
   std::array<uint32_t, 3> shape_{};
   std::array<uint64_t, 3> strides_{};
   ros2_cuda_ipc_core::image::DType dtype_ =
@@ -753,8 +747,6 @@ PYBIND11_MODULE(_native, module) {
       .def_property_readonly("valid", &PyImageView::valid)
       .def_property_readonly("byte_size", &PyImageView::byte_size)
       .def_property_readonly("device_id", &PyImageView::device_id)
-      .def_property_readonly("slot_id", &PyImageView::slot_id)
-      .def_property_readonly("generation", &PyImageView::generation)
       .def_property_readonly("shape", &PyImageView::shape)
       .def_property_readonly("strides", &PyImageView::strides)
       .def_property_readonly("dtype", &PyImageView::dtype)
