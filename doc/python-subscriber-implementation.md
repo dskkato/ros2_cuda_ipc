@@ -11,8 +11,8 @@ binding経由で既存のC++ mapperへ渡す。
 ```text
 rclpy message
     -> Python/C++ descriptor boundary
-    -> C++ BufferViewMapper / ImageViewMapper
-    -> Python BufferView / ImageView
+    -> C++ BufferMapper / typed adapter
+    -> Python ReadHandle / ImageView
     -> DLPack framework object
 ```
 
@@ -32,8 +32,8 @@ C++ coreは次を担当する。
 - messageの検証とgenerationの確認
 - shared-memory slotのlease取得
 - CUDA memory/eventのimportとcache
-- device pointer、ready event、metadataの提供
-- view破棄時のresource cleanup
+- `ReadHandle`からのdevice pointer、ready wait、metadataの提供
+- completion event後のresource/lease cleanup
 
 descriptorで渡すのはmetadataとhandleだけであり、GPU payload bytesはコピーしない。
 node、executor、QoSの管理も`rclpy`に委ねる。
@@ -47,24 +47,25 @@ Python Publisher、任意のROS messageの自動変換、PointCloud2、CPU fallb
 
 ## Ownership model
 
-mapperが返すviewは、imported resourceと`LeaseHandle`を含むnative C++ viewを
-Python objectが保持する。
+`BufferMapper`が返す`ReadHandle`は、imported resourceとpublication leaseを
+Python objectが保持する。DLPackのtyped adapterはmap時にはstreamへbindせず、
+最初の`__dlpack__(stream)`でexport固有のread stateへownershipを移す。
 
 ```text
-Python view
-    -> native C++ view
-        -> BufferView
-            -> imported resource
-            -> LeaseHandle
-                -> shared-memory slot lease
+Python ReadHandle
+    -> native ReadHandle
+        -> imported resource
+        -> publication lease
+            -> shared-memory slot lease
 ```
 
-slotは、最後のnative ownerがleaseを解放するまでpublisherから再利用されない。
-`close()`はそのPython viewが持つnative ownershipを解放し、viewを無効にする。
+slotは、completion event後にdeferred queueがhandle固有のleaseを解放するまで
+publisherから再利用されない。通常のPython `ReadHandle`の`close()`は、そのread
+stateを解放する。DLPack export後のtyped adapterは`close()`できない。
 
-framework objectを作成する場合は、元のviewとは独立したnative ownerを持たせる。
-そのため、元のPython viewを破棄または`close()`しても、framework objectが生きて
-いる間はimported resourceとslot leaseが維持される。
+framework objectを作成する場合は、mapped objectからexport固有のnative read stateへ
+ownershipを移譲する。そのため、DLPack capsuleが生きている間はimported resourceと
+publication leaseが維持される。
 
 ## Framework adapterの原則
 
@@ -73,14 +74,15 @@ lifetimeをnative viewへ接続し、slotの所有権を一方向に拡張する
 
 ```text
 framework object
-    -> retained native view
+    -> retained native read state
         -> imported resource
-        -> LeaseHandle
+        -> publication lease
             -> shared-memory slot
 ```
 
-これはmemoryの所有権であり、CUDA kernelの完了通知ではない。最後のframework object
-だけでなく、元のviewを含む最後のnative ownerが破棄された時点でleaseが解放される。
+これはmemoryの所有権であり、CUDA kernelの完了通知ではない。capsule deleterは
+bind済みconsumer streamへcompletion eventをrecordし、完了を内部queueが確認した後に
+handle固有のresource参照とpublication leaseを解放する。
 
 ## DLPack adapter
 
@@ -108,21 +110,25 @@ DLPackのownership chainは次の通りである。
 ```text
 framework tensor / array
     -> DLPack managed tensor または CuPy owner
-        -> manager context / retained native ImageView
+        -> manager context / retained native read state
             -> imported CUDA resource
-            -> LeaseHandle
+            -> publication lease
                 -> shared-memory slot lease
 ```
 
-capsuleがconsumerに渡された後はmanaged-tensor deleterがretained native viewを
+capsuleがconsumerに渡された後はmanaged-tensor deleterがretained native read stateを
 解放する。未consumeのcapsuleが破棄された場合もcapsule destructorが同じdeleterを
 呼ぶ。capsuleは一度だけconsumeできる。deleterはPython APIやGILを使わない。
 
 `__dlpack_device__()`はCUDA device typeとmapped device IDを返す。`stream=None`は
-legacy default stream、`1`はlegacy default、`2`はper-thread default、`-1`はproducer
-ready waitを要求しない特殊値、`>2`は通常のCUDA stream pointerとして扱う。`0`と
-その他の負値は拒否する。通常streamはnative側でstreamのdeviceとimported allocation
-のdeviceを照合する。
+legacy default stream、`1`はlegacy default、`2`はper-thread default、正の値は
+有効なCUDA stream pointerとして扱う。`-1`はcompletion管理ができないため拒否し、
+`0`とその他の負値も拒否する。completion eventはcapsule公開前に作成し、その後に
+ready waitを指定streamへenqueueする。capsule deleterはbind済みstreamへcompletion
+eventをrecordし、event、resource参照、publication leaseを内部deferred queueへ移す。
+queue workerは項目を順次`cuEventSynchronize`で待つ。metadata参照はexport前後とも
+許可するが、再exportとpublication lifetimeに依存する操作、raw device pointer取得は
+拒否する。
 
 ## CUDA同期とlifetime
 
@@ -132,14 +138,14 @@ producer ready eventの待機と、consumer kernelの完了は別のイベント
 producer ready event wait
     -> consumer work enqueue
     -> stream completion
-    -> framework object / retained owner release
+    -> capsule deleter records completion
+    -> deferred queue waits and releases handle-specific owner
 ```
 
 Python objectのlifetimeとCUDA kernelの実行期間は別である。ready event waitは
-producerの書き込み完了だけを表し、DLPack objectの破棄はconsumer streamの完了を
-表さない。Pythonの参照解放だけではCUDA workの完了は保証されないため、利用者は
-consumer streamの処理が終わるまでframework objectを保持する必要がある。元の
-`ImageView`を`close()`しても、framework objectが生きている間はleaseは保持される。
+producerの書き込み完了を表し、capsule deleterがconsumer streamへのcompletion
+event recordを行う。利用者はframework objectと、bindしたstreamをcompletion record
+完了まで保持する必要がある。import cache entryの破棄方針はcacheが管理する。
 
 逆に、arrayを長く保持するとslot leaseも長く保持され、publisherが利用できるslot数を
 圧迫する可能性がある。stream完了に合わせた自動lease releaseや、同期を伴う

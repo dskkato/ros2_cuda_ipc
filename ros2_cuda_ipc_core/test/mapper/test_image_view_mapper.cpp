@@ -74,7 +74,7 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
   EXPECT_EQ(view.strides[0], 30u);
   EXPECT_EQ(view.encoding, "mono16");
 
-  view.core.reset();
+  view.core = subscriber::ReadHandle{};
   auto after = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after.value(), 0u);

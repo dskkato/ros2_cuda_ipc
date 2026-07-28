@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <string>
 
-#include "ros2_cuda_ipc_core/subscriber/buffer_view.hpp"
+#include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
 #include "std_msgs/msg/header.hpp"
 
 namespace ros2_cuda_ipc_core::image {
@@ -27,7 +27,7 @@ enum class DType : uint8_t {
 
 struct ImageView {
   std_msgs::msg::Header header{};
-  subscriber::BufferView core;
+  subscriber::ReadHandle core;
   std::array<uint32_t, 3> shape{0, 0, 0};
   std::array<uint64_t, 3> strides{0, 0, 0};
   DType dtype = DType::U8;
@@ -35,8 +35,8 @@ struct ImageView {
 
   ImageView() = default;
   ~ImageView() = default;
-  ImageView(const ImageView&) = default;
-  ImageView& operator=(const ImageView&) = default;
+  ImageView(const ImageView&) = delete;
+  ImageView& operator=(const ImageView&) = delete;
   ImageView(ImageView&&) noexcept = default;
   ImageView& operator=(ImageView&&) noexcept = default;
 
@@ -52,10 +52,6 @@ struct ImageView {
   }
 
   uint32_t elem_size_bytes() const noexcept;
-
-  detail::CudaResult<void> enqueue_ready_event(CUstream stream) const noexcept {
-    return core.enqueue_ready_event(stream);
-  }
 
   struct DeviceView {
     uint8_t* data;

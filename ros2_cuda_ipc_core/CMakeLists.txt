@@ -35,6 +35,8 @@ add_library(${PROJECT_NAME}
   src/backend/cuda_ipc/memory_importer.cpp
   src/backend/vmm_fd/memory_backend.cpp
   src/backend/vmm_fd/memory_importer.cpp
+  src/subscriber/read_handle.cpp
+  # Kept only for internal regression tests; legacy headers are not installed.
   src/subscriber/buffer_view.cpp
   src/image/image_view.cpp
   src/pointcloud2/pointcloud2_view.cpp
@@ -42,6 +44,7 @@ add_library(${PROJECT_NAME}
   src/lease/lease_mapping.cpp
   src/lease/lease_handle.cpp
   src/publisher/lease_manager.cpp
+  src/subscriber/buffer_mapper.cpp
   src/subscriber/buffer_view_mapper.cpp
   src/image/image_view_mapper.cpp
   src/pointcloud2/pointcloud2_view_mapper.cpp
@@ -75,6 +78,15 @@ install(TARGETS ${PROJECT_NAME}
 
 install(DIRECTORY include/
   DESTINATION include
+  FILES_MATCHING PATTERN "*.hpp"
+  # Subscriber lifetime machinery is implementation detail.  The supported
+  # subscriber surface is BufferMapper + ReadHandle; the old copyable view,
+  # cache, and lease handle must not be installed as public headers.
+  PATTERN "subscriber/buffer_view.hpp" EXCLUDE
+  PATTERN "subscriber/buffer_view_mapper.hpp" EXCLUDE
+  PATTERN "subscriber/ipc_handle_cache.hpp" EXCLUDE
+  PATTERN "lease/lease_handle.hpp" EXCLUDE
+  PATTERN "detail/subscriber_read_handle.hpp" EXCLUDE
 )
 
 if(BUILD_TESTING)

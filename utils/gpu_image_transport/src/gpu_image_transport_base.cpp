@@ -29,7 +29,7 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
   subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
       input_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
       [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
-        auto view = ros2_cuda_ipc_core::image::map_image_view(message);
+        auto view = ros2_cuda_ipc_core::image::map_image_view(message, stream_);
         if (!view.valid()) {
           RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                "Failed to map received GPU image");
@@ -69,17 +69,7 @@ void GpuImageTransportNodeBase::on_image(
   }
 
   cudaError_t err = cudaSuccess;
-  {
-    NvtxScopedRange wait_range("GpuImageTransportNodeBase::stream_wait_event");
-    auto result = view.enqueue_ready_event(stream_);
-    if (!result) {
-      RCLCPP_ERROR(get_logger(), "enqueue_ready_event failed: %s",
-                   result.error().to_string().c_str());
-      return;
-    }
-  }
-
-  const std::uint64_t bytes_to_copy = view.core.byte_size;
+  const std::uint64_t bytes_to_copy = view.core.byte_size();
   if (bytes_to_copy == 0) {
     return;
   }

@@ -41,11 +41,11 @@ def callback(msg):
 preserves the message's `(rows, cols, channels)` shape, byte strides, and dtype,
 and the returned array keeps the native image lease alive until it is released.
 
-`ImageView` exposes the mapped allocation metadata directly, including
-`device_ptr`, `byte_size`, `device_id`, `slot_id`, `generation`, `shape`,
-`strides`, `dtype`, `encoding`, and `frame_id`. `dtype` is the public dtype
-representation; the numeric `dtype_code` is not exposed. Use the standard
-`__dlpack__()` and `__dlpack_device__()` protocols for framework interop.
+`ImageView` is a typed DLPack projection. It exposes projection metadata such
+as `byte_size`, `device_id`, `shape`, `strides`, `dtype`, `encoding`, and
+`frame_id`, but it never exposes an unbound raw device pointer. The regular
+raw-pointer path is `BufferMapper.map(message, stream)`, which returns a
+`ReadHandle`.
 
 Framework-neutral DLPack consumers use the standard producer protocol:
 
@@ -65,7 +65,7 @@ def callback(message):
 
     consumer_stream.synchronize()
     # Keep tensor (and any result that aliases it) alive until asynchronous
-    # work is complete. The DLPack tensor owns a retained native image view.
+    # work is complete. The DLPack tensor owns the retained native read state.
 ```
 
 CuPy and PyTorch both consume the same DLPack export. The path is zero-copy and
@@ -75,23 +75,32 @@ is:
 ```text
 framework tensor/array
     -> DLPack managed tensor or CuPy owner
-        -> retained native ImageView
+        -> retained native read state
             -> imported CUDA resource
-            -> LeaseHandle
+            -> publication lease
                 -> shared-memory slot lease
 ```
 
-Closing or destroying the original `ImageView` does not release this retained
-owner. The final framework object releases it through the CuPy owner or the
-DLPack managed-tensor deleter. An unconsumed DLPack capsule also releases its
-owner when the capsule is destroyed, and a capsule is single-use.
+The first successful `__dlpack__(stream)` transfers the imported resource and
+publication lease to an export-specific read state. The mapped object is then
+consumed: a second `__dlpack__()` and any publication-lifetime-dependent or
+raw-pointer operation are rejected, while metadata remains readable. An
+unconsumed capsule also releases its owner when the capsule is destroyed, and
+a mapped object permits one export only.
 
-The producer ready event and consumer work completion are separate. The
-consumer stream passed by CuPy or DLPack is made to wait for the producer-ready
-event before the framework object is returned. This does not prove that later
-consumer kernels have completed. Keep the framework object alive until all
-asynchronous CUDA work using its memory has completed; this PR does not release
-leases automatically from stream completion.
+The producer ready event and consumer work completion are separate. For
+DLPack, `__dlpack__(stream)` creates the completion event before publishing the
+capsule, then enqueues the producer-ready wait on the requested stream. The
+capsule deleter records completion on that same stream and puts the event,
+imported-resource reference, and publication lease into an internal deferred
+queue. A process-internal worker waits for queue entries sequentially with
+`cuEventSynchronize` and then releases the handle-specific references; import
+cache entry lifetime is managed independently by the import cache.
+
+`stream=-1` is rejected because completion cannot be managed without a
+consumer stream. `None`, CUDA legacy default stream, per-thread default stream,
+and a valid CUDA stream pointer are supported. The stream bound at export must
+remain valid until the capsule deleter has recorded the completion event.
 
 DLPack support emits the legacy `dltensor` capsule by default for compatibility
 with current CuPy and PyTorch consumers. When `max_version >= (1, 0)` is
@@ -103,7 +112,9 @@ included.
 
 Do not close or release the last array/view owner until all asynchronous CUDA
 work using the array has completed. A mapper should be reused across callbacks
-so its C++ lease and IPC import caches remain effective.
+so its internal lease mapping and IPC import caches remain effective. C++
+`BufferMapper.map()` returns an optional read; the detailed reason for a failed
+map is logged internally, while callers only receive the empty result.
 
 The descriptor boundary also accepts a mapping with `GpuImage` fields. This is
 useful for tests and keeps the extension independent of generated `rclpy`

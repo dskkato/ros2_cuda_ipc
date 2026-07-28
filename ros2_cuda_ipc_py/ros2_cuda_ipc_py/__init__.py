@@ -1,11 +1,11 @@
 """Python subscriber API for ros2_cuda_ipc."""
 
-from ._api import BufferView, BufferViewMapper, ImageMapper, ImageView, MappingError
+from ._api import BufferMapper, ImageMapper, ImageView, MappingError, ReadHandle
 
 __all__ = [
-    "BufferView",
-    "BufferViewMapper",
+    "BufferMapper",
     "ImageMapper",
     "ImageView",
     "MappingError",
+    "ReadHandle",
 ]

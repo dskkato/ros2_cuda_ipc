@@ -1,5 +1,16 @@
 # GPU Zero-Copy Transport Design
 
+> **Current subscriber contract:** the supported low-level subscriber concepts
+> are `BufferMapper` and move-only `ReadHandle`. `BufferMapper::map(message,
+> consumer_stream)` waits for producer readiness and returns an optional
+> `ReadHandle`; the handle owns the imported-resource reference and publication
+> lease, records consumer completion on destruction, and releases both through
+> an internal deferred queue after sequential `cuEventSynchronize`. The old
+> `BufferView`, `LeaseHandle`, import cache, completion-event, and deferred
+> queue types are implementation details and are not installed as public
+> subscriber headers. The older BufferView-oriented sketches below are kept as
+> historical design context.
+
 ## 背景
 
 * ROS 2 標準のゼロコピー (LoanedMessage 等) は **CPU メモリ**のみを対象とする。

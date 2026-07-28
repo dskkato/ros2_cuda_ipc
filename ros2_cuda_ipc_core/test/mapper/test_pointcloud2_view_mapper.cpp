@@ -79,7 +79,7 @@ TEST_F(PointCloud2ViewMapperTest, CopiesLayoutWhenCoreIsValid) {
   EXPECT_EQ(view.fields[1].name, "y");
   EXPECT_EQ(view.fields[1].offset, 4u);
 
-  view.core.reset();
+  view.core = subscriber::ReadHandle{};
   ::shm_unlink(core.shm_name.c_str());
 }
 

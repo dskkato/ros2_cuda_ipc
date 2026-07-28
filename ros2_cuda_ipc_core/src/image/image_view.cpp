@@ -37,7 +37,7 @@ bool ImageView::sanity_check() const noexcept {
       (static_cast<WideUnsigned>(channels() - 1) * strideC()) +
       elem_size_bytes();
   return needed <= std::numeric_limits<uint64_t>::max() &&
-         needed <= core.byte_size;
+         needed <= core.byte_size();
 }
 
 }  // namespace ros2_cuda_ipc_core::image

@@ -77,7 +77,12 @@ class PreviewNode : public rclcpp::Node {
     subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
         input_topic_name_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
         [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
-          auto view = ros2_cuda_ipc_core::image::map_image_view(message);
+          if (ensure_stream(static_cast<int>(message.core.device_id)) !=
+              cudaSuccess) {
+            return;
+          }
+          auto view =
+              ros2_cuda_ipc_core::image::map_image_view(message, stream_);
           if (!view.valid()) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                  "Skipping GPU image mapping failure");
@@ -131,14 +136,6 @@ class PreviewNode : public rclcpp::Node {
       return;
     }
 
-    // Prepare the one non-blocking stream on the source device described by the
-    // ImageView.
-    if (ensure_stream(view.core.device_id) != cudaSuccess) {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                           "Failed to prepare CUDA stream for preview");
-      return;
-    }
-
     sensor_msgs::msg::Image msg;
     // Preserve ROS image metadata while defaulting empty encoding to rgba8 for
     // immediate preview tools.
@@ -167,19 +164,6 @@ class PreviewNode : public rclcpp::Node {
     }
 
     cudaError_t err = cudaSuccess;
-    {
-      // Wait for the publisher's ready event before copying.
-      NvtxScopedRange wait_range("PreviewNode::wait_input_event");
-      auto result = view.enqueue_ready_event(stream_);
-      if (!result) {
-        RCLCPP_WARN(get_logger(), "enqueue_ready_event failed: %s",
-                    result.error().to_string().c_str());
-        cudaEventDestroy(copy_start);
-        cudaEventDestroy(copy_stop);
-        return;
-      }
-    }
-
     {
       // Perform the only full-frame device-to-host copy in this example, then
       // synchronize this stream before publishing.
