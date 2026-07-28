@@ -140,7 +140,8 @@ class GpuImagePublisherNode : public rclcpp::Node {
       return;
     }
 
-NvtxScopedRange prepare_publish_range("GpuImagePublisherNode::prepare_publish");
+    NvtxScopedRange prepare_publish_range(
+        "GpuImagePublisherNode::prepare_publish");
     auto descriptor = slot->prepare_publish(stream_);
     if (!descriptor) {
       RCLCPP_WARN(get_logger(), "prepare_publish failed: %s",
