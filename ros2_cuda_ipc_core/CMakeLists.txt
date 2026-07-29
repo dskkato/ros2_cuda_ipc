@@ -77,10 +77,6 @@ install(TARGETS ${PROJECT_NAME}
 install(DIRECTORY include/
   DESTINATION include
   FILES_MATCHING PATTERN "*.hpp"
-  # Subscriber lifetime machinery is implementation detail. The supported
-  # low-level subscriber surface is BufferMapper + ReadHandle.
-  PATTERN "subscriber/ipc_handle_cache.hpp" EXCLUDE
-  PATTERN "lease/lease_handle.hpp" EXCLUDE
 )
 
 if(BUILD_TESTING)
@@ -93,11 +89,14 @@ if(BUILD_TESTING)
   target_link_libraries(test_lease_mapping_cache ${PROJECT_NAME})
   # mapper tests
   ament_add_gtest(test_buffer_mapper test/mapper/test_buffer_mapper.cpp)
+  target_include_directories(test_buffer_mapper PRIVATE test)
   target_link_libraries(test_buffer_mapper ${PROJECT_NAME})
   ament_add_gtest(test_image_view_mapper test/mapper/test_image_view_mapper.cpp)
+  target_include_directories(test_image_view_mapper PRIVATE test)
   target_link_libraries(test_image_view_mapper ${PROJECT_NAME})
   ament_add_gtest(test_pointcloud2_view_mapper
                   test/mapper/test_pointcloud2_view_mapper.cpp)
+  target_include_directories(test_pointcloud2_view_mapper PRIVATE test)
   target_link_libraries(test_pointcloud2_view_mapper ${PROJECT_NAME})
   ament_add_gtest(test_publisher_messages test/test_publisher_messages.cpp)
   target_link_libraries(test_publisher_messages ${PROJECT_NAME})

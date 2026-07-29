@@ -8,11 +8,11 @@
 #include <cstring>
 #include <utility>
 
-#include "../lease/lease_handle.hpp"
-#include "ipc_handle_cache.hpp"
-#include "lease_mapping_cache.hpp"
-#include "read_handle_factory.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/detail/lease_mapping_cache.hpp"
+#include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
+#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber {

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "lease_handle.hpp"
+#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 
 #include <rcutils/logging_macros.h>
 

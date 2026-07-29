@@ -4,8 +4,8 @@
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 
-#include "../test_mapper_utils.hpp"
 #include "ros2_cuda_ipc_core/image/image_view_mapper.hpp"
+#include "test_mapper_utils.hpp"
 
 namespace ros2_cuda_ipc_core {
 

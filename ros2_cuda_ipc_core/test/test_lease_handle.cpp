@@ -12,7 +12,7 @@
 #include <string>
 #include <thread>
 
-#include "../src/lease/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "test_instance_id.hpp"
 
 namespace {

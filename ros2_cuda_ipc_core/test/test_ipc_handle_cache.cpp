@@ -8,7 +8,7 @@
 #include <thread>
 #include <vector>
 
-#include "../src/subscriber/ipc_handle_cache.hpp"
+#include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "test_instance_id.hpp"
 
 namespace ros2_cuda_ipc_core {

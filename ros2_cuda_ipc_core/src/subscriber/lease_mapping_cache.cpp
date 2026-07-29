@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "lease_mapping_cache.hpp"
+#include "ros2_cuda_ipc_core/detail/lease_mapping_cache.hpp"
 
 #include <utility>
 

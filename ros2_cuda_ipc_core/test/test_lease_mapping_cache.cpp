@@ -19,8 +19,8 @@
 #include <utility>
 #include <vector>
 
-#include "../src/lease/lease_handle.hpp"
-#include "../src/subscriber/lease_mapping_cache.hpp"
+#include "ros2_cuda_ipc_core/detail/lease_mapping_cache.hpp"
+#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "test_instance_id.hpp"
 
 namespace {

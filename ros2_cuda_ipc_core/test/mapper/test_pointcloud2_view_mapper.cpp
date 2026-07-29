@@ -4,9 +4,9 @@
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 
-#include "../test_mapper_utils.hpp"
 #include "ros2_cuda_ipc_core/pointcloud2/pointcloud2_view_mapper.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
+#include "test_mapper_utils.hpp"
 
 namespace ros2_cuda_ipc_core {
 

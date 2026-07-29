@@ -13,7 +13,7 @@
 #include <string>
 #include <utility>
 
-#include "../lease/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 namespace {

@@ -12,11 +12,11 @@
 #include <thread>
 #include <utility>
 
-#include "../lease/lease_handle.hpp"
-#include "read_handle_factory.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_binding.hpp"
+#include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
+#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber {
 namespace {
