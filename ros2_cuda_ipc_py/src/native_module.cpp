@@ -16,7 +16,7 @@
 #include <string>
 #include <utility>
 
-#include "ros2_cuda_ipc_core/detail/read_handle_binding.hpp"
+#include "ros2_cuda_ipc_core/detail/image_view_dlpack.hpp"
 #include "ros2_cuda_ipc_core/image/image_view_mapper.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_py/dlpack/image_tensor_descriptor.hpp"
@@ -308,9 +308,10 @@ void populate_dlpack_tensor(ManagedTensor& managed,
   tensor.byte_offset = context.tensor.byte_offset;
 }
 
-py::capsule make_legacy_dlpack_capsule(
+py::capsule prepare_legacy_dlpack_capsule(
     const dlpack::ImageTensorDescriptor& tensor,
-    std::unique_ptr<ros2_cuda_ipc_core::image::ImageView>& owner) {
+    std::unique_ptr<ros2_cuda_ipc_core::image::ImageView>& owner,
+    DlpackExportContext*& prepared_context) {
   auto context = std::make_unique<DlpackExportContext>();
   context->tensor = tensor;
   context->owner = std::move(owner);
@@ -322,7 +323,7 @@ py::capsule make_legacy_dlpack_capsule(
     auto* managed_ptr = managed.release();
     try {
       py::capsule capsule(managed_ptr, kDLPackName, &dlpack_capsule_destructor);
-      context.release();
+      prepared_context = context.release();
       return capsule;
     } catch (...) {
       owner = std::move(context->owner);
@@ -338,9 +339,10 @@ py::capsule make_legacy_dlpack_capsule(
   }
 }
 
-py::capsule make_versioned_dlpack_capsule(
+py::capsule prepare_versioned_dlpack_capsule(
     const dlpack::ImageTensorDescriptor& tensor,
-    std::unique_ptr<ros2_cuda_ipc_core::image::ImageView>& owner) {
+    std::unique_ptr<ros2_cuda_ipc_core::image::ImageView>& owner,
+    DlpackExportContext*& prepared_context) {
   auto context = std::make_unique<DlpackExportContext>();
   context->tensor = tensor;
   context->owner = std::move(owner);
@@ -355,7 +357,7 @@ py::capsule make_versioned_dlpack_capsule(
     try {
       py::capsule capsule(managed_ptr, kVersionedDLPackName,
                           &dlpack_capsule_destructor);
-      context.release();
+      prepared_context = context.release();
       return capsule;
     } catch (...) {
       owner = std::move(context->owner);
@@ -396,8 +398,12 @@ class PyImageView {
       : view_(std::make_unique<ros2_cuda_ipc_core::image::ImageView>(
             std::move(view))),
         valid_(view_->valid()),
-        byte_size_(view_->core.byte_size()),
-        device_id_(view_->core.device_id()),
+        byte_size_(
+            ros2_cuda_ipc_core::image::detail::DLPackImageView::byte_size(
+                *view_)),
+        device_id_(
+            ros2_cuda_ipc_core::image::detail::DLPackImageView::device_id(
+                *view_)),
         shape_(view_->shape),
         strides_(view_->strides),
         dtype_(view_->dtype),
@@ -470,33 +476,48 @@ class PyImageView {
       throw py::buffer_error(error.what());
     }
 
-    const bool bound = [&]() {
-      py::gil_scoped_release release;
-      return ros2_cuda_ipc_core::subscriber::detail::ReadHandleAccess::bind(
-          view_->core, reinterpret_cast<CUstream>(stream_ptr));
-    }();
-    if (!bound) {
-      throw std::runtime_error("CUDA ready-event wait failed");
-    }
-
     auto pending = std::move(view_);
-    std::optional<py::capsule> capsule;
+    DlpackExportContext* prepared_context = nullptr;
+    py::capsule capsule;
     try {
       if (versioned) {
-        capsule.emplace(make_versioned_dlpack_capsule(tensor, pending));
+        capsule =
+            prepare_versioned_dlpack_capsule(tensor, pending, prepared_context);
       } else {
-        capsule.emplace(make_legacy_dlpack_capsule(tensor, pending));
+        capsule =
+            prepare_legacy_dlpack_capsule(tensor, pending, prepared_context);
       }
     } catch (...) {
-      if (pending) {
-        ros2_cuda_ipc_core::subscriber::detail::ReadHandleAccess::unbind(
-            pending->core);
-        view_ = std::move(pending);
+      view_ = std::move(pending);
+      throw;
+    }
+
+    // The capsule and its managed state are already allocated.  Binding is
+    // the last fallible step before publication; on failure the capsule
+    // destructor drops an empty context after its publication owner is moved
+    // back to this mapped object.
+    try {
+      bool bound = false;
+      if (prepared_context != nullptr && prepared_context->owner) {
+        py::gil_scoped_release release;
+        bound = ros2_cuda_ipc_core::image::detail::DLPackImageView::bind(
+            *prepared_context->owner, reinterpret_cast<CUstream>(stream_ptr));
+      }
+      if (!bound) {
+        if (prepared_context != nullptr) {
+          view_ = std::move(prepared_context->owner);
+        }
+        throw std::runtime_error("CUDA ready-event wait failed");
+      }
+    } catch (...) {
+      if (prepared_context != nullptr && prepared_context->owner) {
+        view_ = std::move(prepared_context->owner);
       }
       throw;
     }
+
     consumed_ = true;
-    return std::move(*capsule);
+    return capsule;
   }
 
   void close() {

@@ -7,12 +7,21 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
 #include "std_msgs/msg/header.hpp"
 
+namespace ros2_cuda_ipc_core::subscriber::detail {
+class MappedPublication;
+}
+
 namespace ros2_cuda_ipc_core::image {
+
+namespace detail {
+struct DLPackImageView;
+}
 
 enum class DType : uint8_t {
   U8 = 0,
@@ -33,12 +42,12 @@ struct ImageView {
   DType dtype = DType::U8;
   std::string encoding;
 
-  ImageView() = default;
-  ~ImageView() = default;
+  ImageView() noexcept;
+  ~ImageView() noexcept;
   ImageView(const ImageView&) = delete;
   ImageView& operator=(const ImageView&) = delete;
-  ImageView(ImageView&&) noexcept = default;
-  ImageView& operator=(ImageView&&) noexcept = default;
+  ImageView(ImageView&&) noexcept;
+  ImageView& operator=(ImageView&&) noexcept;
 
   uint32_t rows() const noexcept { return shape[0]; }
   uint32_t cols() const noexcept { return shape[1]; }
@@ -47,9 +56,7 @@ struct ImageView {
   uint64_t strideW() const noexcept { return strides[1]; }
   uint64_t strideC() const noexcept { return strides[2]; }
 
-  bool valid() const noexcept {
-    return core.valid() && rows() > 0 && cols() > 0;
-  }
+  bool valid() const noexcept;
 
   uint32_t elem_size_bytes() const noexcept;
 
@@ -76,6 +83,12 @@ struct ImageView {
   }
 
   bool sanity_check() const noexcept;
+
+ private:
+  std::unique_ptr<subscriber::detail::MappedPublication> publication_;
+
+  friend class ImageViewMapper;
+  friend struct detail::DLPackImageView;
 };
 
 }  // namespace ros2_cuda_ipc_core::image

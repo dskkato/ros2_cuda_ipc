@@ -44,7 +44,7 @@ TEST_F(ImageViewMapperTest, InvalidCoreReturnsDefaultImageView) {
   ::shm_unlink(shm_name.c_str());
 }
 
-TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
+TEST_F(ImageViewMapperTest, CopiesMetadataWhenPublicationIsValid) {
   auto core = test::make_seeded_buffer_core_message("image_mapper_valid", 21);
 
   ros2_cuda_ipc_msgs::msg::GpuImage msg;
@@ -64,7 +64,8 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
 
   image::ImageViewMapper mapper;
   auto view = mapper.map(msg);
-  ASSERT_TRUE(view.core.valid());
+  ASSERT_TRUE(view.valid());
+  EXPECT_FALSE(view.core.valid());
   auto during = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(during.has_value());
   EXPECT_EQ(during.value(), 1u);
@@ -74,7 +75,35 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenCoreIsValid) {
   EXPECT_EQ(view.strides[0], 30u);
   EXPECT_EQ(view.encoding, "mono16");
 
-  view.core = subscriber::ReadHandle{};
+  view = image::ImageView{};
+  auto after = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
+  ASSERT_TRUE(after.has_value());
+  EXPECT_EQ(after.value(), 0u);
+  ::shm_unlink(core.shm_name.c_str());
+}
+
+TEST_F(ImageViewMapperTest, DlpackMappingKeepsPublicationUnbound) {
+  auto core = test::make_seeded_buffer_core_message("image_mapper_dlpack", 41);
+
+  ros2_cuda_ipc_msgs::msg::GpuImage msg;
+  msg.dtype = static_cast<uint8_t>(image::DType::U8);
+  msg.shape = {2, 3, 4};
+  msg.strides = {12, 4, 1};
+  msg.core = core;
+
+  auto mapping =
+      lease::LeaseMapping::attach(core.shm_name, core.publisher_instance_id);
+  ASSERT_TRUE(mapping);
+
+  image::ImageViewMapper mapper;
+  auto view = mapper.map_for_dlpack(msg);
+  ASSERT_TRUE(view.valid());
+  EXPECT_FALSE(view.core.valid());
+  auto during = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
+  ASSERT_TRUE(during.has_value());
+  EXPECT_EQ(during.value(), 1u);
+
+  view = image::ImageView{};
   auto after = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after.value(), 0u);

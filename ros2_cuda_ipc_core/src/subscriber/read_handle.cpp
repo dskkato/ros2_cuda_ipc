@@ -14,7 +14,6 @@
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
-#include "ros2_cuda_ipc_core/detail/read_handle_binding.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 
@@ -256,6 +255,39 @@ bool enqueue_ready_event(
 
 }  // namespace
 
+namespace detail {
+
+MappedPublication::MappedPublication(
+    std::shared_ptr<const backend::ImportedResources> resource,
+    std::unique_ptr<lease::LeaseHandle> lease, std::size_t byte_size,
+    int device_id) noexcept
+    : resource_(std::move(resource)),
+      lease_(std::move(lease)),
+      byte_size_(byte_size),
+      device_id_(device_id) {}
+
+MappedPublication::~MappedPublication() noexcept = default;
+
+MappedPublication::MappedPublication(MappedPublication&& other) noexcept =
+    default;
+
+MappedPublication& MappedPublication::operator=(
+    MappedPublication&& other) noexcept = default;
+
+bool MappedPublication::valid() const noexcept {
+  return resource_ && resource_->dev_ptr != nullptr && lease_ != nullptr;
+}
+
+void* MappedPublication::device_ptr() const noexcept {
+  return resource_ ? resource_->dev_ptr : nullptr;
+}
+
+std::size_t MappedPublication::byte_size() const noexcept { return byte_size_; }
+
+int MappedPublication::device_id() const noexcept { return device_id_; }
+
+}  // namespace detail
+
 struct ReadHandle::Impl {
   std::shared_ptr<const backend::ImportedResources> resource;
   std::unique_ptr<lease::LeaseHandle> lease;
@@ -343,61 +375,48 @@ int ReadHandle::device_id() const noexcept {
 
 namespace detail {
 
-std::optional<ReadHandle> ReadHandleFactory::make_unbound(
+std::unique_ptr<MappedPublication> ReadHandleFactory::make_publication(
     std::shared_ptr<const backend::ImportedResources> resource,
     std::unique_ptr<lease::LeaseHandle> lease, std::size_t byte_size,
     int device_id) {
   if (!resource || !lease || resource->dev_ptr == nullptr) {
+    return nullptr;
+  }
+
+  return std::unique_ptr<MappedPublication>(new MappedPublication(
+      std::move(resource), std::move(lease), byte_size, device_id));
+}
+
+std::optional<ReadHandle> ReadHandleFactory::make_bound(
+    MappedPublication& publication, CUstream consumer_stream) {
+  if (!publication.valid()) {
     return std::nullopt;
   }
 
+  if (!validate_stream(publication.resource_, consumer_stream)) {
+    return std::nullopt;
+  }
+
+  // Allocate the complete bound state before enqueueing anything.  If any of
+  // these operations fails, publication ownership is untouched.
   auto impl = std::make_unique<ReadHandle::Impl>();
-  impl->resource = std::move(resource);
-  impl->lease = std::move(lease);
-  impl->byte_size = byte_size;
-  impl->device_id = device_id;
-  return ReadHandle(std::move(impl));
-}
-
-bool ReadHandleAccess::bind(ReadHandle& handle,
-                            CUstream consumer_stream) noexcept {
-  if (!handle.impl_ || !handle.impl_->resource || !handle.impl_->lease ||
-      handle.impl_->completion) {
-    return false;
-  }
-  if (!validate_stream(handle.impl_->resource, consumer_stream)) {
-    return false;
-  }
-  auto completion = create_completion_event(handle.impl_->resource->context);
-  if (handle.impl_->resource->context && !completion) {
-    return false;
-  }
-  if (!enqueue_ready_event(handle.impl_->resource, consumer_stream)) {
-    return false;
-  }
-  handle.impl_->consumer_stream = consumer_stream;
-  handle.impl_->completion = std::move(completion);
-  return true;
-}
-
-void ReadHandleAccess::unbind(ReadHandle& handle) noexcept {
-  if (!handle.impl_) {
-    return;
-  }
-  handle.impl_->completion.reset();
-  handle.impl_->consumer_stream = nullptr;
-}
-
-std::optional<ReadHandle> ReadHandleFactory::make(
-    std::shared_ptr<const backend::ImportedResources> resource,
-    std::unique_ptr<lease::LeaseHandle> lease, std::size_t byte_size,
-    int device_id, CUstream consumer_stream) {
-  auto handle =
-      make_unbound(std::move(resource), std::move(lease), byte_size, device_id);
-  if (!handle || !ReadHandleAccess::bind(*handle, consumer_stream)) {
+  impl->byte_size = publication.byte_size_;
+  impl->device_id = publication.device_id_;
+  auto completion = create_completion_event(publication.resource_->context);
+  if (publication.resource_->context && !completion) {
     return std::nullopt;
   }
-  return handle;
+
+  if (!enqueue_ready_event(publication.resource_, consumer_stream)) {
+    return std::nullopt;
+  }
+
+  impl->consumer_stream = consumer_stream;
+  impl->completion = std::move(completion);
+  // This is the ownership commit.  No fallible operation follows it.
+  impl->resource = std::move(publication.resource_);
+  impl->lease = std::move(publication.lease_);
+  return ReadHandle(std::move(impl));
 }
 
 }  // namespace detail

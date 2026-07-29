@@ -15,8 +15,8 @@ namespace ros2_cuda_ipc_core::image {
 class ImageViewMapper;
 }
 
-namespace ros2_cuda_ipc_core::pointcloud2 {
-class PointCloud2ViewMapper;
+namespace ros2_cuda_ipc_core::subscriber::detail {
+class MappedPublication;
 }
 
 namespace ros2_cuda_ipc_core::subscriber {
@@ -39,14 +39,13 @@ class BufferMapper {
                                 CUstream consumer_stream) const;
 
  private:
-  std::optional<ReadHandle> map_unbound(
+  std::unique_ptr<detail::MappedPublication> map_publication(
       const ros2_cuda_ipc_msgs::msg::BufferCore& msg) const;
 
   class Impl;
   std::unique_ptr<Impl> impl_;
 
   friend class ros2_cuda_ipc_core::image::ImageViewMapper;
-  friend class ros2_cuda_ipc_core::pointcloud2::PointCloud2ViewMapper;
 };
 
 }  // namespace ros2_cuda_ipc_core::subscriber

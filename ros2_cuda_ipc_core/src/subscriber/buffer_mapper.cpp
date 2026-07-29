@@ -34,22 +34,21 @@ bool is_supported_backend(uint8_t backend) noexcept {
              transport::to_backend_byte(transport::MemoryBackendKind::VMM_FD);
 }
 
-std::optional<ReadHandle> map_descriptor(
+std::unique_ptr<detail::MappedPublication> map_descriptor(
     const std::shared_ptr<detail::LeaseMappingCache>& mapping_cache,
-    const ros2_cuda_ipc_msgs::msg::BufferCore& msg, CUstream consumer_stream,
-    bool bind_stream) {
+    const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
   if (!is_supported_backend(static_cast<uint8_t>(msg.backend))) {
     RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_mapper",
                            "Unsupported BufferCore.backend=%u",
                            static_cast<unsigned>(msg.backend));
-    return std::nullopt;
+    return nullptr;
   }
 
   const PublisherInstanceId instance_id = msg.publisher_instance_id;
   if (is_nil(instance_id)) {
     RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_mapper",
                            "BufferCore publisher_instance_id is nil");
-    return std::nullopt;
+    return nullptr;
   }
 
   auto mapping = mapping_cache->get_or_attach(msg.shm_name, instance_id);
@@ -59,7 +58,7 @@ std::optional<ReadHandle> map_descriptor(
     RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_mapper",
                            "Failed to acquire lease shm=%s slot=%u gen=%u",
                            msg.shm_name.c_str(), msg.slot_id, msg.generation);
-    return std::nullopt;
+    return nullptr;
   }
   auto lease_ptr = std::make_unique<lease::LeaseHandle>(std::move(lease));
 
@@ -81,31 +80,22 @@ std::optional<ReadHandle> map_descriptor(
           "ros2_cuda_ipc_core.subscriber.buffer_mapper",
           "Failed to import GPU resource shm=%s slot=%u gen=%u",
           msg.shm_name.c_str(), msg.slot_id, msg.generation);
-      return std::nullopt;
+      return nullptr;
     }
     imported = IpcHandleCache::instance().insert_or_discard_duplicate(
         key, std::move(*opened));
   }
 
-  std::optional<ReadHandle> read;
-  if (bind_stream) {
-    read = detail::ReadHandleFactory::make(
-        std::move(imported), std::move(lease_ptr),
-        static_cast<std::size_t>(msg.byte_size),
-        static_cast<int>(msg.device_id), consumer_stream);
-  } else {
-    read = detail::ReadHandleFactory::make_unbound(
-        std::move(imported), std::move(lease_ptr),
-        static_cast<std::size_t>(msg.byte_size),
-        static_cast<int>(msg.device_id));
-  }
-  if (!read) {
+  auto publication = detail::ReadHandleFactory::make_publication(
+      std::move(imported), std::move(lease_ptr),
+      static_cast<std::size_t>(msg.byte_size), static_cast<int>(msg.device_id));
+  if (!publication) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to create GPU read for shm=%s slot=%u gen=%u",
+        "Failed to create mapped publication for shm=%s slot=%u gen=%u",
         msg.shm_name.c_str(), msg.slot_id, msg.generation);
   }
-  return read;
+  return publication;
 }
 
 }  // namespace
@@ -124,12 +114,25 @@ BufferMapper& BufferMapper::operator=(BufferMapper&&) noexcept = default;
 std::optional<ReadHandle> BufferMapper::map(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
     CUstream consumer_stream) const {
-  return map_descriptor(impl_->mapping_cache, msg, consumer_stream, true);
+  auto publication = map_publication(msg);
+  if (!publication) {
+    return std::nullopt;
+  }
+
+  auto read =
+      detail::ReadHandleFactory::make_bound(*publication, consumer_stream);
+  if (!read) {
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.subscriber.buffer_mapper",
+        "Failed to bind mapped publication for shm=%s slot=%u gen=%u",
+        msg.shm_name.c_str(), msg.slot_id, msg.generation);
+  }
+  return read;
 }
 
-std::optional<ReadHandle> BufferMapper::map_unbound(
+std::unique_ptr<detail::MappedPublication> BufferMapper::map_publication(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) const {
-  return map_descriptor(impl_->mapping_cache, msg, nullptr, false);
+  return map_descriptor(impl_->mapping_cache, msg);
 }
 
 }  // namespace ros2_cuda_ipc_core::subscriber

@@ -5,6 +5,8 @@
 
 #include <utility>
 
+#include "ros2_cuda_ipc_core/detail/mapped_publication.hpp"
+
 namespace ros2_cuda_ipc_core::image {
 
 namespace {
@@ -43,13 +45,13 @@ ImageView ImageViewMapper::map(
 
 ImageView ImageViewMapper::map_for_dlpack(
     const ros2_cuda_ipc_msgs::msg::GpuImage& msg) const {
-  auto core = buffer_mapper_.map_unbound(msg.core);
-  if (!core) {
+  auto publication = buffer_mapper_.map_publication(msg.core);
+  if (!publication) {
     return ImageView{};
   }
 
   ImageView mapped_view;
-  mapped_view.core = std::move(*core);
+  mapped_view.publication_ = std::move(publication);
   mapped_view.dtype = static_cast<DType>(msg.dtype);
   mapped_view.shape = msg.shape;
   mapped_view.strides = msg.strides;

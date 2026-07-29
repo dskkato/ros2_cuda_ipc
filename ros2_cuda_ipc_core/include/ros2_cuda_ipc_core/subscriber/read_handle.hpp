@@ -3,27 +3,12 @@
 
 #pragma once
 
-#include <cuda.h>
-
 #include <cstddef>
-#include <cstdint>
 #include <memory>
-#include <optional>
-
-namespace ros2_cuda_ipc_core::backend {
-struct ImportedResources;
-}
-
-namespace ros2_cuda_ipc_core::lease {
-class LeaseHandle;
-}
 
 namespace ros2_cuda_ipc_core::subscriber {
 
-class ReadHandle;
-
 namespace detail {
-struct ReadHandleAccess;
 struct ReadHandleFactory;
 }  // namespace detail
 
@@ -62,8 +47,6 @@ class ReadHandle {
 
   std::unique_ptr<Impl> impl_;
 
-  friend class BufferMapper;
-  friend struct detail::ReadHandleAccess;
   friend struct detail::ReadHandleFactory;
 };
 

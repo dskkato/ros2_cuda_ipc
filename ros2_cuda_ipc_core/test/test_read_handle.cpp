@@ -61,11 +61,16 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> make_read_handle(
   resource->dev_ptr = reinterpret_cast<void*>(0x1000);
   resource->event = producer_event;
   resource->context = context;
-  return ros2_cuda_ipc_core::subscriber::detail::ReadHandleFactory::make(
-      std::move(resource),
-      std::make_unique<ros2_cuda_ipc_core::lease::LeaseHandle>(
-          std::move(lease)),
-      64, 0, consumer_stream);
+  auto publication = ros2_cuda_ipc_core::subscriber::detail::ReadHandleFactory::
+      make_publication(std::move(resource),
+                       std::make_unique<ros2_cuda_ipc_core::lease::LeaseHandle>(
+                           std::move(lease)),
+                       64, 0);
+  if (!publication) {
+    return std::nullopt;
+  }
+  return ros2_cuda_ipc_core::subscriber::detail::ReadHandleFactory::make_bound(
+      *publication, consumer_stream);
 }
 
 TEST(ReadHandleTest, DriverWaitAcceptsRuntimeCreatedStream) {

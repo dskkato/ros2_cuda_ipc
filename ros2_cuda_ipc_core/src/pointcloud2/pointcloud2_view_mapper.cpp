@@ -52,28 +52,7 @@ PointCloud2View PointCloud2ViewMapper::map(
 
 PointCloud2View PointCloud2ViewMapper::map(
     const ros2_cuda_ipc_msgs::msg::GpuPointCloud2& msg) const {
-  auto core = buffer_mapper_.map_unbound(msg.core);
-  PointCloud2View mapped_view;
-  mapped_view.header = msg.header;
-  if (!core) {
-    return mapped_view;
-  }
-  mapped_view.core = std::move(*core);
-  mapped_view.height = msg.height;
-  mapped_view.width = msg.width;
-  mapped_view.point_step = msg.point_step;
-  mapped_view.row_step = msg.row_step;
-  mapped_view.is_dense = msg.is_dense;
-  mapped_view.fields.reserve(msg.fields.size());
-  for (const auto& field : msg.fields) {
-    PointCloud2View::Field converted;
-    converted.name = field.name;
-    converted.offset = field.offset;
-    converted.datatype = field.datatype;
-    converted.count = field.count;
-    mapped_view.fields.emplace_back(std::move(converted));
-  }
-  return mapped_view;
+  return map(msg, CU_STREAM_LEGACY);
 }
 
 PointCloud2View map_pointcloud2_view(

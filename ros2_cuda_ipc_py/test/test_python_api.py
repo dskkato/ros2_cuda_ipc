@@ -122,6 +122,9 @@ def test_dlpack_rejects_stride_not_representable_in_elements():
     image = ImageMapper().map(malformed)
     with pytest.raises(BufferError, match="divisible"):
         image.__dlpack__(stream=1)
+    assert probe.refcount() == 1
+    with pytest.raises(BufferError, match="divisible"):
+        image.__dlpack__(stream=1)
     image.close()
     del image
     gc.collect()
