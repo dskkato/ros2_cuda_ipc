@@ -10,18 +10,12 @@
 #include <memory>
 #include <string>
 
+#include "ros2_cuda_ipc_core/detail/image_view_dlpack.hpp"
+#include "ros2_cuda_ipc_core/detail/mapped_publication.hpp"
 #include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
 #include "std_msgs/msg/header.hpp"
 
-namespace ros2_cuda_ipc_core::subscriber::detail {
-class MappedPublication;
-}
-
 namespace ros2_cuda_ipc_core::image {
-
-namespace detail {
-struct DLPackImageView;
-}
 
 enum class DType : uint8_t {
   U8 = 0,

@@ -8,15 +8,12 @@
 #include <memory>
 #include <optional>
 
+#include "ros2_cuda_ipc_core/detail/mapped_publication.hpp"
 #include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
 namespace ros2_cuda_ipc_core::image {
 class ImageViewMapper;
-}
-
-namespace ros2_cuda_ipc_core::subscriber::detail {
-class MappedPublication;
 }
 
 namespace ros2_cuda_ipc_core::subscriber {

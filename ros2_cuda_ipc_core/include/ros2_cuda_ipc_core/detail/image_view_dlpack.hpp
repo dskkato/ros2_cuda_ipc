@@ -7,9 +7,11 @@
 
 #include <cstddef>
 
-#include "ros2_cuda_ipc_core/image/image_view.hpp"
+namespace ros2_cuda_ipc_core::image {
 
-namespace ros2_cuda_ipc_core::image::detail {
+struct ImageView;
+
+namespace detail {
 
 /// Internal DLPack boundary for the typed ImageView adapter.
 struct DLPackImageView {
@@ -19,4 +21,6 @@ struct DLPackImageView {
   static int device_id(const ImageView& view) noexcept;
 };
 
-}  // namespace ros2_cuda_ipc_core::image::detail
+}  // namespace detail
+
+}  // namespace ros2_cuda_ipc_core::image
