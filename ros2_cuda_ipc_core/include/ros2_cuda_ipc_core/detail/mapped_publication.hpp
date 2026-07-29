@@ -6,13 +6,8 @@
 #include <cstddef>
 #include <memory>
 
-namespace ros2_cuda_ipc_core::backend {
-struct ImportedResources;
-}
-
-namespace ros2_cuda_ipc_core::lease {
-class LeaseHandle;
-}
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber::detail {
 
