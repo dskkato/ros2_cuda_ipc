@@ -9,8 +9,8 @@
 #include <memory>
 #include <optional>
 
+#include "../lease/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber::detail {

@@ -6,81 +6,17 @@
 #include <rcutils/logging_macros.h>
 
 #include <cstring>
-#include <functional>
-#include <mutex>
-#include <string>
-#include <unordered_map>
 #include <utility>
 
+#include "../lease/lease_handle.hpp"
+#include "ipc_handle_cache.hpp"
+#include "lease_mapping_cache.hpp"
 #include "read_handle_factory.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
-#include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber {
 namespace {
-
-class LeaseMappingCache {
- public:
-  using AttachFn = std::function<std::shared_ptr<lease::LeaseMapping>(
-      const std::string&, const PublisherInstanceId&)>;
-
-  explicit LeaseMappingCache(AttachFn attach_fn = lease::LeaseMapping::attach)
-      : attach_fn_(std::move(attach_fn)) {}
-
-  std::shared_ptr<lease::LeaseMapping> get_or_attach(
-      const std::string& shm_name,
-      const PublisherInstanceId& publisher_instance_id) const {
-    const Key key{shm_name, publisher_instance_id};
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      const auto it = mappings_.find(key);
-      if (it != mappings_.end()) {
-        return it->second;
-      }
-    }
-
-    auto candidate = attach_fn_(shm_name, publisher_instance_id);
-    if (!candidate) {
-      return nullptr;
-    }
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto [it, inserted] = mappings_.emplace(key, std::move(candidate));
-    (void)inserted;
-    return it->second;
-  }
-
- private:
-  struct Key {
-    std::string shm_name;
-    PublisherInstanceId publisher_instance_id{};
-
-    bool operator==(const Key& other) const noexcept {
-      return shm_name == other.shm_name &&
-             publisher_instance_id == other.publisher_instance_id;
-    }
-  };
-
-  struct KeyHash {
-    std::size_t operator()(const Key& key) const noexcept {
-      std::size_t hash = std::hash<std::string>{}(key.shm_name);
-      for (const uint8_t byte : key.publisher_instance_id) {
-        hash ^= static_cast<std::size_t>(byte) +
-                static_cast<std::size_t>(0x9e3779b9) + (hash << 6) +
-                (hash >> 2);
-      }
-      return hash;
-    }
-  };
-
-  AttachFn attach_fn_;
-  mutable std::mutex mutex_;
-  mutable std::unordered_map<Key, std::shared_ptr<lease::LeaseMapping>, KeyHash>
-      mappings_;
-};
 
 CUipcEventHandle to_cuda_event_handle(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
@@ -99,7 +35,7 @@ bool is_supported_backend(uint8_t backend) noexcept {
 }
 
 std::optional<ReadHandle> map_descriptor(
-    const std::shared_ptr<LeaseMappingCache>& mapping_cache,
+    const std::shared_ptr<detail::LeaseMappingCache>& mapping_cache,
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg, CUstream consumer_stream,
     bool bind_stream) {
   if (!is_supported_backend(static_cast<uint8_t>(msg.backend))) {
@@ -176,8 +112,8 @@ std::optional<ReadHandle> map_descriptor(
 
 class BufferMapper::Impl {
  public:
-  std::shared_ptr<LeaseMappingCache> mapping_cache =
-      std::make_shared<LeaseMappingCache>();
+  std::shared_ptr<detail::LeaseMappingCache> mapping_cache =
+      std::make_shared<detail::LeaseMappingCache>();
 };
 
 BufferMapper::BufferMapper() : impl_(std::make_unique<Impl>()) {}

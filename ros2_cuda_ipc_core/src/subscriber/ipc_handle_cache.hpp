@@ -10,7 +10,6 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-#include <utility>
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
@@ -36,38 +35,27 @@ struct IpcHandleKeyHash {
   std::size_t operator()(const IpcHandleKey& key) const noexcept;
 };
 
+/// Internal cache for imported CUDA resources.
 class IpcHandleCache {
  public:
-  // The callback is copied into each Entry's shared_ptr deleter.  It may run
-  // after this cache instance has been destroyed, so callers must provide a
-  // self-contained callback and must not capture references to the cache or
-  // other state with a shorter lifetime than the returned Entry.
   using ReleaseFn = std::function<void(const backend::ImportedResources&)>;
   using Entry = std::shared_ptr<const backend::ImportedResources>;
 
   explicit IpcHandleCache(
       ReleaseFn release_fn = backend::release_imported_resources_best_effort);
-
   ~IpcHandleCache();
 
   static IpcHandleCache& instance();
 
   Entry find(const IpcHandleKey& key) const;
-
   Entry insert_or_discard_duplicate(const IpcHandleKey& key,
                                     backend::ImportedResources imported);
-
-  /// Remove all cached references without affecting resources held by views.
   void clear();
-
   std::size_t size() const;
 
  private:
   ReleaseFn release_fn_;
   mutable std::mutex mutex_;
-  // Keep imported resources alive between messages.  BufferView also keeps a
-  // shared ownership reference so clearing the cache cannot invalidate an
-  // active view.
   std::unordered_map<IpcHandleKey, Entry, IpcHandleKeyHash> cache_;
 };
 

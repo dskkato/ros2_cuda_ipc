@@ -106,9 +106,9 @@ memo:
 * 各 fields[i].offset + sizeof(type) * count <= point_step
 * width * height == N ⇒ point_step > 0
 
-### 2. 内部型 (C++ View)
+### 2. 旧設計資料 (Historical; 現行APIではない)
 
-#### BufferView
+#### BufferView (廃止済み)
 
   * BufferCore.msg を Subscriber mapper が import した結果（ImportedResources、LeaseHandle）。
   * データの解釈は持たない。
@@ -270,7 +270,7 @@ Publisher は wire message を直接構築し、Subscriber は Mapper API で明
 #pragma once
 #include <cstdint>
 #include <string>
-#include <ros2_cuda_ipc_core/subscriber/buffer_view.hpp>
+// Historical example only. The BufferView header is no longer provided.
 
 namespace ros2_cuda_ipc_core::image {
 
@@ -438,7 +438,7 @@ struct PointCloud2View {
 * DeviceField 配列は デバイスメモリに一度コピーしてキャッシュするとよい。
 * BufferView がハンドル情報を共有するため、この View もコピー可能。
 
-### 3. 受信変換層 (Mapper)
+### 3. 旧受信変換層 (Historical; 現行APIではない)
 
 対応表:
 

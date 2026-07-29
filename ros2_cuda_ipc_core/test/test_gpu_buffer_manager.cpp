@@ -15,8 +15,8 @@
 #include <thread>
 #include <type_traits>
 
+#include "../src/lease/lease_handle.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_manager.hpp"
 
 namespace {

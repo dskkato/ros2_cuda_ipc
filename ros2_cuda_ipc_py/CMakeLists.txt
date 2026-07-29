@@ -35,6 +35,12 @@ target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_VERSION="0.3.0")
 if(BUILD_TESTING)
   target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT)
   target_include_directories(_native PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/test)
+  # Test-only native helpers exercise the core's private cache/lease types.
+  # Those headers are intentionally excluded from the installed public API,
+  # so use the sibling core source tree instead of depending on stale install
+  # output from an earlier colcon build.
+  target_include_directories(
+    _native PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../ros2_cuda_ipc_core/include)
 endif()
 
 ament_python_install_package(ros2_cuda_ipc_py)

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
+#include "ipc_handle_cache.hpp"
 
 #include <memory>
 

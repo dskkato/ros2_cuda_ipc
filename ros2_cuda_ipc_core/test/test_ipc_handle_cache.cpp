@@ -8,8 +8,7 @@
 #include <thread>
 #include <vector>
 
-#include "ros2_cuda_ipc_core/subscriber/buffer_view.hpp"
-#include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
+#include "../src/subscriber/ipc_handle_cache.hpp"
 #include "test_instance_id.hpp"
 
 namespace ros2_cuda_ipc_core {
@@ -123,17 +122,16 @@ TEST(IpcHandleCacheTest, ClearDoesNotReleaseActiveResources) {
   backend::ImportedResources imported;
   imported.dev_ptr = reinterpret_cast<void*>(0x9090);
   auto entry = cache.insert_or_discard_duplicate(key, std::move(imported));
-  subscriber::BufferView view;
-  view.set_imported_resource(entry);
+  auto active_resource = entry;
   entry.reset();
 
   cache.clear();
 
   EXPECT_EQ(released.load(), 0);
   EXPECT_EQ(cache.size(), 0u);
-  ASSERT_TRUE(view.valid());
-  EXPECT_EQ(view.device_ptr(), reinterpret_cast<void*>(0x9090));
-  view.reset();
+  ASSERT_TRUE(active_resource);
+  EXPECT_EQ(active_resource->dev_ptr, reinterpret_cast<void*>(0x9090));
+  active_resource.reset();
   EXPECT_EQ(released.load(), 1);
 }
 
@@ -213,7 +211,7 @@ TEST(IpcHandleCacheTest, CacheHitReusesTheSameEntry) {
   EXPECT_EQ(released.load(), 1);
 }
 
-TEST(IpcHandleCacheTest, EntryRemainsCachedAfterBufferViewIsDestroyed) {
+TEST(IpcHandleCacheTest, EntryRemainsCachedAfterExternalOwnerIsDestroyed) {
   std::atomic<int> released{0};
   subscriber::IpcHandleCache cache(
       [&released](const backend::ImportedResources&) {
@@ -226,10 +224,9 @@ TEST(IpcHandleCacheTest, EntryRemainsCachedAfterBufferViewIsDestroyed) {
   auto entry = cache.insert_or_discard_duplicate(key, std::move(imported));
   const auto* address = entry.get();
   {
-    subscriber::BufferView view;
-    view.set_imported_resource(entry);
+    auto external_owner = entry;
     entry.reset();
-    ASSERT_TRUE(view.valid());
+    ASSERT_TRUE(external_owner);
   }
 
   EXPECT_EQ(released.load(), 0);
@@ -319,7 +316,7 @@ TEST(IpcHandleCacheTest, CleanupIsOutsideMutexAndDoesNotPropagateExceptions) {
   EXPECT_EQ(released.load(), 1);
 }
 
-TEST(IpcHandleCacheTest, BufferViewCopiesShareImportedResourceOwnership) {
+TEST(IpcHandleCacheTest, ExternalOwnersShareImportedResourceOwnership) {
   std::atomic<int> released{0};
   auto* imported = new backend::ImportedResources();
   imported->dev_ptr = reinterpret_cast<void*>(0xb0b0);
@@ -329,21 +326,20 @@ TEST(IpcHandleCacheTest, BufferViewCopiesShareImportedResourceOwnership) {
         delete value;
       });
 
-  subscriber::BufferView first;
-  first.set_imported_resource(resource);
-  subscriber::BufferView second = first;
+  auto first = resource;
+  auto second = first;
   resource.reset();
   first.reset();
 
   EXPECT_EQ(released.load(), 0);
-  EXPECT_TRUE(second.valid());
-  EXPECT_EQ(second.device_ptr(), reinterpret_cast<void*>(0xb0b0));
+  EXPECT_TRUE(second);
+  EXPECT_EQ(second->dev_ptr, reinterpret_cast<void*>(0xb0b0));
 
   second.reset();
   EXPECT_EQ(released.load(), 1);
 }
 
-TEST(IpcHandleCacheTest, BufferViewSurvivesCacheClear) {
+TEST(IpcHandleCacheTest, ExternalOwnerSurvivesCacheClear) {
   std::atomic<int> released{0};
   subscriber::IpcHandleCache cache(
       [&released](const backend::ImportedResources&) {
@@ -354,16 +350,15 @@ TEST(IpcHandleCacheTest, BufferViewSurvivesCacheClear) {
   imported.dev_ptr = reinterpret_cast<void*>(0xc0c0);
 
   auto entry = cache.insert_or_discard_duplicate(key, std::move(imported));
-  subscriber::BufferView view;
-  view.set_imported_resource(entry);
+  auto external_owner = entry;
   entry.reset();
   cache.clear();
 
-  EXPECT_TRUE(view.valid());
-  EXPECT_EQ(view.device_ptr(), reinterpret_cast<void*>(0xc0c0));
+  EXPECT_TRUE(external_owner);
+  EXPECT_EQ(external_owner->dev_ptr, reinterpret_cast<void*>(0xc0c0));
   EXPECT_EQ(released.load(), 0);
 
-  view.reset();
+  external_owner.reset();
   EXPECT_EQ(released.load(), 1);
 }
 

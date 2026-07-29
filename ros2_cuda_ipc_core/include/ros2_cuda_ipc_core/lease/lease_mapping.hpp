@@ -29,7 +29,8 @@ static_assert(alignof(SlotMeta) >= alignof(std::atomic<uint64_t>));
 ///
 /// The object deliberately has no process-global cache. Callers that need to
 /// share a mapping must retain the returned shared_ptr. The subscriber's
-/// LeaseMappingCache is one such owner and retains mappings between messages.
+/// internal mapping cache is one such owner and retains mappings between
+/// messages.
 class LeaseMapping {
  public:
   /// Create and map a new shared-memory lease pool exclusively.

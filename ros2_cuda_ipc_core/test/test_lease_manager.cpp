@@ -13,8 +13,8 @@
 #include <string>
 #include <thread>
 
+#include "../src/lease/lease_handle.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/publisher/lease_manager.hpp"
 
 namespace {

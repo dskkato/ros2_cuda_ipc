@@ -39,11 +39,11 @@ publisher->publish(make_message(descriptor.value()));
 event, and commits the reservation. On failure, it returns no descriptor and
 retains the reservation until `GpuBufferManager::reset()`.
 
-The public ready-event APIs use the CUDA Driver API stream type `CUstream`.
+The public stream-taking APIs use the CUDA Driver API stream type `CUstream`.
 Applications that use the CUDA Runtime API include
 `<cuda_runtime_api.h>` themselves; a Runtime-created `cudaStream_t` can be
-passed directly to `prepare_publish()` and `enqueue_ready_event()`. The stream is
-owned by the application and is only borrowed by the core library.
+passed directly to `prepare_publish()`. The stream is owned by the application
+and is only borrowed by the core library.
 
 Destroying a slot before preparation cancels its reservation. A successful
 preparation commits it. The subsequent middleware publish result does not

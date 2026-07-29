@@ -36,8 +36,7 @@ add_library(${PROJECT_NAME}
   src/backend/vmm_fd/memory_backend.cpp
   src/backend/vmm_fd/memory_importer.cpp
   src/subscriber/read_handle.cpp
-  # Kept only for internal regression tests; legacy headers are not installed.
-  src/subscriber/buffer_view.cpp
+  src/subscriber/lease_mapping_cache.cpp
   src/image/image_view.cpp
   src/pointcloud2/pointcloud2_view.cpp
   src/subscriber/ipc_handle_cache.cpp
@@ -45,7 +44,6 @@ add_library(${PROJECT_NAME}
   src/lease/lease_handle.cpp
   src/publisher/lease_manager.cpp
   src/subscriber/buffer_mapper.cpp
-  src/subscriber/buffer_view_mapper.cpp
   src/image/image_view_mapper.cpp
   src/pointcloud2/pointcloud2_view_mapper.cpp
   src/transport/message_utils.cpp
@@ -79,14 +77,10 @@ install(TARGETS ${PROJECT_NAME}
 install(DIRECTORY include/
   DESTINATION include
   FILES_MATCHING PATTERN "*.hpp"
-  # Subscriber lifetime machinery is implementation detail.  The supported
-  # subscriber surface is BufferMapper + ReadHandle; the old copyable view,
-  # cache, and lease handle must not be installed as public headers.
-  PATTERN "subscriber/buffer_view.hpp" EXCLUDE
-  PATTERN "subscriber/buffer_view_mapper.hpp" EXCLUDE
-  # PATTERN "subscriber/ipc_handle_cache.hpp" EXCLUDE
-  # PATTERN "lease/lease_handle.hpp" EXCLUDE
-  PATTERN "detail/subscriber_read_handle.hpp" EXCLUDE
+  # Subscriber lifetime machinery is implementation detail. The supported
+  # low-level subscriber surface is BufferMapper + ReadHandle.
+  PATTERN "subscriber/ipc_handle_cache.hpp" EXCLUDE
+  PATTERN "lease/lease_handle.hpp" EXCLUDE
 )
 
 if(BUILD_TESTING)
@@ -98,8 +92,8 @@ if(BUILD_TESTING)
   ament_add_gtest(test_lease_mapping_cache test/test_lease_mapping_cache.cpp)
   target_link_libraries(test_lease_mapping_cache ${PROJECT_NAME})
   # mapper tests
-  ament_add_gtest(test_buffer_view_mapper test/mapper/test_buffer_view_mapper.cpp)
-  target_link_libraries(test_buffer_view_mapper ${PROJECT_NAME})
+  ament_add_gtest(test_buffer_mapper test/mapper/test_buffer_mapper.cpp)
+  target_link_libraries(test_buffer_mapper ${PROJECT_NAME})
   ament_add_gtest(test_image_view_mapper test/mapper/test_image_view_mapper.cpp)
   target_link_libraries(test_image_view_mapper ${PROJECT_NAME})
   ament_add_gtest(test_pointcloud2_view_mapper
@@ -112,8 +106,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME} CUDA::cudart)
   ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
   target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME} CUDA::cudart)
-  ament_add_gtest(test_ready_event_driver test/test_ready_event_driver.cpp)
-  target_link_libraries(test_ready_event_driver ${PROJECT_NAME} CUDA::cudart)
+  ament_add_gtest(test_read_handle test/test_read_handle.cpp)
+  target_link_libraries(test_read_handle ${PROJECT_NAME} CUDA::cudart)
   ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
   target_link_libraries(test_lease_manager ${PROJECT_NAME})
   ament_add_gtest(test_cuda_driver_context test/test_cuda_driver_context.cpp)
