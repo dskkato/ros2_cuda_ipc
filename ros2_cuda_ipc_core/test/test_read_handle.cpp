@@ -45,9 +45,13 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> make_read_handle(
   }
   auto reservation =
       ros2_cuda_ipc_core::lease::LeaseHandle::reserve_for_publish(mapping);
-  if (!reservation ||
-      !ros2_cuda_ipc_core::lease::LeaseHandle::commit_publish(
+  if (!reservation) {
+    return std::nullopt;
+  }
+  if (!ros2_cuda_ipc_core::lease::LeaseHandle::commit_publish(
           mapping, reservation->slot_id, reservation->generation)) {
+    (void)ros2_cuda_ipc_core::lease::LeaseHandle::cancel_publish(
+        mapping, reservation->slot_id, reservation->generation);
     return std::nullopt;
   }
   auto lease = ros2_cuda_ipc_core::lease::LeaseHandle::acquire(

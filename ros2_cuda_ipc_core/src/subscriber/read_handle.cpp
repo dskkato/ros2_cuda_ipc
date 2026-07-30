@@ -7,6 +7,7 @@
 
 #include <condition_variable>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <new>
 #include <thread>
@@ -70,44 +71,34 @@ class DeferredReleaseQueue {
     return *queue;
   }
 
-  void enqueue(DeferredItem item) noexcept {
+  void enqueue(DeferredItem* item) noexcept {
     try {
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        items_.emplace_back(std::move(item));
+        items_.emplace_back(item);
       }
       condition_.notify_one();
     } catch (...) {
       // Keeping the item alive is safer than releasing a lease before the
-      // consumer stream has completed.  The queue is intentionally process
-      // lifetime, so an allocation failure is recorded as a held item.
+      // consumer stream has completed.  The item is intentionally leaked so
+      // its resource, completion event, and lease are all retained.
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.subscriber.read_handle",
           "Failed to enqueue deferred GPU read release; retaining lease");
-      auto* retained = new (std::nothrow) DeferredItem(std::move(item));
-      if (retained == nullptr) {
-        // There is no safe release path after the completion handoff.  Leak
-        // the lease/resource on this exceptional allocation-failure path.
-        (void)item.lease.release();
-      }
     }
   }
 
-  void retain_failed(DeferredItem item) noexcept {
+  void retain_failed(DeferredItem* item) noexcept {
     try {
       std::lock_guard<std::mutex> lock(mutex_);
-      failed_.emplace_back(std::move(item));
+      failed_.emplace_back(item);
     } catch (...) {
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.subscriber.read_handle",
           "Failed to retain failed GPU read release; lease remains held by "
           "the process-lifetime read state");
-      // There is no safe release path after completion recording failed.
-      // The item is intentionally leaked on this exceptional path.
-      auto* retained = new (std::nothrow) DeferredItem(std::move(item));
-      if (retained == nullptr) {
-        (void)item.lease.release();
-      }
+      // There is no safe release path after completion recording failed.  The
+      // item is intentionally leaked so all of its ownership is retained.
     }
   }
 
@@ -116,31 +107,32 @@ class DeferredReleaseQueue {
 
   void run() noexcept {
     while (true) {
-      DeferredItem item;
+      DeferredItem* item = nullptr;
       {
         std::unique_lock<std::mutex> lock(mutex_);
         condition_.wait(lock, [this]() { return !items_.empty(); });
-        item = std::move(items_.front());
+        item = items_.front();
         items_.pop_front();
       }
 
-      if (!item.completion || !item.completion->context ||
-          item.completion->event == nullptr) {
+      if (!item->completion || !item->completion->context ||
+          item->completion->event == nullptr) {
+        delete item;
         continue;
       }
 
-      auto guard_result = item.completion->context->push_current();
+      auto guard_result = item->completion->context->push_current();
       if (!guard_result) {
         RCUTILS_LOG_ERROR_NAMED(
             "ros2_cuda_ipc_core.subscriber.read_handle",
             "Failed to activate CUDA context while waiting for completion "
             "event: %s",
             guard_result.error().to_string().c_str());
-        retain_failed(std::move(item));
+        retain_failed(item);
         continue;
       }
       auto guard = std::move(guard_result).value();
-      const CUresult result = cuEventSynchronize(item.completion->event);
+      const CUresult result = cuEventSynchronize(item->completion->event);
       if (result != CUDA_SUCCESS) {
         RCUTILS_LOG_ERROR_NAMED(
             "ros2_cuda_ipc_core.subscriber.read_handle",
@@ -148,23 +140,24 @@ class DeferredReleaseQueue {
             ros2_cuda_ipc_core::detail::CudaDriverError(result)
                 .to_string()
                 .c_str());
-        retain_failed(std::move(item));
+        retain_failed(item);
         continue;
       }
 
       // The item is destroyed only after the event has completed.  Its
       // completion event is destroyed first, then the resource deleter and
       // lease handle release their handle-specific ownership.
-      item.completion.reset();
-      item.resource.reset();
-      item.lease.reset();
+      item->completion.reset();
+      item->resource.reset();
+      item->lease.reset();
+      delete item;
     }
   }
 
   std::mutex mutex_;
   std::condition_variable condition_;
-  std::deque<DeferredItem> items_;
-  std::deque<DeferredItem> failed_;
+  std::deque<DeferredItem*> items_;
+  std::deque<DeferredItem*> failed_;
   std::thread worker_;
 };
 
@@ -291,6 +284,7 @@ int MappedPublication::device_id() const noexcept { return device_id_; }
 struct ReadHandle::Impl {
   std::shared_ptr<const backend::ImportedResources> resource;
   std::unique_ptr<lease::LeaseHandle> lease;
+  std::unique_ptr<DeferredItem> deferred_item;
   std::size_t byte_size = 0;
   int device_id = -1;
   CUstream consumer_stream = nullptr;
@@ -307,16 +301,39 @@ struct ReadHandle::Impl {
       completion.reset();
       resource.reset();
       lease.reset();
+      deferred_item.reset();
       return;
     }
+
+    auto submit = [this](bool failed) noexcept {
+      auto* item = deferred_item.release();
+      item->completion = std::move(completion);
+      item->resource = std::move(resource);
+      item->lease = std::move(lease);
+      try {
+        auto& queue = DeferredReleaseQueue::instance();
+        if (failed) {
+          queue.retain_failed(item);
+        } else {
+          queue.enqueue(item);
+        }
+      } catch (...) {
+        // No destructor may run here: retaining the raw item keeps the
+        // resource, completion event, and lease alive if queue initialization
+        // or worker creation fails.
+        RCUTILS_LOG_ERROR_NAMED(
+            "ros2_cuda_ipc_core.subscriber.read_handle",
+            "Failed to initialize deferred GPU read release queue; retaining "
+            "publication lease");
+      }
+    };
 
     auto guard_result = completion->context->push_current();
     if (guard_result) {
       auto guard = std::move(guard_result).value();
       const CUresult result = cuEventRecord(completion->event, consumer_stream);
       if (result == CUDA_SUCCESS) {
-        DeferredReleaseQueue::instance().enqueue(DeferredItem{
-            std::move(completion), std::move(resource), std::move(lease)});
+        submit(false);
         consumer_stream = nullptr;
         return;
       }
@@ -333,8 +350,7 @@ struct ReadHandle::Impl {
           "retaining publication lease");
     }
 
-    DeferredReleaseQueue::instance().retain_failed(DeferredItem{
-        std::move(completion), std::move(resource), std::move(lease)});
+    submit(true);
     consumer_stream = nullptr;
   }
 };
@@ -400,6 +416,7 @@ std::optional<ReadHandle> ReadHandleFactory::make_bound(
   // Allocate the complete bound state before enqueueing anything.  If any of
   // these operations fails, publication ownership is untouched.
   auto impl = std::make_unique<ReadHandle::Impl>();
+  impl->deferred_item = std::make_unique<DeferredItem>();
   impl->byte_size = publication.byte_size_;
   impl->device_id = publication.device_id_;
   auto completion = create_completion_event(publication.resource_->context);
