@@ -9,24 +9,24 @@
 #include <optional>
 #include <string>
 
-#include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
 #include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 
-class LeaseManager {
+class BufferMetadataManager {
  public:
   struct Reservation {
-    std::shared_ptr<lease::LeaseMapping> mapping;
+    std::shared_ptr<buffer_metadata::BufferMetadata> mapping;
     uint32_t slot_id = 0;
     uint32_t generation = 0;
     std::string shm_name;
     PublisherInstanceId publisher_instance_id{};
   };
 
-  LeaseManager(std::string shm_name_prefix, std::size_t slot_count);
+  BufferMetadataManager(std::string shm_name_prefix, std::size_t slot_count);
 
-  ~LeaseManager();
+  ~BufferMetadataManager();
 
   bool initialise();
   void reset() noexcept;
@@ -44,7 +44,7 @@ class LeaseManager {
   PublisherInstanceId publisher_instance_id_{};
   std::size_t slot_count_;
   mutable std::mutex mutex_;
-  std::shared_ptr<lease::LeaseMapping> mapping_;
+  std::shared_ptr<buffer_metadata::BufferMetadata> mapping_;
   bool initialised_ = false;
 };
 

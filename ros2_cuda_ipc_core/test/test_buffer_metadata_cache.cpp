@@ -19,8 +19,8 @@
 #include <utility>
 #include <vector>
 
-#include "ros2_cuda_ipc_core/detail/lease_mapping_cache.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
+#include "ros2_cuda_ipc_core/detail/buffer_metadata_cache.hpp"
 #include "test_instance_id.hpp"
 
 namespace {
@@ -57,18 +57,19 @@ struct FactoryState {
   std::atomic<std::size_t> attach_count{0};
   std::atomic<std::size_t> destroy_count{0};
   std::atomic<std::size_t> observed_cache_size{999};
-  std::atomic<ros2_cuda_ipc_core::subscriber::detail::LeaseMappingCache*> cache{
-      nullptr};
+  std::atomic<ros2_cuda_ipc_core::subscriber::detail::BufferMetadataCache*>
+      cache{nullptr};
   std::mutex mutex;
   std::vector<std::string> shm_names;
 };
 
-std::shared_ptr<ros2_cuda_ipc_core::lease::LeaseMapping> make_counted_mapping(
+std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata>
+make_counted_mapping(
     const std::shared_ptr<FactoryState>& state,
     const ros2_cuda_ipc_core::PublisherInstanceId& publisher_instance_id,
     const std::string& prefix) {
   const std::string shm_name = make_unique_shm_name(prefix);
-  auto owner = ros2_cuda_ipc_core::lease::LeaseMapping::create(
+  auto owner = ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(
       shm_name, publisher_instance_id, 1);
   if (!owner) {
     return nullptr;
@@ -79,9 +80,10 @@ std::shared_ptr<ros2_cuda_ipc_core::lease::LeaseMapping> make_counted_mapping(
   }
 
   auto* mapping = owner.get();
-  return std::shared_ptr<ros2_cuda_ipc_core::lease::LeaseMapping>(
-      mapping, [state, owner = std::move(owner)](
-                   ros2_cuda_ipc_core::lease::LeaseMapping*) mutable noexcept {
+  return std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata>(
+      mapping,
+      [state, owner = std::move(owner)](ros2_cuda_ipc_core::buffer_metadata::
+                                            BufferMetadata*) mutable noexcept {
         if (auto* cache = state->cache.load()) {
           state->observed_cache_size.store(cache->size());
         }
@@ -90,7 +92,7 @@ std::shared_ptr<ros2_cuda_ipc_core::lease::LeaseMapping> make_counted_mapping(
       });
 }
 
-ros2_cuda_ipc_core::subscriber::detail::LeaseMappingCache::AttachFn
+ros2_cuda_ipc_core::subscriber::detail::BufferMetadataCache::AttachFn
 make_factory(const std::shared_ptr<FactoryState>& state,
              const std::string& prefix) {
   return [state, prefix](
@@ -105,23 +107,24 @@ make_factory(const std::shared_ptr<FactoryState>& state,
 
 namespace ros2_cuda_ipc_core {
 
-using subscriber::detail::LeaseMappingCache;
+using subscriber::detail::BufferMetadataCache;
 
-TEST(LeaseMappingCacheTest, ReusesMappingAcrossCallbackLocalLeases) {
+TEST(BufferMetadataCacheTest, ReusesMappingAcrossCallbackLocalBufferRefs) {
   auto state = std::make_shared<FactoryState>();
-  LeaseMappingCache cache(make_factory(state, "lease_cache_reuse"));
+  BufferMetadataCache cache(make_factory(state, "buffer_ref_cache_reuse"));
   state->cache.store(&cache);
 
-  const std::string logical_shm_name = "/logical_lease_cache_reuse";
+  const std::string logical_shm_name = "/logical_buffer_metadata_cache_reuse";
   const auto instance_id = test::publisher_instance_id(logical_shm_name);
   auto first = cache.get_or_attach(logical_shm_name, instance_id);
   ASSERT_TRUE(first);
 
-  auto reservation = lease::LeaseHandle::reserve_for_publish(first);
+  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(first);
   ASSERT_TRUE(reservation.has_value());
   const auto slot_id = reservation->slot_id;
   const auto generation = reservation->generation;
-  ASSERT_TRUE(lease::LeaseHandle::commit_publish(first, slot_id, generation));
+  ASSERT_TRUE(
+      buffer_metadata::BufferRef::commit_publish(first, slot_id, generation));
   reservation.reset();
 
   for (int i = 0; i < 1000; ++i) {
@@ -129,8 +132,9 @@ TEST(LeaseMappingCacheTest, ReusesMappingAcrossCallbackLocalLeases) {
     ASSERT_TRUE(mapping);
     EXPECT_EQ(mapping.get(), first.get());
     {
-      auto lease = lease::LeaseHandle::acquire(mapping, slot_id, generation);
-      ASSERT_TRUE(lease.valid());
+      auto buffer_ref =
+          buffer_metadata::BufferRef::acquire(mapping, slot_id, generation);
+      ASSERT_TRUE(buffer_ref.valid());
     }
   }
 
@@ -145,15 +149,16 @@ TEST(LeaseMappingCacheTest, ReusesMappingAcrossCallbackLocalLeases) {
   EXPECT_EQ(state->observed_cache_size.load(), 0u);
 }
 
-TEST(LeaseMappingCacheTest, ClearReleasesMappingWithoutActiveLease) {
+TEST(BufferMetadataCacheTest, ClearReleasesMappingWithoutActiveBufferRef) {
   auto state = std::make_shared<FactoryState>();
-  LeaseMappingCache cache(make_factory(state, "lease_cache_clear"));
+  BufferMetadataCache cache(make_factory(state, "buffer_ref_cache_clear"));
   state->cache.store(&cache);
 
   const auto instance_id = test::publisher_instance_id("clear");
-  auto mapping = cache.get_or_attach("/logical_lease_cache_clear", instance_id);
+  auto mapping =
+      cache.get_or_attach("/logical_buffer_metadata_cache_clear", instance_id);
   ASSERT_TRUE(mapping);
-  std::weak_ptr<lease::LeaseMapping> weak_mapping = mapping;
+  std::weak_ptr<buffer_metadata::BufferMetadata> weak_mapping = mapping;
   mapping.reset();
 
   cache.clear();
@@ -164,34 +169,35 @@ TEST(LeaseMappingCacheTest, ClearReleasesMappingWithoutActiveLease) {
   EXPECT_EQ(state->observed_cache_size.load(), 0u);
 }
 
-TEST(LeaseMappingCacheTest, ClearPreservesMappingForActiveLease) {
+TEST(BufferMetadataCacheTest, ClearPreservesMappingForActiveBufferRef) {
   auto state = std::make_shared<FactoryState>();
-  LeaseMappingCache cache(make_factory(state, "lease_cache_active"));
+  BufferMetadataCache cache(make_factory(state, "buffer_ref_cache_active"));
   state->cache.store(&cache);
 
   const auto instance_id = test::publisher_instance_id("active");
   auto mapping =
-      cache.get_or_attach("/logical_lease_cache_active", instance_id);
+      cache.get_or_attach("/logical_buffer_metadata_cache_active", instance_id);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
+  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
   const auto slot_id = reservation->slot_id;
   const auto generation = reservation->generation;
-  ASSERT_TRUE(lease::LeaseHandle::commit_publish(mapping, slot_id, generation));
+  ASSERT_TRUE(
+      buffer_metadata::BufferRef::commit_publish(mapping, slot_id, generation));
   reservation.reset();
 
-  std::weak_ptr<lease::LeaseMapping> weak_mapping = mapping;
+  std::weak_ptr<buffer_metadata::BufferMetadata> weak_mapping = mapping;
 
   {
-    auto active_lease =
-        lease::LeaseHandle::acquire(mapping, slot_id, generation);
-    ASSERT_TRUE(active_lease.valid());
+    auto active_buffer_ref =
+        buffer_metadata::BufferRef::acquire(mapping, slot_id, generation);
+    ASSERT_TRUE(active_buffer_ref.valid());
     mapping.reset();
     cache.clear();
 
     EXPECT_EQ(cache.size(), 0u);
     EXPECT_FALSE(weak_mapping.expired());
-    EXPECT_TRUE(active_lease.valid());
+    EXPECT_TRUE(active_buffer_ref.valid());
     EXPECT_EQ(state->destroy_count.load(), 0u);
     EXPECT_EQ(state->observed_cache_size.load(), 999u);
   }
@@ -200,30 +206,33 @@ TEST(LeaseMappingCacheTest, ClearPreservesMappingForActiveLease) {
   EXPECT_EQ(state->destroy_count.load(), 1u);
 }
 
-TEST(LeaseMappingCacheTest, ConcurrentDuplicateAttachKeepsOneEntry) {
+TEST(BufferMetadataCacheTest, ConcurrentDuplicateAttachKeepsOneEntry) {
   constexpr std::size_t kThreadCount = 8;
   auto state = std::make_shared<FactoryState>();
   std::atomic<std::size_t> attach_started{0};
   std::atomic<bool> start{false};
   std::atomic<bool> allow_attach{false};
-  LeaseMappingCache cache([state, &attach_started, &start, &allow_attach](
-                              const std::string&,
-                              const PublisherInstanceId& instance_id) {
-    while (!start.load()) {
-      std::this_thread::yield();
-    }
-    state->attach_count.fetch_add(1);
-    attach_started.fetch_add(1);
-    while (!allow_attach.load()) {
-      std::this_thread::yield();
-    }
-    return make_counted_mapping(state, instance_id, "lease_cache_duplicate");
-  });
+  BufferMetadataCache cache(
+      [state, &attach_started, &start, &allow_attach](
+          const std::string&, const PublisherInstanceId& instance_id) {
+        while (!start.load()) {
+          std::this_thread::yield();
+        }
+        state->attach_count.fetch_add(1);
+        attach_started.fetch_add(1);
+        while (!allow_attach.load()) {
+          std::this_thread::yield();
+        }
+        return make_counted_mapping(state, instance_id,
+                                    "buffer_ref_cache_duplicate");
+      });
   state->cache.store(&cache);
 
-  const std::string logical_shm_name = "/logical_lease_cache_duplicate";
+  const std::string logical_shm_name =
+      "/logical_buffer_metadata_cache_duplicate";
   const auto instance_id = test::publisher_instance_id(logical_shm_name);
-  std::vector<std::shared_ptr<lease::LeaseMapping>> returned(kThreadCount);
+  std::vector<std::shared_ptr<buffer_metadata::BufferMetadata>> returned(
+      kThreadCount);
   std::vector<std::thread> threads;
   threads.reserve(kThreadCount);
   for (std::size_t i = 0; i < kThreadCount; ++i) {
@@ -259,12 +268,12 @@ TEST(LeaseMappingCacheTest, ConcurrentDuplicateAttachKeepsOneEntry) {
   EXPECT_EQ(state->observed_cache_size.load(), 0u);
 }
 
-TEST(LeaseMappingCacheTest, DifferentPublisherInstancesUseDifferentEntries) {
+TEST(BufferMetadataCacheTest, DifferentPublisherInstancesUseDifferentEntries) {
   auto state = std::make_shared<FactoryState>();
-  LeaseMappingCache cache(make_factory(state, "lease_cache_instances"));
+  BufferMetadataCache cache(make_factory(state, "buffer_ref_cache_instances"));
   state->cache.store(&cache);
 
-  const std::string shm_name = "/logical_lease_cache_instances";
+  const std::string shm_name = "/logical_buffer_metadata_cache_instances";
   const auto first_id = test::publisher_instance_id("instance-first");
   const auto second_id = test::publisher_instance_id("instance-second");
   auto first = cache.get_or_attach(shm_name, first_id);
@@ -278,43 +287,45 @@ TEST(LeaseMappingCacheTest, DifferentPublisherInstancesUseDifferentEntries) {
   EXPECT_EQ(cache.get_or_attach(shm_name, first_id).get(), first.get());
 }
 
-TEST(LeaseMappingCacheTest, AttachFailureDoesNotPopulateCache) {
+TEST(BufferMetadataCacheTest, AttachFailureDoesNotPopulateCache) {
   std::atomic<std::size_t> attach_count{0};
-  LeaseMappingCache cache(
+  BufferMetadataCache cache(
       [&attach_count](const std::string&, const PublisherInstanceId&) {
         attach_count.fetch_add(1);
-        return std::shared_ptr<lease::LeaseMapping>{};
+        return std::shared_ptr<buffer_metadata::BufferMetadata>{};
       });
 
   const auto instance_id = test::publisher_instance_id("failure");
-  EXPECT_FALSE(cache.get_or_attach("/missing_lease_cache", instance_id));
-  EXPECT_FALSE(cache.get_or_attach("/missing_lease_cache", instance_id));
+  EXPECT_FALSE(
+      cache.get_or_attach("/missing_buffer_metadata_cache", instance_id));
+  EXPECT_FALSE(
+      cache.get_or_attach("/missing_buffer_metadata_cache", instance_id));
   EXPECT_EQ(cache.size(), 0u);
   EXPECT_EQ(attach_count.load(), 2u);
 }
 
-TEST(LeaseMappingCacheTest, AttachExceptionLeavesCacheUnchanged) {
-  LeaseMappingCache cache(
-      [](const std::string&,
-         const PublisherInstanceId&) -> std::shared_ptr<lease::LeaseMapping> {
+TEST(BufferMetadataCacheTest, AttachExceptionLeavesCacheUnchanged) {
+  BufferMetadataCache cache(
+      [](const std::string&, const PublisherInstanceId&)
+          -> std::shared_ptr<buffer_metadata::BufferMetadata> {
         throw std::runtime_error("synthetic attach failure");
       });
 
-  EXPECT_THROW(cache.get_or_attach("/exception_lease_cache",
+  EXPECT_THROW(cache.get_or_attach("/exception_buffer_metadata_cache",
                                    test::publisher_instance_id("exception")),
                std::runtime_error);
   EXPECT_EQ(cache.size(), 0u);
 }
 
-TEST(LeaseMappingCacheTest, ReportsMissAndHitLatency) {
-  const std::string shm_name = make_unique_shm_name("lease_cache_timing");
+TEST(BufferMetadataCacheTest, ReportsMissAndHitLatency) {
+  const std::string shm_name = make_unique_shm_name("buffer_ref_cache_timing");
   const ShmUnlinkGuard shm_unlink_guard(shm_name);
   const auto instance_id = test::publisher_instance_id(shm_name);
   auto publisher_mapping =
-      lease::LeaseMapping::create(shm_name, instance_id, 1);
+      buffer_metadata::BufferMetadata::create(shm_name, instance_id, 1);
   ASSERT_TRUE(publisher_mapping);
 
-  LeaseMappingCache cache;
+  BufferMetadataCache cache;
   const auto miss_start = std::chrono::steady_clock::now();
   auto first = cache.get_or_attach(shm_name, instance_id);
   const auto miss_end = std::chrono::steady_clock::now();
@@ -345,13 +356,13 @@ TEST(LeaseMappingCacheTest, ReportsMissAndHitLatency) {
       std::accumulate(hit_ns.begin(), hit_ns.end(), 0.0) /
       static_cast<double>(hit_ns.size());
 
-  std::cout << "[timing] LeaseMappingCache get_or_attach miss count=1"
+  std::cout << "[timing] BufferMetadataCache get_or_attach miss count=1"
             << " average=" << miss_ns << "ns"
             << " p50=" << miss_ns << "ns"
             << " p95=" << miss_ns << "ns"
             << " p99=" << miss_ns << "ns"
             << " maximum=" << miss_ns << "ns\n"
-            << "[timing] LeaseMappingCache get_or_attach hit count="
+            << "[timing] BufferMetadataCache get_or_attach hit count="
             << kHitCount << " average=" << hit_average << "ns"
             << " p50=" << percentile(0.50) << "ns"
             << " p95=" << percentile(0.95) << "ns"

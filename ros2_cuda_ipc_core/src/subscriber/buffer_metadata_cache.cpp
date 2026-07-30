@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/detail/lease_mapping_cache.hpp"
+#include "ros2_cuda_ipc_core/detail/buffer_metadata_cache.hpp"
 
 #include <utility>
 
 namespace ros2_cuda_ipc_core::subscriber::detail {
 
-std::size_t LeaseMappingCache::KeyHash::operator()(
+std::size_t BufferMetadataCache::KeyHash::operator()(
     const Key& key) const noexcept {
   std::size_t hash = std::hash<std::string>{}(key.shm_name);
   for (const uint8_t byte : key.publisher_instance_id) {
@@ -17,12 +17,13 @@ std::size_t LeaseMappingCache::KeyHash::operator()(
   return hash;
 }
 
-LeaseMappingCache::LeaseMappingCache(AttachFn attach_fn)
+BufferMetadataCache::BufferMetadataCache(AttachFn attach_fn)
     : attach_fn_(std::move(attach_fn)) {}
 
-LeaseMappingCache::~LeaseMappingCache() { clear(); }
+BufferMetadataCache::~BufferMetadataCache() { clear(); }
 
-std::shared_ptr<lease::LeaseMapping> LeaseMappingCache::get_or_attach(
+std::shared_ptr<buffer_metadata::BufferMetadata>
+BufferMetadataCache::get_or_attach(
     const std::string& shm_name,
     const PublisherInstanceId& publisher_instance_id) const {
   const Key key{shm_name, publisher_instance_id};
@@ -39,7 +40,7 @@ std::shared_ptr<lease::LeaseMapping> LeaseMappingCache::get_or_attach(
     return nullptr;
   }
 
-  std::shared_ptr<lease::LeaseMapping> result;
+  std::shared_ptr<buffer_metadata::BufferMetadata> result;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto [it, inserted] = mappings_.emplace(key, candidate);
@@ -51,7 +52,7 @@ std::shared_ptr<lease::LeaseMapping> LeaseMappingCache::get_or_attach(
   return result;
 }
 
-void LeaseMappingCache::clear() const {
+void BufferMetadataCache::clear() const {
   decltype(mappings_) entries;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -60,7 +61,7 @@ void LeaseMappingCache::clear() const {
   entries.clear();
 }
 
-std::size_t LeaseMappingCache::size() const {
+std::size_t BufferMetadataCache::size() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return mappings_.size();
 }

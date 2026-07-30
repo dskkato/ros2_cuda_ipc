@@ -36,13 +36,13 @@ add_library(${PROJECT_NAME}
   src/backend/vmm_fd/memory_backend.cpp
   src/backend/vmm_fd/memory_importer.cpp
   src/subscriber/read_handle.cpp
-  src/subscriber/lease_mapping_cache.cpp
+  src/subscriber/buffer_metadata_cache.cpp
   src/image/image_view.cpp
   src/pointcloud2/pointcloud2_view.cpp
   src/subscriber/ipc_handle_cache.cpp
-  src/lease/lease_mapping.cpp
-  src/lease/lease_handle.cpp
-  src/publisher/lease_manager.cpp
+  src/buffer_metadata/buffer_metadata.cpp
+  src/buffer_metadata/buffer_ref.cpp
+  src/publisher/buffer_metadata_manager.cpp
   src/subscriber/buffer_mapper.cpp
   src/image/image_view_mapper.cpp
   src/pointcloud2/pointcloud2_view_mapper.cpp
@@ -81,12 +81,12 @@ install(DIRECTORY include/
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_lease_handle test/test_lease_handle.cpp)
-  target_link_libraries(test_lease_handle ${PROJECT_NAME})
+  ament_add_gtest(test_buffer_ref test/test_buffer_ref.cpp)
+  target_link_libraries(test_buffer_ref ${PROJECT_NAME})
   ament_add_gtest(test_ipc_handle_cache test/test_ipc_handle_cache.cpp)
   target_link_libraries(test_ipc_handle_cache ${PROJECT_NAME})
-  ament_add_gtest(test_lease_mapping_cache test/test_lease_mapping_cache.cpp)
-  target_link_libraries(test_lease_mapping_cache ${PROJECT_NAME})
+  ament_add_gtest(test_buffer_metadata_cache test/test_buffer_metadata_cache.cpp)
+  target_link_libraries(test_buffer_metadata_cache ${PROJECT_NAME})
   # mapper tests
   ament_add_gtest(test_buffer_mapper test/mapper/test_buffer_mapper.cpp)
   target_include_directories(test_buffer_mapper PRIVATE test)
@@ -107,8 +107,8 @@ if(BUILD_TESTING)
   target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME} CUDA::cudart)
   ament_add_gtest(test_read_handle test/test_read_handle.cpp)
   target_link_libraries(test_read_handle ${PROJECT_NAME} CUDA::cudart)
-  ament_add_gtest(test_lease_manager test/test_lease_manager.cpp)
-  target_link_libraries(test_lease_manager ${PROJECT_NAME})
+  ament_add_gtest(test_buffer_metadata_manager test/test_buffer_metadata_manager.cpp)
+  target_link_libraries(test_buffer_metadata_manager ${PROJECT_NAME})
   ament_add_gtest(test_cuda_driver_context test/test_cuda_driver_context.cpp)
   target_link_libraries(test_cuda_driver_context ${PROJECT_NAME} CUDA::cudart)
   add_executable(cuda_ipc_import_helper

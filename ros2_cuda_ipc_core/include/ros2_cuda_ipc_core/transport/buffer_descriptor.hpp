@@ -13,9 +13,9 @@
 namespace ros2_cuda_ipc_core::transport {
 
 // Transport-facing description of a publisher-owned GPU buffer.  This value
-// does not own GPU resources and does not acquire or release a lease.
+// does not own GPU resources and does not acquire or release a BufferRef.
 struct BufferDescriptor {
-  std::string lease_shm_name;
+  std::string buffer_metadata_shm_name;
   PublisherInstanceId publisher_instance_id{};
   uint32_t slot_id = 0;
   uint32_t generation = 0;

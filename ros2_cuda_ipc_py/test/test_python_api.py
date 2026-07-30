@@ -39,7 +39,7 @@ def test_extension_imports_and_native_mapper_preserves_metadata():
     assert probe.refcount() == 0
 
 
-def test_views_expose_storage_and_lease_metadata_without_debug_helpers():
+def test_views_expose_storage_and_buffer_metadata_without_debug_helpers():
     native_view, probe, descriptor = _fixture()
     image = ImageMapper().map(descriptor)
     buffer = BufferMapper().map(descriptor["core"], 1)
@@ -218,7 +218,7 @@ def test_dlpack_device_copy_and_keyword_only_arguments():
         image.__dlpack__(None)
 
 
-def test_unconsumed_dlpack_capsule_releases_lease():
+def test_unconsumed_dlpack_capsule_releases_buffer_ref():
     native_view, probe, _descriptor = _fixture()
     image = ImageView._from_native(native_view)
     del native_view
@@ -260,7 +260,7 @@ def test_dlpack_versioned_capsule_has_standard_name():
     assert probe.refcount() == 0
 
 
-def test_torch_from_dlpack_is_zero_copy_and_retains_lease():
+def test_torch_from_dlpack_is_zero_copy_and_retains_buffer_ref():
     try:
         import torch
     except ImportError:
@@ -306,7 +306,7 @@ def test_torch_dlpack_capsule_cannot_be_consumed_twice():
     assert probe.refcount() == 0
 
 
-def test_cupy_from_dlpack_is_zero_copy_and_retains_lease_when_available():
+def test_cupy_from_dlpack_is_zero_copy_and_retains_buffer_ref_when_available():
     try:
         import cupy as cp
     except ImportError:

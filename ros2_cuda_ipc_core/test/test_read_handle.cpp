@@ -10,9 +10,9 @@
 #include <string>
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
 #include "test_instance_id.hpp"
 
 namespace {
@@ -38,25 +38,26 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> make_read_handle(
     const std::string& shm_name) {
   const auto instance_id =
       ros2_cuda_ipc_core::test::publisher_instance_id(shm_name);
-  auto mapping =
-      ros2_cuda_ipc_core::lease::LeaseMapping::create(shm_name, instance_id, 1);
+  auto mapping = ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(
+      shm_name, instance_id, 1);
   if (!mapping) {
     return std::nullopt;
   }
   auto reservation =
-      ros2_cuda_ipc_core::lease::LeaseHandle::reserve_for_publish(mapping);
+      ros2_cuda_ipc_core::buffer_metadata::BufferRef::reserve_for_publish(
+          mapping);
   if (!reservation) {
     return std::nullopt;
   }
-  if (!ros2_cuda_ipc_core::lease::LeaseHandle::commit_publish(
+  if (!ros2_cuda_ipc_core::buffer_metadata::BufferRef::commit_publish(
           mapping, reservation->slot_id, reservation->generation)) {
-    (void)ros2_cuda_ipc_core::lease::LeaseHandle::cancel_publish(
+    (void)ros2_cuda_ipc_core::buffer_metadata::BufferRef::cancel_publish(
         mapping, reservation->slot_id, reservation->generation);
     return std::nullopt;
   }
-  auto lease = ros2_cuda_ipc_core::lease::LeaseHandle::acquire(
+  auto buffer_ref = ros2_cuda_ipc_core::buffer_metadata::BufferRef::acquire(
       mapping, reservation->slot_id, reservation->generation);
-  if (!lease.valid()) {
+  if (!buffer_ref.valid()) {
     return std::nullopt;
   }
 
@@ -66,10 +67,11 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> make_read_handle(
   resource->event = producer_event;
   resource->context = context;
   auto publication = ros2_cuda_ipc_core::subscriber::detail::ReadHandleFactory::
-      make_publication(std::move(resource),
-                       std::make_unique<ros2_cuda_ipc_core::lease::LeaseHandle>(
-                           std::move(lease)),
-                       64, 0);
+      make_publication(
+          std::move(resource),
+          std::make_unique<ros2_cuda_ipc_core::buffer_metadata::BufferRef>(
+              std::move(buffer_ref)),
+          64, 0);
   if (!publication) {
     return std::nullopt;
   }

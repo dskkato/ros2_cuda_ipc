@@ -18,7 +18,7 @@ class ImageViewMapperTest : public ::testing::Test {
 TEST_F(ImageViewMapperTest, InvalidCoreReturnsDefaultImageView) {
   const std::string shm_name =
       test::make_unique_shm_name("image_mapper_invalid");
-  auto mapping = lease::LeaseMapping::create(
+  auto mapping = buffer_metadata::BufferMetadata::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
 
@@ -55,10 +55,11 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenPublicationIsValid) {
   msg.encoding = "mono16";
   msg.core = core;
 
-  auto mapping =
-      lease::LeaseMapping::attach(core.shm_name, core.publisher_instance_id);
+  auto mapping = buffer_metadata::BufferMetadata::attach(
+      core.shm_name, core.publisher_instance_id);
   ASSERT_TRUE(mapping);
-  auto before = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
+  auto before =
+      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(before.has_value());
   EXPECT_EQ(before.value(), 0u);
 
@@ -66,7 +67,8 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenPublicationIsValid) {
   auto view = mapper.map(msg);
   ASSERT_TRUE(view.valid());
   EXPECT_FALSE(view.core.valid());
-  auto during = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
+  auto during =
+      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(during.has_value());
   EXPECT_EQ(during.value(), 1u);
   EXPECT_EQ(view.header.frame_id, "camera_frame");
@@ -76,7 +78,8 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenPublicationIsValid) {
   EXPECT_EQ(view.encoding, "mono16");
 
   view = image::ImageView{};
-  auto after = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
+  auto after =
+      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after.value(), 0u);
   ::shm_unlink(core.shm_name.c_str());
@@ -91,20 +94,22 @@ TEST_F(ImageViewMapperTest, DlpackMappingKeepsPublicationUnbound) {
   msg.strides = {12, 4, 1};
   msg.core = core;
 
-  auto mapping =
-      lease::LeaseMapping::attach(core.shm_name, core.publisher_instance_id);
+  auto mapping = buffer_metadata::BufferMetadata::attach(
+      core.shm_name, core.publisher_instance_id);
   ASSERT_TRUE(mapping);
 
   image::ImageViewMapper mapper;
   auto view = mapper.map_for_dlpack(msg);
   ASSERT_TRUE(view.valid());
   EXPECT_FALSE(view.core.valid());
-  auto during = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
+  auto during =
+      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(during.has_value());
   EXPECT_EQ(during.value(), 1u);
 
   view = image::ImageView{};
-  auto after = lease::LeaseHandle::current_refcount(mapping, core.slot_id);
+  auto after =
+      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after.value(), 0u);
   ::shm_unlink(core.shm_name.c_str());

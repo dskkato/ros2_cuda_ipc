@@ -19,7 +19,7 @@ namespace {
 
 ros2_cuda_ipc_core::transport::BufferDescriptor make_descriptor() {
   ros2_cuda_ipc_core::transport::BufferDescriptor descriptor;
-  descriptor.lease_shm_name = "/publisher_messages";
+  descriptor.buffer_metadata_shm_name = "/publisher_messages";
   descriptor.publisher_instance_id[0] = 42;
   descriptor.slot_id = 7;
   descriptor.generation = 11;
@@ -41,7 +41,7 @@ TEST(PublisherMessagesTest,
 
   ros2_cuda_ipc_core::transport::fill_buffer_core_message(descriptor, message);
 
-  EXPECT_EQ(message.shm_name, descriptor.lease_shm_name);
+  EXPECT_EQ(message.shm_name, descriptor.buffer_metadata_shm_name);
   EXPECT_EQ(message.publisher_instance_id, descriptor.publisher_instance_id);
   EXPECT_EQ(message.slot_id, descriptor.slot_id);
   EXPECT_EQ(message.generation, descriptor.generation);
@@ -70,7 +70,7 @@ TEST(PublisherMessagesTest,
   EXPECT_EQ(message.shape[1], 10u);
   EXPECT_EQ(message.strides[0], 30u);
   EXPECT_EQ(message.encoding, "rgb8");
-  EXPECT_EQ(message.core.shm_name, descriptor.lease_shm_name);
+  EXPECT_EQ(message.core.shm_name, descriptor.buffer_metadata_shm_name);
 }
 
 TEST(PublisherMessagesTest,

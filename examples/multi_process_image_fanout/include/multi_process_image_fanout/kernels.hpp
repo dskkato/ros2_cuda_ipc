@@ -20,8 +20,8 @@ struct InferenceStats {
 constexpr uint32_t kDefaultChannels = 4;
 constexpr const char* kDefaultEncoding = "rgba8";
 
-// gpu_image_publisher: fills the leased GPU slot with the animated RGBA test
-// pattern consumed by all downstream example nodes.
+// gpu_image_publisher: fills the referenced GPU slot with the animated RGBA
+// test pattern consumed by all downstream example nodes.
 cudaError_t launch_generate_rgba_pattern_kernel(uint8_t* output, int width,
                                                 int height,
                                                 uint64_t stride_bytes,

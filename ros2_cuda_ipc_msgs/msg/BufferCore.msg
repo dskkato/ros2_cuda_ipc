@@ -7,7 +7,7 @@ uint8 backend
 uint8[64] mem_handle
 uint8[64] event_handle
 
-# Shared memory name for lease/refcount management
+# Shared memory name for buffer metadata/refcount management
 string shm_name
 
 # Identity of the publisher initialisation that owns this buffer

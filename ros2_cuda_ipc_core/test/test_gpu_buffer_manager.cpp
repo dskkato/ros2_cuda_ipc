@@ -16,7 +16,7 @@
 #include <type_traits>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_manager.hpp"
 
 namespace {
@@ -83,8 +83,8 @@ TEST_F(GpuBufferManagerTest, ReadyEventFailureQuarantinesSlot) {
   ASSERT_TRUE(manager.initialise());
   const auto actual_name = manager.shm_name();
   const auto instance_id = manager.publisher_instance_id();
-  auto mapping =
-      ros2_cuda_ipc_core::lease::LeaseMapping::attach(actual_name, instance_id);
+  auto mapping = ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::attach(
+      actual_name, instance_id);
   ASSERT_TRUE(mapping);
 
   {
@@ -118,7 +118,8 @@ TEST_F(GpuBufferManagerTest, ReadyEventFailureQuarantinesSlot) {
   }
 
   const auto refcount =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(mapping, 0);
+      ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(mapping,
+                                                                       0);
   ASSERT_TRUE(refcount.has_value());
   EXPECT_EQ(*refcount, 1u);
 
@@ -133,14 +134,15 @@ TEST_F(GpuBufferManagerTest, ReadyEventFailureQuarantinesSlot) {
 TEST_F(GpuBufferManagerTest, CommitFailureQuarantinesSlot) {
   auto manager = make_manager();
   ASSERT_TRUE(manager.initialise());
-  auto mapping = ros2_cuda_ipc_core::lease::LeaseMapping::attach(
+  auto mapping = ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::attach(
       manager.shm_name(), manager.publisher_instance_id());
   ASSERT_TRUE(mapping);
   auto slot = manager.acquire_for_publish();
   ASSERT_TRUE(slot.has_value());
 
   const auto generation =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_generation(mapping, 0);
+      ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_generation(
+          mapping, 0);
   ASSERT_TRUE(generation.has_value());
   mapping->slot(0)->generation.store(*generation + 1,
                                      std::memory_order_release);
@@ -151,7 +153,8 @@ TEST_F(GpuBufferManagerTest, CommitFailureQuarantinesSlot) {
   slot.reset();
 
   const auto refcount =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(mapping, 0);
+      ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(mapping,
+                                                                       0);
   ASSERT_TRUE(refcount.has_value());
   EXPECT_EQ(*refcount, 1u);
 
@@ -238,11 +241,12 @@ TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   const auto instance_id = manager.publisher_instance_id();
   auto slot = manager.acquire_for_publish();
   ASSERT_TRUE(slot.has_value());
-  auto mapping =
-      ros2_cuda_ipc_core::lease::LeaseMapping::attach(actual_name, instance_id);
+  auto mapping = ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::attach(
+      actual_name, instance_id);
   ASSERT_TRUE(mapping);
   const auto ref_before =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(mapping, 0);
+      ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(mapping,
+                                                                       0);
   ASSERT_TRUE(ref_before.has_value());
   ASSERT_EQ(*ref_before, 1u);
 
@@ -250,7 +254,8 @@ TEST_F(GpuBufferManagerTest, ResetDoesNotPreventReservationCancellation) {
   slot.reset();
 
   const auto ref_after =
-      ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(mapping, 0);
+      ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(mapping,
+                                                                       0);
   ASSERT_TRUE(ref_after.has_value());
   EXPECT_EQ(*ref_after, 0u);
 

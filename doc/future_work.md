@@ -1,13 +1,13 @@
 # 今後の課題
 
 現行の保証とcallerが守るべき契約は
-[`lease_protocol.md`](lease_protocol.md)を参照すること。
+[`buffer_metadata_protocol.md`](buffer_metadata_protocol.md)を参照すること。
 
 ## Publisher shutdown時のdrain
 
 正常終了時はpublisher所有のGPU resourceを破棄し、instance固有のPOSIX SHM名をunlinkする。
 Subscriber queue内のmessageや処理中のCUDA workをdrainするprotocolはまだ実装していない。
-graceful shutdownを保証するには、publish停止、queue drain、active lease完了待ち、resource破棄の
+graceful shutdownを保証するには、publish停止、queue drain、active buffer reference完了待ち、resource破棄の
 順序とtimeoutを定義する必要がある。
 
 ## Crash後のorphan SHM

@@ -26,8 +26,8 @@
 #include <unistd.h>
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #endif
 
@@ -555,7 +555,7 @@ class PyBufferMapper {
     }
     if (!view) {
       throw MappingError(
-          "BufferCore was rejected by the C++ mapper (lease, generation, "
+          "BufferCore was rejected by the C++ mapper (buffer_ref, generation, "
           "backend, or CUDA import failure)");
     }
     return PyReadHandle(std::move(*view));
@@ -578,7 +578,7 @@ class PyImageMapper {
     }
     if (!view.valid()) {
       throw MappingError(
-          "GpuImage was rejected by the C++ mapper (lease, generation, "
+          "GpuImage was rejected by the C++ mapper (buffer_ref, generation, "
           "backend, or CUDA import failure)");
     }
     // Keep the C++ implementation's complete bounds check as the final
@@ -613,31 +613,33 @@ ros2_cuda_ipc_core::PublisherInstanceId test_instance_id(
   return id;
 }
 
-class TestLeaseProbe {
+class TestBufferRefProbe {
  public:
-  TestLeaseProbe(
-      std::shared_ptr<ros2_cuda_ipc_core::lease::LeaseMapping> mapping,
+  TestBufferRefProbe(
+      std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata>
+          mapping,
       uint32_t slot_id, std::string shm_name)
       : mapping_(std::move(mapping)),
         slot_id_(slot_id),
         shm_name_(std::move(shm_name)) {}
 
-  ~TestLeaseProbe() {
+  ~TestBufferRefProbe() {
     if (!shm_name_.empty()) {
       (void)::shm_unlink(shm_name_.c_str());
     }
   }
 
   uint32_t refcount() const {
-    const auto value = ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(
-        mapping_, slot_id_);
+    const auto value =
+        ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(
+            mapping_, slot_id_);
     return value.value_or(0);
   }
 
   const std::string& shm_name() const noexcept { return shm_name_; }
 
  private:
-  std::shared_ptr<ros2_cuda_ipc_core::lease::LeaseMapping> mapping_;
+  std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata> mapping_;
   uint32_t slot_id_;
   std::string shm_name_;
 };
@@ -658,15 +660,16 @@ py::tuple make_test_image() {
        << counter.fetch_add(1);
   const std::string shm_name = name.str();
   const auto instance_id = test_instance_id(shm_name);
-  auto mapping =
-      ros2_cuda_ipc_core::lease::LeaseMapping::create(shm_name, instance_id, 1);
+  auto mapping = ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(
+      shm_name, instance_id, 1);
   if (!mapping) {
-    throw std::runtime_error("test LeaseMapping::create failed");
+    throw std::runtime_error("test BufferMetadata::create failed");
   }
   const auto reservation =
-      ros2_cuda_ipc_core::lease::LeaseHandle::reserve_for_publish(mapping);
+      ros2_cuda_ipc_core::buffer_metadata::BufferRef::reserve_for_publish(
+          mapping);
   if (!reservation) {
-    throw std::runtime_error("test LeaseHandle::reserve_for_publish failed");
+    throw std::runtime_error("test BufferRef::reserve_for_publish failed");
   }
 
   ros2_cuda_ipc_msgs::msg::GpuImage message;
@@ -705,12 +708,12 @@ py::tuple make_test_image() {
   if (!view.valid() || !view.sanity_check()) {
     throw std::runtime_error("test ImageViewMapper fixture failed");
   }
-  if (!ros2_cuda_ipc_core::lease::LeaseHandle::commit_publish(
+  if (!ros2_cuda_ipc_core::buffer_metadata::BufferRef::commit_publish(
           mapping, reservation->slot_id, reservation->generation)) {
-    (void)ros2_cuda_ipc_core::lease::LeaseHandle::cancel_publish(
+    (void)ros2_cuda_ipc_core::buffer_metadata::BufferRef::cancel_publish(
         mapping, reservation->slot_id, reservation->generation);
     (void)::shm_unlink(shm_name.c_str());
-    throw std::runtime_error("test LeaseHandle::commit_publish failed");
+    throw std::runtime_error("test BufferRef::commit_publish failed");
   }
 
   py::dict core;
@@ -738,8 +741,8 @@ py::tuple make_test_image() {
   descriptor["core"] = core;
   descriptor["encoding"] = message.encoding;
 
-  auto probe =
-      std::make_shared<TestLeaseProbe>(mapping, reservation->slot_id, shm_name);
+  auto probe = std::make_shared<TestBufferRefProbe>(
+      mapping, reservation->slot_id, shm_name);
   return py::make_tuple(PyImageView(std::move(view)), probe, descriptor);
 }
 
@@ -788,10 +791,10 @@ PYBIND11_MODULE(_native, module) {
       .def("map", &PyImageMapper::map, py::arg("descriptor"));
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
-  py::class_<TestLeaseProbe, std::shared_ptr<TestLeaseProbe>>(module,
-                                                              "_TestLeaseProbe")
-      .def("refcount", &TestLeaseProbe::refcount)
-      .def_property_readonly("shm_name", &TestLeaseProbe::shm_name);
+  py::class_<TestBufferRefProbe, std::shared_ptr<TestBufferRefProbe>>(
+      module, "_TestBufferRefProbe")
+      .def("refcount", &TestBufferRefProbe::refcount)
+      .def_property_readonly("shm_name", &TestBufferRefProbe::shm_name);
   module.def("_make_test_image", &make_test_image);
 #endif
 }
