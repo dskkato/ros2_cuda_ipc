@@ -10,6 +10,7 @@
 #include <limits>
 #include <stdexcept>
 
+#include "ros2_cuda_ipc_core/detail/image_view_dlpack.hpp"
 #include "ros2_cuda_ipc_core/image/image_view.hpp"
 
 namespace ros2_cuda_ipc_py::dlpack {
@@ -62,9 +63,12 @@ inline ImageTensorDescriptor project_to_tensor(
   }
 
   ImageTensorDescriptor result;
-  result.data = image.core.device_ptr();
-  result.device_id = image.core.device_id;
-  result.allocation_size = image.core.byte_size;
+  result.data =
+      ros2_cuda_ipc_core::image::detail::DLPackImageView::device_ptr(image);
+  result.device_id =
+      ros2_cuda_ipc_core::image::detail::DLPackImageView::device_id(image);
+  result.allocation_size =
+      ros2_cuda_ipc_core::image::detail::DLPackImageView::byte_size(image);
   result.rank = 3;
   result.dl_dtype = tensor_dl_dtype(image.dtype);
 
@@ -114,12 +118,6 @@ inline ImageTensorDescriptor project_to_tensor(
       last_byte >
           std::numeric_limits<uintptr_t>::max() - base - result.byte_offset) {
     throw std::invalid_argument("ImageView pointer arithmetic overflows");
-  }
-
-  const int imported_device = image.core.imported_device_id();
-  if (imported_device >= 0 && imported_device != result.device_id) {
-    throw std::invalid_argument(
-        "mapped image device does not match the imported CUDA allocation");
   }
 
   return result;

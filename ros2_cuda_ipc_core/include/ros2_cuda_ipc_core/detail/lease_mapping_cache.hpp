@@ -9,15 +9,12 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
-#include <utility>
 
 #include "ros2_cuda_ipc_core/lease/lease_mapping.hpp"
-#include "ros2_cuda_ipc_core/subscriber/buffer_view.hpp"
-#include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
-namespace ros2_cuda_ipc_core::subscriber {
+namespace ros2_cuda_ipc_core::subscriber::detail {
 
-/// Strongly owns subscriber mappings so they can be reused between messages.
+/// Internal subscriber cache for shared-memory lease mappings.
 class LeaseMappingCache {
  public:
   using AttachFn = std::function<std::shared_ptr<lease::LeaseMapping>(
@@ -30,9 +27,7 @@ class LeaseMappingCache {
       const std::string& shm_name,
       const PublisherInstanceId& publisher_instance_id) const;
 
-  /// Release all cache-owned mappings without holding the cache mutex.
   void clear() const;
-
   std::size_t size() const;
 
  private:
@@ -56,16 +51,4 @@ class LeaseMappingCache {
       mappings_;
 };
 
-class BufferViewMapper {
- public:
-  BufferViewMapper();
-
-  BufferView map(const ros2_cuda_ipc_msgs::msg::BufferCore& msg) const;
-
- private:
-  std::shared_ptr<LeaseMappingCache> mapping_cache_;
-};
-
-BufferView map_buffer_view(const ros2_cuda_ipc_msgs::msg::BufferCore& msg);
-
-}  // namespace ros2_cuda_ipc_core::subscriber
+}  // namespace ros2_cuda_ipc_core::subscriber::detail

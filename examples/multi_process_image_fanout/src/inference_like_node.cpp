@@ -65,7 +65,11 @@ class InferenceLikeNode : public rclcpp::Node {
     subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
         input_topic_name_, rclcpp::QoS(rclcpp::KeepLast(10)).reliable(),
         [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
-          auto view = ros2_cuda_ipc_core::image::map_image_view(message);
+          if (!ensure_cuda_state(static_cast<int>(message.core.device_id))) {
+            return;
+          }
+          auto view =
+              ros2_cuda_ipc_core::image::map_image_view(message, stream_);
           if (!view.valid()) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                  "Skipping GPU image mapping failure");
@@ -118,9 +122,6 @@ class InferenceLikeNode : public rclcpp::Node {
       return;
     }
 
-    if (!ensure_cuda_state(view.core.device_id)) {
-      return;
-    }
     if (!ensure_buffers(view)) {
       return;
     }
@@ -138,20 +139,6 @@ class InferenceLikeNode : public rclcpp::Node {
         cudaEventDestroy(kernel_stop);
       }
       return;
-    }
-
-    {
-      // Wait on the publisher's ready event before reading the shared input
-      // slot from this node's stream.
-      NvtxScopedRange wait_range("InferenceLikeNode::wait_input_event");
-      auto result = view.enqueue_ready_event(stream_);
-      if (!result) {
-        RCLCPP_WARN(get_logger(), "enqueue_ready_event failed: %s",
-                    result.error().to_string().c_str());
-        cudaEventDestroy(kernel_start);
-        cudaEventDestroy(kernel_stop);
-        return;
-      }
     }
 
     cudaError_t err = cudaEventRecord(kernel_start, stream_);

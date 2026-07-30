@@ -7,9 +7,12 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 
-#include "ros2_cuda_ipc_core/subscriber/buffer_view.hpp"
+#include "ros2_cuda_ipc_core/detail/image_view_dlpack.hpp"
+#include "ros2_cuda_ipc_core/detail/mapped_publication.hpp"
+#include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
 #include "std_msgs/msg/header.hpp"
 
 namespace ros2_cuda_ipc_core::image {
@@ -27,18 +30,18 @@ enum class DType : uint8_t {
 
 struct ImageView {
   std_msgs::msg::Header header{};
-  subscriber::BufferView core;
+  subscriber::ReadHandle core;
   std::array<uint32_t, 3> shape{0, 0, 0};
   std::array<uint64_t, 3> strides{0, 0, 0};
   DType dtype = DType::U8;
   std::string encoding;
 
-  ImageView() = default;
-  ~ImageView() = default;
-  ImageView(const ImageView&) = default;
-  ImageView& operator=(const ImageView&) = default;
-  ImageView(ImageView&&) noexcept = default;
-  ImageView& operator=(ImageView&&) noexcept = default;
+  ImageView() noexcept;
+  ~ImageView() noexcept;
+  ImageView(const ImageView&) = delete;
+  ImageView& operator=(const ImageView&) = delete;
+  ImageView(ImageView&&) noexcept;
+  ImageView& operator=(ImageView&&) noexcept;
 
   uint32_t rows() const noexcept { return shape[0]; }
   uint32_t cols() const noexcept { return shape[1]; }
@@ -47,15 +50,9 @@ struct ImageView {
   uint64_t strideW() const noexcept { return strides[1]; }
   uint64_t strideC() const noexcept { return strides[2]; }
 
-  bool valid() const noexcept {
-    return core.valid() && rows() > 0 && cols() > 0;
-  }
+  bool valid() const noexcept;
 
   uint32_t elem_size_bytes() const noexcept;
-
-  detail::CudaResult<void> enqueue_ready_event(CUstream stream) const noexcept {
-    return core.enqueue_ready_event(stream);
-  }
 
   struct DeviceView {
     uint8_t* data;
@@ -80,6 +77,12 @@ struct ImageView {
   }
 
   bool sanity_check() const noexcept;
+
+ private:
+  std::unique_ptr<subscriber::detail::MappedPublication> publication_;
+
+  friend class ImageViewMapper;
+  friend struct detail::DLPackImageView;
 };
 
 }  // namespace ros2_cuda_ipc_core::image

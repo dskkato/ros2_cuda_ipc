@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-#include "ros2_cuda_ipc_core/subscriber/buffer_view.hpp"
+#include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
 
 namespace ros2_cuda_ipc_core::pointcloud2 {
 
@@ -40,7 +40,7 @@ struct PointCloud2View {
   };
 
   std_msgs::msg::Header header{};
-  subscriber::BufferView core;
+  subscriber::ReadHandle core;
   uint32_t height = 1;
   uint32_t width = 0;
   uint32_t point_step = 0;
@@ -50,16 +50,13 @@ struct PointCloud2View {
 
   PointCloud2View() = default;
   ~PointCloud2View() = default;
-  PointCloud2View(const PointCloud2View&) = default;
-  PointCloud2View& operator=(const PointCloud2View&) = default;
+  PointCloud2View(const PointCloud2View&) = delete;
+  PointCloud2View& operator=(const PointCloud2View&) = delete;
   PointCloud2View(PointCloud2View&&) noexcept = default;
   PointCloud2View& operator=(PointCloud2View&&) noexcept = default;
 
   size_t num_points() const noexcept {
     return static_cast<size_t>(width) * height;
-  }
-  detail::CudaResult<void> enqueue_ready_event(CUstream stream) const noexcept {
-    return core.enqueue_ready_event(stream);
   }
   bool valid() const noexcept { return core.valid() && point_step > 0; }
 

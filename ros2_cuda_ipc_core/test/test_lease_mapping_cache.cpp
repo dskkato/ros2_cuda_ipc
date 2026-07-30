@@ -19,8 +19,8 @@
 #include <utility>
 #include <vector>
 
+#include "ros2_cuda_ipc_core/detail/lease_mapping_cache.hpp"
 #include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
-#include "ros2_cuda_ipc_core/subscriber/buffer_view_mapper.hpp"
 #include "test_instance_id.hpp"
 
 namespace {
@@ -57,7 +57,7 @@ struct FactoryState {
   std::atomic<std::size_t> attach_count{0};
   std::atomic<std::size_t> destroy_count{0};
   std::atomic<std::size_t> observed_cache_size{999};
-  std::atomic<ros2_cuda_ipc_core::subscriber::LeaseMappingCache*> cache{
+  std::atomic<ros2_cuda_ipc_core::subscriber::detail::LeaseMappingCache*> cache{
       nullptr};
   std::mutex mutex;
   std::vector<std::string> shm_names;
@@ -90,8 +90,9 @@ std::shared_ptr<ros2_cuda_ipc_core::lease::LeaseMapping> make_counted_mapping(
       });
 }
 
-ros2_cuda_ipc_core::subscriber::LeaseMappingCache::AttachFn make_factory(
-    const std::shared_ptr<FactoryState>& state, const std::string& prefix) {
+ros2_cuda_ipc_core::subscriber::detail::LeaseMappingCache::AttachFn
+make_factory(const std::shared_ptr<FactoryState>& state,
+             const std::string& prefix) {
   return [state, prefix](
              const std::string&,
              const ros2_cuda_ipc_core::PublisherInstanceId& instance_id) {
@@ -104,7 +105,7 @@ ros2_cuda_ipc_core::subscriber::LeaseMappingCache::AttachFn make_factory(
 
 namespace ros2_cuda_ipc_core {
 
-using subscriber::LeaseMappingCache;
+using subscriber::detail::LeaseMappingCache;
 
 TEST(LeaseMappingCacheTest, ReusesMappingAcrossCallbackLocalLeases) {
   auto state = std::make_shared<FactoryState>();

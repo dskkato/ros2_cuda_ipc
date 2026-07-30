@@ -4,9 +4,9 @@
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 
-#include "../test_mapper_utils.hpp"
 #include "ros2_cuda_ipc_core/pointcloud2/pointcloud2_view_mapper.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
+#include "test_mapper_utils.hpp"
 
 namespace ros2_cuda_ipc_core {
 
@@ -79,7 +79,7 @@ TEST_F(PointCloud2ViewMapperTest, CopiesLayoutWhenCoreIsValid) {
   EXPECT_EQ(view.fields[1].name, "y");
   EXPECT_EQ(view.fields[1].offset, 4u);
 
-  view.core.reset();
+  view.core = subscriber::ReadHandle{};
   ::shm_unlink(core.shm_name.c_str());
 }
 

@@ -35,7 +35,10 @@ def _dlpack_stream_pointer(stream):
             ) from exc
 
     if pointer == -1:
-        return 0, False
+        raise ValueError(
+            "DLPack stream=-1 is not supported because automatic completion "
+            "requires a consumer stream"
+        )
     if pointer == 0:
         raise ValueError("CUDA DLPack stream pointer 0 is ambiguous")
     if pointer < -1:
@@ -63,8 +66,8 @@ def _dlpack_versioned(max_version):
     return major >= 1
 
 
-class BufferView:
-    """Python owner of one native subscriber buffer view."""
+class ReadHandle:
+    """Python owner of one stream-bound subscriber GPU read."""
 
     def __init__(self, native_view):
         self._native = native_view
@@ -88,14 +91,6 @@ class BufferView:
     @property
     def device_id(self):
         return self._native.device_id
-
-    @property
-    def slot_id(self):
-        return self._native.slot_id
-
-    @property
-    def generation(self):
-        return self._native.generation
 
     def close(self):
         self._native.close()
@@ -122,24 +117,12 @@ class ImageView:
         return self._native.valid
 
     @property
-    def device_ptr(self):
-        return self._native.device_ptr
-
-    @property
     def byte_size(self):
         return self._native.byte_size
 
     @property
     def device_id(self):
         return self._native.device_id
-
-    @property
-    def slot_id(self):
-        return self._native.slot_id
-
-    @property
-    def generation(self):
-        return self._native.generation
 
     @property
     def shape(self):
@@ -185,10 +168,10 @@ class ImageView:
         producer does not support cross-device exports or copying, so
         ``copy=True`` raises ``BufferError`` while ``copy=None`` and
         ``copy=False`` retain zero-copy semantics.
-        Unless ``stream=-1`` is requested, the producer-ready event is waited
-        on the requested CUDA stream before the capsule is returned. As
-        required by DLPack, ``stream=-1`` disables producer synchronization.
-        The consuming framework object owns the retained native view after
+        The producer-ready event is waited on the requested CUDA stream before
+        the capsule is returned. ``stream=-1`` is rejected because automatic
+        completion management requires a concrete consumer stream. The
+        consuming framework object owns the retained native read state after
         capsule consumption.
         """
 
@@ -212,18 +195,21 @@ class ImageView:
         self.close()
 
 
-class BufferViewMapper:
-    """Reusable mapper for ``BufferCore`` descriptors or ROS messages."""
+class BufferMapper:
+    """Reusable mapper for stream-bound ``BufferCore`` reads."""
 
     def __init__(self):
-        self._native = _native.BufferViewMapper()
+        self._native = _native.BufferMapper()
 
-    def map(self, message):
+    def map(self, message, stream):
+        stream_ptr, _synchronize = _dlpack_stream_pointer(stream)
         try:
-            native_view = self._native.map(buffer_core_descriptor(message))
+            native_view = self._native.map(
+                buffer_core_descriptor(message), stream_ptr
+            )
         except RuntimeError as exc:
             raise MappingError(str(exc)) from exc
-        return BufferView._from_native(native_view)
+        return ReadHandle._from_native(native_view)
 
 
 class ImageMapper:

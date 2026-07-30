@@ -17,7 +17,7 @@
 namespace ros2_cuda_ipc_core::backend {
 
 // The imported memory mapping and its synchronization event must have one
-// lifetime.  In particular, BufferView keeps this whole bundle alive after
+// lifetime.  In particular, ReadHandle keeps this whole bundle alive after
 // the cache entry itself has been detached.
 struct ImportedResources {
   ImportedResources() = default;

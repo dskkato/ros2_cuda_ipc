@@ -14,10 +14,10 @@ who want to try the demo first.
 
 ## Core Components
 
-- `ros2_cuda_ipc_core::subscriber::BufferView`: modality-independent view for an imported GPU resource and its lease.
-- `ros2_cuda_ipc_core::image::ImageView` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2View`: example modality views layered on `subscriber::BufferView`.
-- `ros2_cuda_ipc_core::subscriber::BufferViewMapper` and `ros2_cuda_ipc_core::image::ImageViewMapper` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2ViewMapper`: explicit mapping APIs from raw messages to imported views.
-- `ros2_cuda_ipc_core::lease::LeaseHandle`: process-shared slot lease accounting.
+- `ros2_cuda_ipc_core::subscriber::BufferMapper`: maps a `BufferCore` and a consumer stream to an optional `ReadHandle`.
+- `ros2_cuda_ipc_core::subscriber::ReadHandle`: the normal pointer API. It waits for producer readiness, owns the publication lease, and defers resource/lease release until consumer completion.
+- `ros2_cuda_ipc_core::image::ImageView` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2View`: typed adapters layered on `ReadHandle`; the Python image adapter is DLPack-only and binds its stream at export.
+- `ros2_cuda_ipc_core::publisher::LeaseManager`: publisher reservation, generation, and grace-period state. Subscriber lease handles, import caches, completion events, and deferred queues are internal.
 - `ros2_cuda_ipc_core::publisher::GpuBufferPool`: publisher-side GPU resource ownership.
 - `ros2_cuda_ipc_core::publisher::LeaseManager`: publisher reservation, generation, and grace-period state.
 - `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher-facing buffer manager.
@@ -39,11 +39,11 @@ publisher->publish(make_message(descriptor.value()));
 event, and commits the reservation. On failure, it returns no descriptor and
 retains the reservation until `GpuBufferManager::reset()`.
 
-The public ready-event APIs use the CUDA Driver API stream type `CUstream`.
+The public stream-taking APIs use the CUDA Driver API stream type `CUstream`.
 Applications that use the CUDA Runtime API include
 `<cuda_runtime_api.h>` themselves; a Runtime-created `cudaStream_t` can be
-passed directly to `prepare_publish()` and `enqueue_ready_event()`. The stream is
-owned by the application and is only borrowed by the core library.
+passed directly to `prepare_publish()`. The stream is owned by the application
+and is only borrowed by the core library.
 
 Destroying a slot before preparation cancels its reservation. A successful
 preparation commits it. The subsequent middleware publish result does not
@@ -51,9 +51,14 @@ affect slot lifecycle.
 The protocol guarantees and known limitations are specified in
 [doc/lease_protocol.md](doc/lease_protocol.md).
 
-Receiving code subscribes to `ros2_cuda_ipc_msgs::msg::GpuImage` and calls the
-mapper explicitly. Mapping acquires the lease and imports or looks up the GPU
-resource before returning an `ros2_cuda_ipc_core::image::ImageView`.
+Receiving code subscribes to `ros2_cuda_ipc_msgs::msg::BufferCore` and calls
+`BufferMapper::map(message, consumer_stream)`. Mapping acquires the lease and
+imports or looks up the GPU resource before returning a `ReadHandle`.
+
+The consumer stream must remain valid until the corresponding `ReadHandle` is
+destroyed and its completion event has been recorded. A failed optional map
+contains no public error detail; the mapper writes diagnostic detail to the
+internal log.
 
 ## Memory Backends
 

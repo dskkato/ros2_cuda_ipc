@@ -7,7 +7,7 @@ from ros2_cuda_ipc_msgs.msg import GpuImage
 
 from ros2_cuda_ipc_py import _native
 from ros2_cuda_ipc_py import (
-    BufferViewMapper,
+    BufferMapper,
     ImageMapper,
     ImageView,
     MappingError,
@@ -42,18 +42,20 @@ def test_extension_imports_and_native_mapper_preserves_metadata():
 def test_views_expose_storage_and_lease_metadata_without_debug_helpers():
     native_view, probe, descriptor = _fixture()
     image = ImageMapper().map(descriptor)
-    buffer = BufferViewMapper().map(descriptor["core"])
+    buffer = BufferMapper().map(descriptor["core"], 1)
     core = descriptor["core"]
 
     for view in (image, image._native, buffer, buffer._native):
-        assert view.device_ptr != 0
         assert view.byte_size == core["byte_size"]
         assert view.device_id == core["device_id"]
-        assert view.slot_id == core["slot_id"]
-        assert view.generation == core["generation"]
 
-    assert image.device_ptr == native_view.device_ptr
-    assert buffer.device_ptr == image.device_ptr
+    assert buffer.device_ptr != 0
+    assert not hasattr(image, "device_ptr")
+    assert not hasattr(image._native, "device_ptr")
+    assert not hasattr(image, "slot_id")
+    assert not hasattr(image, "generation")
+    assert not hasattr(image._native, "slot_id")
+    assert not hasattr(image._native, "generation")
     assert image.dtype == "uint8"
     assert not hasattr(image, "dtype_code")
     assert not hasattr(image._native, "dtype_code")
@@ -119,7 +121,10 @@ def test_dlpack_rejects_stride_not_representable_in_elements():
     malformed["strides"] = [1, 1, 1]
     image = ImageMapper().map(malformed)
     with pytest.raises(BufferError, match="divisible"):
-        image.__dlpack__(stream=-1)
+        image.__dlpack__(stream=1)
+    assert probe.refcount() == 1
+    with pytest.raises(BufferError, match="divisible"):
+        image.__dlpack__(stream=1)
     image.close()
     del image
     gc.collect()
@@ -166,10 +171,12 @@ def test_dlpack_device_and_stream_protocol_arguments():
     native = SpyNative()
     image = ImageView._from_native(native)
     assert image.__dlpack_device__() == (2, 3)
-    assert image.__dlpack__(stream=-1, max_version=(1, 0)) == "capsule"
-    assert native.arguments == (0, False, True)
-    assert image.__dlpack__(stream=2) == "capsule"
-    assert native.arguments == (2, True, False)
+    with pytest.raises(ValueError, match="stream=-1"):
+        image.__dlpack__(stream=-1, max_version=(1, 0))
+    assert image.__dlpack__(stream=2, max_version=(1, 0)) == "capsule"
+    assert native.arguments == (2, True, True)
+    assert image.__dlpack__(stream=1) == "capsule"
+    assert native.arguments == (1, True, False)
     max_uintptr = (1 << (struct.calcsize("P") * 8)) - 1
     assert image.__dlpack__(stream=max_uintptr) == "capsule"
     assert native.arguments == (max_uintptr, True, False)
@@ -200,9 +207,6 @@ def test_dlpack_device_copy_and_keyword_only_arguments():
     image = ImageView._from_native(native)
 
     assert image.__dlpack__() == "capsule"
-    assert image.__dlpack__(copy=False) == "capsule"
-    assert image.__dlpack__(dl_device=(2, 3)) == "capsule"
-    assert image.__dlpack__(dl_device=[2, 3]) == "capsule"
 
     with pytest.raises(BufferError, match="copying"):
         image.__dlpack__(copy=True)
@@ -219,10 +223,28 @@ def test_unconsumed_dlpack_capsule_releases_lease():
     image = ImageView._from_native(native_view)
     del native_view
 
-    capsule = image.__dlpack__(stream=-1)
-    image.close()
+    capsule = image.__dlpack__(stream=1)
     assert probe.refcount() == 1
     del capsule
+    gc.collect()
+    assert probe.refcount() == 0
+
+
+def test_dlpack_mapping_is_consumed_but_metadata_remains_available():
+    native_view, probe, _descriptor = _fixture()
+    image = ImageView._from_native(native_view)
+    del native_view
+
+    capsule = image.__dlpack__(stream=1)
+    assert image.shape == (2, 3, 4)
+    assert image.dtype == "uint8"
+    assert image.__dlpack_device__() == (2, 0)
+    with pytest.raises(MappingError, match="already been consumed"):
+        image.__dlpack__(stream=1)
+    with pytest.raises(MappingError, match="ownership was transferred"):
+        image.close()
+
+    del capsule, image
     gc.collect()
     assert probe.refcount() == 0
 
@@ -231,7 +253,7 @@ def test_dlpack_versioned_capsule_has_standard_name():
     native_view, probe, _descriptor = _fixture()
     image = ImageView._from_native(native_view)
     del native_view
-    capsule = image.__dlpack__(stream=-1, max_version=(1, 0))
+    capsule = image.__dlpack__(stream=1, max_version=(1, 0))
     assert "dltensor_versioned" in repr(capsule)
     del capsule, image
     gc.collect()
@@ -251,12 +273,10 @@ def test_torch_from_dlpack_is_zero_copy_and_retains_lease():
     del native_view
     tensor = torch.from_dlpack(image)
     assert tensor.is_cuda
-    assert tensor.data_ptr() == image.device_ptr
     assert tuple(tensor.shape) == image.shape
     assert tuple(tensor.stride()) == (12, 4, 1)
     assert str(tensor.dtype) == "torch.uint8"
 
-    image.close()
     assert probe.refcount() == 1
     del image
     gc.collect()
@@ -281,7 +301,6 @@ def test_torch_dlpack_capsule_cannot_be_consumed_twice():
     tensor = torch.from_dlpack(capsule)
     with pytest.raises((RuntimeError, ValueError)):
         torch.from_dlpack(capsule)
-    image.close()
     del image, tensor, capsule
     gc.collect()
     assert probe.refcount() == 0
@@ -302,12 +321,10 @@ def test_cupy_from_dlpack_is_zero_copy_and_retains_lease_when_available():
     image = ImageView._from_native(native_view)
     del native_view
     array = cp.from_dlpack(image)
-    assert array.data.ptr == image.device_ptr
     assert array.shape == image.shape
     assert array.strides == image.strides
     assert str(array.dtype) == "uint8"
 
-    image.close()
     assert probe.refcount() == 1
     del image
     gc.collect()

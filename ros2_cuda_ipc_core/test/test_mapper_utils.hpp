@@ -80,7 +80,10 @@ inline void seed_cache_for_message(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg, uintptr_t ptr_seed) {
   backend::ImportedResources imported;
   imported.dev_ptr = reinterpret_cast<void*>(ptr_seed);
-  imported.event = reinterpret_cast<CUevent>(ptr_seed + 1U);
+  // Successful mapper fixtures model an already-ready publication.  Tests
+  // that exercise a real producer event construct it explicitly in
+  // test_read_handle.cpp.
+  imported.event = nullptr;
   // The production cache strongly owns this synthetic resource until it is
   // explicitly cleared or the process exits.
   (void)subscriber::IpcHandleCache::instance().insert_or_discard_duplicate(

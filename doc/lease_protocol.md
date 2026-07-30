@@ -34,9 +34,9 @@ Publisher process
     PublishSlot         1回の publish 試行を表す move-only object
 
 Subscriber process
-  BufferViewMapper
-    LeaseHandle         lease を取得
-  BufferView            view の生存中 lease を保持
+  BufferMapper
+    ReadHandle          imported resource と publication lease を保持
+                        producer ready event を consumer stream で待機
 ```
 
 Publisher は次の順で API を使用する。
@@ -141,14 +141,17 @@ acquire は次を行う。
 4. `refcnt` を CAS で1増加する。
 5. generation を再確認する。
 6. 再確認に失敗した場合は refcount を戻して失敗する。
-7. 成功したら `LeaseHandle` を返す。
+7. 成功したら内部の publication lease を保持する `ReadHandle` を返す。
 
-有効な `LeaseHandle` の破棄または move assignment による release は `refcnt` を1減少
-させる。`BufferView` は内部で lease を保持するため、view の生存中は slot を再利用
-できない。
+`ReadHandle` の破棄時には consumer stream へ completion event を記録する。event、
+imported resource 参照、publication lease は内部 deferred queue へ移され、queue が
+項目を順次 `cuEventSynchronize` で待った後に handle 固有の参照が解放される。cache
+entry の破棄方針は import cache が管理する。
 
-Subscriber が import した ready event を自身の CUDA stream で待機してから buffer を
-読み取ることは、Subscriber 側の契約である。
+`BufferMapper::map(message, consumer_stream)` が producer ready event の wait を指定
+stream へ enqueue するため、利用者は返された `ReadHandle` から device pointer を取得
+してGPU workをenqueueするだけでよい。mapperへ渡したstreamは、対応するhandleの破棄と
+completion eventの記録が完了するまで有効でなければならない。
 
 ## 7. Publisher/Subscriber 競合の安全性
 
