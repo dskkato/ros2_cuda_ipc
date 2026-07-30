@@ -3,6 +3,65 @@
 This document records the user-visible changes between releases of
 `ros2_cuda_ipc`.
 
+## [0.4.0] - 2026-07-30
+
+This release adds the first supported Python subscriber API and simplifies
+the publisher and subscriber lifetime contracts around asynchronous CUDA
+work.
+
+### Highlights
+
+- Added the `ros2_cuda_ipc_py` subscriber binding for zero-copy `GpuImage`
+  access from Python, including CuPy and DLPack integration, CUDA stream
+  validation, image metadata, examples, and regression tests.
+- Reworked subscriber reads around `BufferMapper` and the move-only
+  `ReadHandle` API. Imported resources, publication leases, producer waits,
+  and completion handling now follow the read-handle lifecycle, with release
+  deferred until asynchronous work completes.
+- Simplified `PublishSlot` preparation to the single
+  `prepare_publish(CUstream)` operation, which builds the descriptor,
+  records the ready event, and commits the reservation.
+- Simplified lease slot reuse to generation, reference-count, and publication
+  timestamp tracking with a fixed grace period; removed pending metadata and
+  pending-TTL configuration.
+- Replaced core `RCLCPP_*` logging and propagated logger objects with named
+  `rcutils` logging macros.
+
+### Breaking changes and migration notes
+
+- Update publisher code to use `PublishSlot::prepare_publish(CUstream)`;
+  `record_ready()`, `descriptor()`, and `commit_publish()` are no longer part
+  of the public `PublishSlot` API.
+- Remove uses of pending-lease metadata and pending-TTL configuration APIs.
+  Slot reuse is now protected by the fixed grace period and active lease
+  reference counts.
+- Update subscriber code to use `BufferMapper` and `ReadHandle`. Legacy
+  buffer-view, lease-handle, and import-cache implementation headers are no
+  longer part of the installed subscriber surface.
+- Core APIs no longer carry `rclcpp::Logger` instances or logger parameters;
+  diagnostics use fixed named `rcutils` loggers.
+
+### Tests and documentation
+
+- Added Python subscriber, DLPack, stream-validation, ownership, and
+  asynchronous lifetime regression coverage.
+- Expanded publisher, lease, subscriber, and cache tests for the revised
+  ownership and failure semantics.
+- Updated the publisher, lease protocol, subscriber, development, and demo
+  documentation and added Python subscriber examples.
+
+### Package versions
+
+All ROS 2 packages and the Python native extension are bumped from `0.3.0`
+to `0.4.0`:
+
+- `ros2_cuda_ipc_core`
+- `ros2_cuda_ipc_msgs`
+- `ros2_cuda_ipc_py`
+- `multi_process_image_fanout`
+- `gpu_image_transport`
+- `cuda_ipc_poc`
+
 ## [0.3.0] - 2026-07-25
 
 This release is primarily an internal refactoring release. The core CUDA
@@ -59,3 +118,4 @@ All packages are bumped from `0.2.0` to `0.3.0`:
 - `cuda_ipc_poc`
 
 [0.3.0]: https://github.com/dskkato/ros2_cuda_ipc/compare/v0.2.0...v0.3.0
+[0.4.0]: https://github.com/dskkato/ros2_cuda_ipc/compare/v0.3.0...v0.4.0

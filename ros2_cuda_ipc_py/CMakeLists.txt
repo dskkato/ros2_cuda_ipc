@@ -30,7 +30,7 @@ ament_get_python_install_dir(PYTHON_INSTALL_DIR)
 pybind11_add_module(_native MODULE src/native_module.cpp)
 target_include_directories(_native PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(_native PRIVATE ros2_cuda_ipc_core::ros2_cuda_ipc_core dlpack::dlpack)
-target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_VERSION="0.3.0")
+target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_VERSION="0.4.0")
 
 if(BUILD_TESTING)
   target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT)
