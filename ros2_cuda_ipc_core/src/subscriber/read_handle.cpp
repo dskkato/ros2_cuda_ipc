@@ -79,12 +79,14 @@ class DeferredReleaseQueue {
       }
       condition_.notify_one();
     } catch (...) {
-      // Keeping the item alive is safer than releasing a buffer_ref before the
-      // consumer stream has completed.  The item is intentionally leaked so
-      // its resource, completion event, and buffer_ref are all retained.
+      // Keeping the item alive is safer than releasing a buffer reference
+      // before the consumer stream has completed.  The item is intentionally
+      // leaked so its resource, completion event, and buffer reference are all
+      // retained.
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.subscriber.read_handle",
-          "Failed to enqueue deferred GPU read release; retaining buffer_ref");
+          "Failed to enqueue deferred GPU read release; retaining buffer "
+          "reference");
     }
   }
 
@@ -95,7 +97,7 @@ class DeferredReleaseQueue {
     } catch (...) {
       RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.subscriber.read_handle",
                               "Failed to retain failed GPU read release; "
-                              "buffer_ref remains held by "
+                              "buffer reference remains held by "
                               "the process-lifetime read state");
       // There is no safe release path after completion recording failed.  The
       // item is intentionally leaked so all of its ownership is retained.
@@ -136,7 +138,8 @@ class DeferredReleaseQueue {
       if (result != CUDA_SUCCESS) {
         RCUTILS_LOG_ERROR_NAMED(
             "ros2_cuda_ipc_core.subscriber.read_handle",
-            "cuEventSynchronize failed; retaining publication buffer_ref: %s",
+            "cuEventSynchronize failed; retaining publication buffer "
+            "reference: %s",
             ros2_cuda_ipc_core::detail::CudaDriverError(result)
                 .to_string()
                 .c_str());
@@ -146,7 +149,7 @@ class DeferredReleaseQueue {
 
       // The item is destroyed only after the event has completed.  Its
       // completion event is destroyed first, then the resource deleter and
-      // buffer_ref handle release their handle-specific ownership.
+      // the buffer reference releases its handle-specific ownership.
       item->completion.reset();
       item->resource.reset();
       item->buffer_ref.reset();
@@ -319,12 +322,12 @@ struct ReadHandle::Impl {
         }
       } catch (...) {
         // No destructor may run here: retaining the raw item keeps the
-        // resource, completion event, and buffer_ref alive if queue
+        // resource, completion event, and buffer reference alive if queue
         // initialization or worker creation fails.
         RCUTILS_LOG_ERROR_NAMED(
             "ros2_cuda_ipc_core.subscriber.read_handle",
             "Failed to initialize deferred GPU read release queue; retaining "
-            "publication buffer_ref");
+            "publication buffer reference");
       }
     };
 
@@ -339,7 +342,7 @@ struct ReadHandle::Impl {
       }
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.subscriber.read_handle",
-          "cuEventRecord failed; retaining publication buffer_ref: %s",
+          "cuEventRecord failed; retaining publication buffer reference: %s",
           ros2_cuda_ipc_core::detail::CudaDriverError(result)
               .to_string()
               .c_str());
@@ -347,7 +350,7 @@ struct ReadHandle::Impl {
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.subscriber.read_handle",
           "Failed to activate CUDA context while recording completion event; "
-          "retaining publication buffer_ref");
+          "retaining publication buffer reference");
     }
 
     submit(true);

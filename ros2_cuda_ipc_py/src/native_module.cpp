@@ -555,7 +555,8 @@ class PyBufferMapper {
     }
     if (!view) {
       throw MappingError(
-          "BufferCore was rejected by the C++ mapper (buffer_ref, generation, "
+          "BufferCore was rejected by the C++ mapper (buffer reference, "
+          "generation, "
           "backend, or CUDA import failure)");
     }
     return PyReadHandle(std::move(*view));
@@ -578,7 +579,8 @@ class PyImageMapper {
     }
     if (!view.valid()) {
       throw MappingError(
-          "GpuImage was rejected by the C++ mapper (buffer_ref, generation, "
+          "GpuImage was rejected by the C++ mapper (buffer reference, "
+          "generation, "
           "backend, or CUDA import failure)");
     }
     // Keep the C++ implementation's complete bounds check as the final
