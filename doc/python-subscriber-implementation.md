@@ -16,7 +16,7 @@ rclpy message
     -> DLPack framework object
 ```
 
-`ros2_cuda_ipc_py`はPythonとC++の境界をつなぐ薄いpackageであり、lease protocol、
+`ros2_cuda_ipc_py`はPythonとC++の境界をつなぐ薄いpackageであり、buffer metadata protocol、
 CUDA IPC import、resource cleanupはC++ coreを利用する。
 
 ## 責務の境界
@@ -30,10 +30,10 @@ Python側は次を担当する。
 C++ coreは次を担当する。
 
 - messageの検証とgenerationの確認
-- shared-memory slotのlease取得
+- shared-memory slotのbuffer reference取得
 - CUDA memory/eventのimportとcache
 - `ReadHandle`からのdevice pointer、ready wait、metadataの提供
-- completion event後のresource/lease cleanup
+- completion event後のresource/buffer reference cleanup
 
 descriptorで渡すのはmetadataとhandleだけであり、GPU payload bytesはコピーしない。
 node、executor、QoSの管理も`rclpy`に委ねる。
@@ -43,11 +43,11 @@ node、executor、QoSの管理も`rclpy`に委ねる。
 現在の中心対象は`BufferCore`、`GpuImage`、CUDA IPC、CUDA上のframework objectである。
 framework-neutralな相互運用経路はDLPackであり、CuPyもDLPack経由で利用する。
 Python Publisher、任意のROS messageの自動変換、PointCloud2、CPU fallback、
-自動的なstream-ordered lease releaseは含めない。
+自動的なstream-ordered buffer reference releaseは含めない。
 
 ## Ownership model
 
-`BufferMapper`が返す`ReadHandle`は、imported resourceとpublication leaseを
+`BufferMapper`が返す`ReadHandle`は、imported resourceとbuffer referenceを
 Python objectが保持する。DLPackのtyped adapterはmap時にはstreamへbindせず、
 最初の`__dlpack__(stream)`でexport固有のread stateへownershipを移す。
 
@@ -55,17 +55,17 @@ Python objectが保持する。DLPackのtyped adapterはmap時にはstreamへbin
 Python ReadHandle
     -> native ReadHandle
         -> imported resource
-        -> publication lease
-            -> shared-memory slot lease
+        -> buffer reference
+            -> shared-memory slot reference
 ```
 
-slotは、completion event後にdeferred queueがhandle固有のleaseを解放するまで
+slotは、completion event後にdeferred queueがhandle固有のbuffer referenceを解放するまで
 publisherから再利用されない。通常のPython `ReadHandle`の`close()`は、そのread
 stateを解放する。DLPack export後のtyped adapterは`close()`できない。
 
 framework objectを作成する場合は、mapped objectからexport固有のnative read stateへ
 ownershipを移譲する。そのため、DLPack capsuleが生きている間はimported resourceと
-publication leaseが維持される。
+buffer referenceが維持される。
 
 ## Framework adapterの原則
 
@@ -76,13 +76,13 @@ lifetimeをnative viewへ接続し、slotの所有権を一方向に拡張する
 framework object
     -> retained native read state
         -> imported resource
-        -> publication lease
+        -> buffer reference
             -> shared-memory slot
 ```
 
 これはmemoryの所有権であり、CUDA kernelの完了通知ではない。capsule deleterは
 bind済みconsumer streamへcompletion eventをrecordし、完了を内部queueが確認した後に
-handle固有のresource参照とpublication leaseを解放する。
+handle固有のresource参照とbuffer referenceを解放する。
 
 ## DLPack adapter
 
@@ -112,8 +112,8 @@ framework tensor / array
     -> DLPack managed tensor または CuPy owner
         -> manager context / retained native read state
             -> imported CUDA resource
-            -> publication lease
-                -> shared-memory slot lease
+            -> buffer reference
+                -> shared-memory slot reference
 ```
 
 capsuleがconsumerに渡された後はmanaged-tensor deleterがretained native read stateを
@@ -125,7 +125,7 @@ legacy default stream、`1`はlegacy default、`2`はper-thread default、正の
 有効なCUDA stream pointerとして扱う。`-1`はcompletion管理ができないため拒否し、
 `0`とその他の負値も拒否する。completion eventはcapsule公開前に作成し、その後に
 ready waitを指定streamへenqueueする。capsule deleterはbind済みstreamへcompletion
-eventをrecordし、event、resource参照、publication leaseを内部deferred queueへ移す。
+eventをrecordし、event、resource参照、buffer referenceを内部deferred queueへ移す。
 queue workerは項目を順次`cuEventSynchronize`で待つ。metadata参照はexport前後とも
 許可するが、再exportとpublication lifetimeに依存する操作、raw device pointer取得は
 拒否する。
@@ -147,8 +147,8 @@ producerの書き込み完了を表し、capsule deleterがconsumer streamへの
 event recordを行う。利用者はframework objectと、bindしたstreamをcompletion record
 完了まで保持する必要がある。import cache entryの破棄方針はcacheが管理する。
 
-逆に、arrayを長く保持するとslot leaseも長く保持され、publisherが利用できるslot数を
-圧迫する可能性がある。stream完了に合わせた自動lease releaseや、同期を伴う
+逆に、arrayを長く保持するとslot referenceも長く保持され、publisherが利用できるslot数を
+圧迫する可能性がある。stream完了に合わせた自動buffer reference releaseや、同期を伴う
 context managerは今後のAPI設計課題である。
 
 ## DLPackとその他のadapter
@@ -163,20 +163,20 @@ context managerは今後のAPI設計課題である。
 
 DLPackではcapsuleのconsumeとdeleterがnative ownerの解放点になる。CuPyと同じ
 ownership原則を使う。現在の実装はCUDA `GpuImage` rank 3とmessageで定義された
-dtypesを対象にし、DLPack C exchange API、自動stream-completion lease release、
+dtypesを対象にし、DLPack C exchange API、自動stream-completion buffer reference release、
 CPU fallback、PointCloud2は対象外である。
 
 ## エラーと実行モデル
 
 - descriptorの型・field・layout不正はPythonの入力エラーとして扱う
-- stale generation、lease取得失敗、CUDA import失敗はmapping failureとして扱う
+- stale generation、buffer reference取得失敗、CUDA import失敗はmapping failureとして扱う
 - ready-event waitのCUDA failureはmapping failureと分けて扱う
 - Python messageの読み取りにはGILが必要だが、C++ mapperの重い処理はGILを解放できる
 - Python wrapperのdestructorからPython APIを呼び出さない
 
 ## 設計上の到達点
 
-Python callbackから既存のC++ lease/resource modelを壊さずにzero-copyのGPU viewを
+Python callbackから既存のC++ buffer reference/resource modelを壊さずにzero-copyのGPU viewを
 取得し、framework固有のobjectへ一方向にownershipを拡張できることが到達点である。
 frameworkごとの使い勝手や非同期処理の完了管理は、slotの再利用条件を曖昧にしない
 形で今後拡張する。

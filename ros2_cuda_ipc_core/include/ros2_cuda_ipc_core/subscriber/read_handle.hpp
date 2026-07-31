@@ -16,7 +16,7 @@ struct ReadHandleFactory;
 ///
 /// The handle waits for producer publication on the stream supplied to the
 /// mapper.  Destroying the handle records consumer completion and keeps the
-/// publication lease alive until that completion has been observed.  The
+/// publication buffer_ref alive until that completion has been observed.  The
 /// supplied consumer stream must remain valid until handle destruction has
 /// completed the completion-event record.
 class ReadHandle {

@@ -14,27 +14,29 @@
 #include <thread>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
-#include "ros2_cuda_ipc_core/publisher/lease_manager.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
+#include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 
 namespace {
 
 std::string make_unique_shm_name() {
   static std::atomic<int> counter{0};
   std::ostringstream out;
-  out << "/lease_manager_" << ::getpid() << "_" << counter.fetch_add(1);
+  out << "/buffer_metadata_manager_" << ::getpid() << "_"
+      << counter.fetch_add(1);
   return out.str();
 }
 
 }  // namespace
 
-TEST(LeaseManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
+TEST(BufferMetadataManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
   for (int iteration = 0; iteration < 1000; ++iteration) {
     const std::string prefix = make_unique_shm_name();
-    ros2_cuda_ipc_core::publisher::LeaseManager manager(prefix, 1);
+    ros2_cuda_ipc_core::publisher::BufferMetadataManager manager(prefix, 1);
     ASSERT_TRUE(manager.initialise());
     std::atomic<bool> start{false};
-    std::optional<ros2_cuda_ipc_core::publisher::LeaseManager::Reservation>
+    std::optional<
+        ros2_cuda_ipc_core::publisher::BufferMetadataManager::Reservation>
         reservation;
     std::thread reserve_thread([&]() {
       while (!start.load(std::memory_order_acquire)) {
@@ -56,7 +58,7 @@ TEST(LeaseManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
     if (reservation) {
       manager.cancel(*reservation);
       const auto refcount =
-          ros2_cuda_ipc_core::lease::LeaseHandle::current_refcount(
+          ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(
               reservation->mapping, 0);
       ASSERT_TRUE(refcount.has_value());
       EXPECT_EQ(*refcount, 0u);
@@ -64,19 +66,19 @@ TEST(LeaseManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
   }
 }
 
-TEST(LeaseManagerTest, SamePrefixProducesDistinctInstances) {
+TEST(BufferMetadataManagerTest, SamePrefixProducesDistinctInstances) {
   const std::string prefix = make_unique_shm_name();
-  ros2_cuda_ipc_core::publisher::LeaseManager first(prefix, 1);
-  ros2_cuda_ipc_core::publisher::LeaseManager second(prefix, 2);
+  ros2_cuda_ipc_core::publisher::BufferMetadataManager first(prefix, 1);
+  ros2_cuda_ipc_core::publisher::BufferMetadataManager second(prefix, 2);
   ASSERT_TRUE(first.initialise());
   ASSERT_TRUE(second.initialise());
   EXPECT_NE(first.shm_name(), second.shm_name());
   EXPECT_NE(first.publisher_instance_id(), second.publisher_instance_id());
 }
 
-TEST(LeaseManagerTest, ResetUnlinksAndReinitialiseChangesIdentity) {
-  ros2_cuda_ipc_core::publisher::LeaseManager manager(make_unique_shm_name(),
-                                                      1);
+TEST(BufferMetadataManagerTest, ResetUnlinksAndReinitialiseChangesIdentity) {
+  ros2_cuda_ipc_core::publisher::BufferMetadataManager manager(
+      make_unique_shm_name(), 1);
   ASSERT_TRUE(manager.initialise());
   const std::string old_name = manager.shm_name();
   const auto old_id = manager.publisher_instance_id();
@@ -94,8 +96,9 @@ TEST(LeaseManagerTest, ResetUnlinksAndReinitialiseChangesIdentity) {
   EXPECT_NE(manager.publisher_instance_id(), old_id);
 }
 
-TEST(LeaseManagerTest, InvalidPrefixFailsClosed) {
-  ros2_cuda_ipc_core::publisher::LeaseManager manager("/invalid/prefix", 1);
+TEST(BufferMetadataManagerTest, InvalidPrefixFailsClosed) {
+  ros2_cuda_ipc_core::publisher::BufferMetadataManager manager(
+      "/invalid/prefix", 1);
   EXPECT_FALSE(manager.initialise());
   EXPECT_TRUE(manager.shm_name().empty());
   EXPECT_TRUE(ros2_cuda_ipc_core::is_nil(manager.publisher_instance_id()));

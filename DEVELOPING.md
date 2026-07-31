@@ -7,7 +7,7 @@ who want to try the demo first.
 ## Packages
 
 - `ros2_cuda_ipc_msgs`: message definitions for GPU-backed buffers.
-- `ros2_cuda_ipc_core`: CUDA memory sharing, lease handling, and modality-specific Views.
+- `ros2_cuda_ipc_core`: CUDA memory sharing, buffer reference handling, and modality-specific Views.
 - `examples/multi_process_image_fanout`: primary multi-process sample.
 - `utils/gpu_image_transport`: utility bridge from `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: CUDA IPC and VMM-FD environment checks.
@@ -15,11 +15,11 @@ who want to try the demo first.
 ## Core Components
 
 - `ros2_cuda_ipc_core::subscriber::BufferMapper`: maps a `BufferCore` and a consumer stream to an optional `ReadHandle`.
-- `ros2_cuda_ipc_core::subscriber::ReadHandle`: the normal pointer API. It waits for producer readiness, owns the publication lease, and defers resource/lease release until consumer completion.
+- `ros2_cuda_ipc_core::subscriber::ReadHandle`: the normal pointer API. It waits for producer readiness, owns the buffer reference, and defers resource/buffer reference release until consumer completion.
 - `ros2_cuda_ipc_core::image::ImageView` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2View`: typed adapters layered on `ReadHandle`; the Python image adapter is DLPack-only and binds its stream at export.
-- `ros2_cuda_ipc_core::publisher::LeaseManager`: publisher reservation, generation, and grace-period state. Subscriber lease handles, import caches, completion events, and deferred queues are internal.
+- `ros2_cuda_ipc_core::publisher::BufferMetadataManager`: publisher reservation, generation, and grace-period state. Subscriber buffer reference handles, import caches, completion events, and deferred queues are internal.
 - `ros2_cuda_ipc_core::publisher::GpuBufferPool`: publisher-side GPU resource ownership.
-- `ros2_cuda_ipc_core::publisher::LeaseManager`: publisher reservation, generation, and grace-period state.
+- `ros2_cuda_ipc_core::publisher::BufferMetadataManager`: publisher reservation, generation, and grace-period state.
 - `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher-facing buffer manager.
 - `ros2_cuda_ipc_core::publisher::PublishSlot`: one move-only publish attempt with RAII cancellation.
 
@@ -49,10 +49,10 @@ Destroying a slot before preparation cancels its reservation. A successful
 preparation commits it. The subsequent middleware publish result does not
 affect slot lifecycle.
 The protocol guarantees and known limitations are specified in
-[doc/lease_protocol.md](doc/lease_protocol.md).
+[doc/buffer_metadata_protocol.md](doc/buffer_metadata_protocol.md).
 
 Receiving code subscribes to `ros2_cuda_ipc_msgs::msg::BufferCore` and calls
-`BufferMapper::map(message, consumer_stream)`. Mapping acquires the lease and
+`BufferMapper::map(message, consumer_stream)`. Mapping acquires the buffer reference and
 imports or looks up the GPU resource before returning a `ReadHandle`.
 
 The consumer stream must remain valid until the corresponding `ReadHandle` is
@@ -163,6 +163,6 @@ repository tag when needed.
 ## Design References
 
 - [doc/design.md](doc/design.md)
-- [doc/lease_protocol.md](doc/lease_protocol.md)
+- [doc/buffer_metadata_protocol.md](doc/buffer_metadata_protocol.md)
 - [doc/future_work.md](doc/future_work.md)
 - [examples/multi_process_image_fanout/doc/design.md](examples/multi_process_image_fanout/doc/design.md)

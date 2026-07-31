@@ -15,7 +15,7 @@ Subscriber プロセスへコピーせずに共有する。メッセージには
 
 - CUDA IPC memory backend
 - CUDA VMM + shareable FD (`VMM_FD`) backend
-- 固定 slot pool と shared-memory lease による publisher/subscriber 間の lifetime 管理
+- 固定 slot pool と shared-memory buffer reference による publisher/subscriber 間の lifetime 管理
 - C++ の raw pointer API、画像／点群の typed adapter、Python の GpuImage/DLPack adapter
 
 CPU fallback、Python publisher、任意の ROS message の自動変換はこの設計の範囲外である。
@@ -28,9 +28,9 @@ Python adapter の詳細は [doc/python-subscriber-implementation.md](python-sub
 | `BufferCore` | GPU allocation と publication を識別する transport descriptor |
 | `GpuImage` / `GpuPointCloud2` | `BufferCore` とアプリケーションのレイアウトメタデータを持つ ROS message |
 | `BufferMapper` | `BufferCore` を import し、consumer stream に bind した read を作る mapper |
-| `ReadHandle` | 一つの GPU read の所有者。imported resource と publication lease を保持する move-only handle |
+| `ReadHandle` | 一つの GPU read の所有者。imported resource と buffer reference を保持する move-only handle |
 | `ImageView` / `PointCloud2View` | `ReadHandle` に画像／点群メタデータを付加する move-only typed adapter |
-| publication lease | shared-memory slot の refcount を保持し、publisher による再利用を防ぐ subscriber 側の所有権 |
+| buffer reference | shared-memory slot の refcount を保持し、publisher による再利用を防ぐ subscriber 側の所有権 |
 
 公開 API の中心は次の関係である。
 
@@ -46,7 +46,7 @@ GpuImage / GpuPointCloud2
     -> ReadHandle
 ```
 
-`MappedPublication`、`LeaseHandle`、`LeaseMappingCache`、`IpcHandleCache`、completion
+`MappedPublication`、`BufferRef`、`BufferMetadataCache`、`IpcHandleCache`、completion
 event、deferred release queue は lifetime を実装する内部要素であり、アプリケーションが
 直接組み合わせる API ではない。
 
@@ -61,14 +61,14 @@ event、deferred release queue は lifetime を実装する内部要素であり
 | `backend` | `CUDA_IPC` または `VMM_FD` |
 | `mem_handle` | backend 固有の opaque payload。CUDA IPC handle または VMM allocation の UUID |
 | `event_handle` | producer の ready event を識別する CUDA IPC event handle |
-| `shm_name` | lease/refcount 用 POSIX shared memory 名 |
+| `shm_name` | buffer reference/refcount 用 POSIX shared memory 名 |
 | `publisher_instance_id` | publisher 初期化単位の識別子 |
 | `device_id` | allocation が存在する CUDA device |
 | `slot_id` | 固定 pool 内の slot |
 | `generation` | slot 上の publication 世代 |
 | `byte_size` | GPU buffer の論理サイズ（bytes） |
 
-Subscriber は `publisher_instance_id`、`slot_id`、`generation` を検証してから lease を取得する。
+Subscriber は `publisher_instance_id`、`slot_id`、`generation` を検証してから buffer reference を取得する。
 同じ `slot_id` でも publisher instance または generation が異なる publication は別物として扱う。
 
 ### typed message
@@ -123,8 +123,8 @@ acquire_for_publish()
 reset まで再利用しない。publish 後の middleware の成否は slot の commit 状態を変えない。
 
 固定 grace period と generation は配送保証ではない。遅延した message は、slot 再利用後に
-generation mismatch として破棄される可能性がある。詳細な lease protocol と publisher／
-subscriber race の不変条件は [doc/lease_protocol.md](lease_protocol.md) を正とする。
+generation mismatch として破棄される可能性がある。詳細な buffer metadata protocol と publisher／
+subscriber race の不変条件は [doc/buffer_metadata_protocol.md](buffer_metadata_protocol.md) を正とする。
 
 ## Subscriber の lifecycle
 
@@ -138,17 +138,17 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> read =
 `BufferMapper::map()` は次を一つの mapping 操作として行う。
 
 1. backend と `publisher_instance_id` を検証する。
-2. `shm_name` に対応する lease mapping を取得または attach する。
-3. `slot_id` と `generation` を検証し、publication lease を取得する。
+2. `shm_name` に対応する buffer metadata mapping を取得または attach する。
+3. `slot_id` と `generation` を検証し、buffer reference を取得する。
 4. `IpcHandleCache` から imported resource を取得する。未登録なら backend importer で import する。
 5. consumer stream に producer ready event の wait を enqueue する。
-6. imported resource と lease を所有する `ReadHandle` を返す。
+6. imported resource と buffer reference を所有する `ReadHandle` を返す。
 
 mapping に失敗した場合、raw `BufferMapper` は `std::nullopt` を返す。詳細な理由は内部
 logging に記録し、公開 API ではエラー型を返さない。
 
-`BufferMapper` は mapper ごとに lease mapping cache を保持するため、callback ごとに作り直さず
-再利用することが望ましい。IPC resource cache と lease mapping cache は process 内で resource
+`BufferMapper` は mapper ごとに buffer metadata mapping cache を保持するため、callback ごとに作り直さず
+再利用することが望ましい。IPC resource cache と buffer metadata mapping cache は process 内で resource
 を再利用するが、active な `ReadHandle` の所有権とは独立している。
 
 ### `ReadHandle` の所有権と完了通知
@@ -157,7 +157,7 @@ logging に記録し、公開 API ではエラー型を返さない。
 
 - device pointer、`byte_size`、`device_id`
 - imported GPU resource への参照
-- publication lease
+- buffer reference
 - mapper に渡された consumer stream
 - consumer read completion event
 
@@ -171,9 +171,9 @@ producer ready event
     -> consumer GPU work
     -> ReadHandle destruction
        - completion event を consumer stream に record
-       - resource / lease / event を deferred queue へ移動
+       - resource / buffer reference / event を deferred queue へ移動
     -> queue worker が順番に cuEventSynchronize
-    -> handle 固有の resource と publication lease を解放
+    -> handle 固有の resource と buffer reference を解放
 ```
 
 したがって、consumer stream は対応する `ReadHandle` の破棄と completion event の record が
@@ -210,13 +210,13 @@ raw pointer mapping と同じ API として扱わない。
 - `ReadHandle`、`ImageView`、`PointCloud2View` はコピーできない。非同期 GPU work の完了前に所有者を破棄してはならない。
 - `ReadHandle` の失敗理由は公開 API には含まれず、内部 log を確認する。
 - `ImageView::valid()` は resource mapping と画像 shape の基本条件を確認する。metadata の境界検証には `sanity_check()` を使う。
-- import cache と lease mapping cache は現時点で unbounded policy であり、LRU、TTL、Publisher instance 単位の自動 prune は行わない。
-- Publisher process crash や長時間の Subscriber 遅延では lease が残り、slot が再利用できなくなる可能性がある。
+- import cache と buffer metadata mapping cache は現時点で unbounded policy であり、LRU、TTL、Publisher instance 単位の自動 prune は行わない。
+- Publisher process crash や長時間の Subscriber 遅延では buffer reference が残り、slot が再利用できなくなる可能性がある。
 - CUDA context、CUDA stream、CUDA event の lifetime は caller／core の契約に従う必要がある。
 
 ## 設計変更時の参照先
 
 - 公開 API の概要と maintainer 向け手順: [DEVELOPING.md](../DEVELOPING.md)
-- lease、generation、競合安全性: [doc/lease_protocol.md](lease_protocol.md)
+- buffer reference、generation、競合安全性: [doc/buffer_metadata_protocol.md](buffer_metadata_protocol.md)
 - Python／DLPack の ownership と stream semantics: [doc/python-subscriber-implementation.md](python-subscriber-implementation.md)
 - 実行例: [examples/multi_process_image_fanout/README.md](../examples/multi_process_image_fanout/README.md)

@@ -121,8 +121,9 @@ class GpuImagePublisherNode : public rclcpp::Node {
       slot = manager_->acquire_for_publish();
     }
     if (!slot) {
-      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                           "No available GPU slots (all leases in use)");
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "No available GPU slots (all buffer references in use)");
       return;
     }
 

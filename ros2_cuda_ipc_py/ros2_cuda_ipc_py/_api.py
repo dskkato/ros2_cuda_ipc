@@ -103,7 +103,7 @@ class ReadHandle:
 
 
 class ImageView:
-    """Lease-backed image metadata and framework-neutral zero-copy exports."""
+    """BufferRef-backed image metadata and framework-neutral zero-copy exports."""
 
     def __init__(self, native_view):
         self._native = native_view

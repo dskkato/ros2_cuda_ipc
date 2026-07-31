@@ -10,8 +10,8 @@
 #include <string>
 
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
+#include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
-#include "ros2_cuda_ipc_core/publisher/lease_manager.hpp"
 #include "ros2_cuda_ipc_core/transport/buffer_descriptor.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
@@ -66,13 +66,13 @@ class PublishSlot {
   friend class GpuBufferManager;
 
   PublishSlot(GpuBufferManager* owner,
-              LeaseManager::Reservation reservation) noexcept;
+              BufferMetadataManager::Reservation reservation) noexcept;
   void move_from(PublishSlot&& other) noexcept;
   void quarantine(const char* step,
                   const detail::CudaDriverError* error = nullptr) noexcept;
 
   GpuBufferManager* owner_ = nullptr;
-  LeaseManager::Reservation reservation_{};
+  BufferMetadataManager::Reservation reservation_{};
 };
 
 /// Owns the GPU buffer pool and shared-memory slot reservations used for
@@ -109,7 +109,7 @@ class GpuBufferManager {
   GpuBufferManager(GpuBufferManager&&) = delete;
   GpuBufferManager& operator=(GpuBufferManager&&) = delete;
 
-  /// Initialize the shared-memory lease pool and GPU buffer pool.
+  /// Initialize the shared-memory buffer_ref pool and GPU buffer pool.
   ///
   /// @return true when both pools are initialized successfully.
   bool initialise();
@@ -117,7 +117,7 @@ class GpuBufferManager {
   /// Release pool resources and reset the manager to an uninitialized state.
   void reset() noexcept;
 
-  /// Check whether both the lease pool and buffer pool are initialized.
+  /// Check whether both the buffer_ref pool and buffer pool are initialized.
   bool is_initialised() const noexcept;
 
   /// Return the current instance-specific shared-memory name.
@@ -136,17 +136,19 @@ class GpuBufferManager {
   /// without exposing those operations as part of the public manager API.
   friend class PublishSlot;
 
-  void* device_ptr(const LeaseManager::Reservation& reservation) const noexcept;
+  void* device_ptr(
+      const BufferMetadataManager::Reservation& reservation) const noexcept;
   detail::CudaResult<void> record_ready(
-      const LeaseManager::Reservation& reservation, CUstream stream) noexcept;
+      const BufferMetadataManager::Reservation& reservation,
+      CUstream stream) noexcept;
   std::optional<transport::BufferDescriptor> try_build_descriptor(
-      const LeaseManager::Reservation& reservation) const noexcept;
-  bool commit(const LeaseManager::Reservation& reservation) noexcept;
-  bool cancel(const LeaseManager::Reservation& reservation) noexcept;
+      const BufferMetadataManager::Reservation& reservation) const noexcept;
+  bool commit(const BufferMetadataManager::Reservation& reservation) noexcept;
+  bool cancel(const BufferMetadataManager::Reservation& reservation) noexcept;
 
   Config config_;
   GpuBufferPool buffer_pool_;
-  LeaseManager lease_manager_;
+  BufferMetadataManager buffer_metadata_manager_;
 };
 
 }  // namespace ros2_cuda_ipc_core::publisher

@@ -9,8 +9,9 @@
 
 namespace ros2_cuda_ipc_core::publisher {
 
-PublishSlot::PublishSlot(GpuBufferManager* owner,
-                         LeaseManager::Reservation reservation) noexcept
+PublishSlot::PublishSlot(
+    GpuBufferManager* owner,
+    BufferMetadataManager::Reservation reservation) noexcept
     : owner_(owner), reservation_(std::move(reservation)) {}
 
 PublishSlot::PublishSlot(PublishSlot&& other) noexcept {
@@ -105,17 +106,17 @@ void PublishSlot::cancel() noexcept {
 GpuBufferManager::GpuBufferManager(Config config)
     : config_(std::move(config)),
       buffer_pool_(config_.slot_count, config_.backend),
-      lease_manager_(config_.shm_name_prefix, config_.slot_count) {}
+      buffer_metadata_manager_(config_.shm_name_prefix, config_.slot_count) {}
 
 GpuBufferManager::~GpuBufferManager() { reset(); }
 
 bool GpuBufferManager::initialise() {
   reset();
-  if (!lease_manager_.initialise()) {
+  if (!buffer_metadata_manager_.initialise()) {
     return false;
   }
   if (!buffer_pool_.initialise(config_.byte_size, config_.device_index)) {
-    lease_manager_.reset();
+    buffer_metadata_manager_.reset();
     return false;
   }
   return true;
@@ -123,26 +124,27 @@ bool GpuBufferManager::initialise() {
 
 void GpuBufferManager::reset() noexcept {
   buffer_pool_.reset();
-  lease_manager_.reset();
+  buffer_metadata_manager_.reset();
 }
 
 bool GpuBufferManager::is_initialised() const noexcept {
-  return buffer_pool_.is_initialised() && lease_manager_.is_initialised();
+  return buffer_pool_.is_initialised() &&
+         buffer_metadata_manager_.is_initialised();
 }
 
 std::string GpuBufferManager::shm_name() const {
-  return lease_manager_.shm_name();
+  return buffer_metadata_manager_.shm_name();
 }
 
 PublisherInstanceId GpuBufferManager::publisher_instance_id() const {
-  return lease_manager_.publisher_instance_id();
+  return buffer_metadata_manager_.publisher_instance_id();
 }
 
 std::optional<PublishSlot> GpuBufferManager::acquire_for_publish() {
   if (!is_initialised()) {
     return std::nullopt;
   }
-  auto reservation = lease_manager_.reserve_for_publish();
+  auto reservation = buffer_metadata_manager_.reserve_for_publish();
   if (!reservation) {
     return std::nullopt;
   }
@@ -150,20 +152,21 @@ std::optional<PublishSlot> GpuBufferManager::acquire_for_publish() {
 }
 
 void* GpuBufferManager::device_ptr(
-    const LeaseManager::Reservation& reservation) const noexcept {
-  if (reservation.shm_name != lease_manager_.shm_name() ||
+    const BufferMetadataManager::Reservation& reservation) const noexcept {
+  if (reservation.shm_name != buffer_metadata_manager_.shm_name() ||
       reservation.publisher_instance_id !=
-          lease_manager_.publisher_instance_id()) {
+          buffer_metadata_manager_.publisher_instance_id()) {
     return nullptr;
   }
   return buffer_pool_.device_ptr(reservation.slot_id);
 }
 
 detail::CudaResult<void> GpuBufferManager::record_ready(
-    const LeaseManager::Reservation& reservation, CUstream stream) noexcept {
-  if (reservation.shm_name != lease_manager_.shm_name() ||
+    const BufferMetadataManager::Reservation& reservation,
+    CUstream stream) noexcept {
+  if (reservation.shm_name != buffer_metadata_manager_.shm_name() ||
       reservation.publisher_instance_id !=
-          lease_manager_.publisher_instance_id()) {
+          buffer_metadata_manager_.publisher_instance_id()) {
     return detail::CudaResult<void>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
@@ -172,18 +175,18 @@ detail::CudaResult<void> GpuBufferManager::record_ready(
 
 std::optional<transport::BufferDescriptor>
 GpuBufferManager::try_build_descriptor(
-    const LeaseManager::Reservation& reservation) const noexcept {
+    const BufferMetadataManager::Reservation& reservation) const noexcept {
   const auto* resources = buffer_pool_.resources(reservation.slot_id);
   if (resources == nullptr || !resources->ready_event) {
     return std::nullopt;
   }
-  if (reservation.shm_name != lease_manager_.shm_name() ||
+  if (reservation.shm_name != buffer_metadata_manager_.shm_name() ||
       reservation.publisher_instance_id !=
-          lease_manager_.publisher_instance_id()) {
+          buffer_metadata_manager_.publisher_instance_id()) {
     return std::nullopt;
   }
   transport::BufferDescriptor result;
-  result.lease_shm_name = reservation.shm_name;
+  result.buffer_metadata_shm_name = reservation.shm_name;
   result.publisher_instance_id = reservation.publisher_instance_id;
   result.slot_id = reservation.slot_id;
   result.generation = reservation.generation;
@@ -196,13 +199,13 @@ GpuBufferManager::try_build_descriptor(
 }
 
 bool GpuBufferManager::commit(
-    const LeaseManager::Reservation& reservation) noexcept {
-  return lease_manager_.commit(reservation);
+    const BufferMetadataManager::Reservation& reservation) noexcept {
+  return buffer_metadata_manager_.commit(reservation);
 }
 
 bool GpuBufferManager::cancel(
-    const LeaseManager::Reservation& reservation) noexcept {
-  return lease_manager_.cancel(reservation);
+    const BufferMetadataManager::Reservation& reservation) noexcept {
+  return buffer_metadata_manager_.cancel(reservation);
 }
 
 }  // namespace ros2_cuda_ipc_core::publisher

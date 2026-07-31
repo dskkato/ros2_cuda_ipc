@@ -9,9 +9,9 @@
 #include <utility>
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
-#include "ros2_cuda_ipc_core/detail/lease_mapping_cache.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
+#include "ros2_cuda_ipc_core/detail/buffer_metadata_cache.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
@@ -35,7 +35,7 @@ bool is_supported_backend(uint8_t backend) noexcept {
 }
 
 std::unique_ptr<detail::MappedPublication> map_descriptor(
-    const std::shared_ptr<detail::LeaseMappingCache>& mapping_cache,
+    const std::shared_ptr<detail::BufferMetadataCache>& mapping_cache,
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
   if (!is_supported_backend(static_cast<uint8_t>(msg.backend))) {
     RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_mapper",
@@ -52,15 +52,17 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
   }
 
   auto mapping = mapping_cache->get_or_attach(msg.shm_name, instance_id);
-  auto lease =
-      lease::LeaseHandle::acquire(mapping, msg.slot_id, msg.generation);
-  if (!lease.valid()) {
-    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_mapper",
-                           "Failed to acquire lease shm=%s slot=%u gen=%u",
-                           msg.shm_name.c_str(), msg.slot_id, msg.generation);
+  auto buffer_ref =
+      buffer_metadata::BufferRef::acquire(mapping, msg.slot_id, msg.generation);
+  if (!buffer_ref.valid()) {
+    RCUTILS_LOG_WARN_NAMED(
+        "ros2_cuda_ipc_core.subscriber.buffer_mapper",
+        "Failed to acquire buffer reference shm=%s slot=%u gen=%u",
+        msg.shm_name.c_str(), msg.slot_id, msg.generation);
     return nullptr;
   }
-  auto lease_ptr = std::make_unique<lease::LeaseHandle>(std::move(lease));
+  auto buffer_ref_ptr =
+      std::make_unique<buffer_metadata::BufferRef>(std::move(buffer_ref));
 
   const CUipcEventHandle event_handle = to_cuda_event_handle(msg);
   IpcHandleKey key{};
@@ -87,7 +89,7 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
   }
 
   auto publication = detail::ReadHandleFactory::make_publication(
-      std::move(imported), std::move(lease_ptr),
+      std::move(imported), std::move(buffer_ref_ptr),
       static_cast<std::size_t>(msg.byte_size), static_cast<int>(msg.device_id));
   if (!publication) {
     RCUTILS_LOG_WARN_NAMED(
@@ -102,8 +104,8 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
 
 class BufferMapper::Impl {
  public:
-  std::shared_ptr<detail::LeaseMappingCache> mapping_cache =
-      std::make_shared<detail::LeaseMappingCache>();
+  std::shared_ptr<detail::BufferMetadataCache> mapping_cache =
+      std::make_shared<detail::BufferMetadataCache>();
 };
 
 BufferMapper::BufferMapper() : impl_(std::make_unique<Impl>()) {}

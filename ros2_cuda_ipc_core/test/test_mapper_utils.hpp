@@ -13,7 +13,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 #include "test_instance_id.hpp"
@@ -94,23 +94,24 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(
     const std::string& prefix, uint8_t key_seed) {
   const std::string shm_name = make_unique_shm_name(prefix);
   const auto instance_id = publisher_instance_id(shm_name);
-  auto mapping = lease::LeaseMapping::create(shm_name, instance_id, 1);
+  auto mapping =
+      buffer_metadata::BufferMetadata::create(shm_name, instance_id, 1);
   if (!mapping) {
-    ADD_FAILURE() << "LeaseMapping::create failed for " << shm_name;
+    ADD_FAILURE() << "BufferMetadata::create failed for " << shm_name;
     return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
+  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
   if (!reservation.has_value()) {
-    ADD_FAILURE() << "LeaseHandle::reserve_for_publish failed for " << shm_name;
+    ADD_FAILURE() << "BufferRef::reserve_for_publish failed for " << shm_name;
     return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }
   auto msg = make_cached_buffer_core_message(shm_name, reservation->slot_id,
                                              reservation->generation, key_seed);
-  if (!lease::LeaseHandle::commit_publish(mapping, reservation->slot_id,
-                                          reservation->generation)) {
-    ADD_FAILURE() << "LeaseHandle::commit_publish failed for " << shm_name;
-    (void)lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
-                                             reservation->generation);
+  if (!buffer_metadata::BufferRef::commit_publish(mapping, reservation->slot_id,
+                                                  reservation->generation)) {
+    ADD_FAILURE() << "BufferRef::commit_publish failed for " << shm_name;
+    (void)buffer_metadata::BufferRef::cancel_publish(
+        mapping, reservation->slot_id, reservation->generation);
     (void)::shm_unlink(shm_name.c_str());
     return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }

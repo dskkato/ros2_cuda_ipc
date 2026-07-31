@@ -20,8 +20,9 @@ namespace ros2_cuda_ipc_core::subscriber {
 
 /// Maps a BufferCore descriptor into a stream-bound ReadHandle.
 ///
-/// An empty optional is the complete public failure result.  Detailed lease,
-/// import, backend, and CUDA diagnostics are written to the internal log.
+/// An empty optional is the complete public failure result.  Detailed
+/// buffer_ref, import, backend, and CUDA diagnostics are written to the
+/// internal log.
 class BufferMapper {
  public:
   BufferMapper();

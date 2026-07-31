@@ -39,7 +39,7 @@ def callback(msg):
 
 `cupy.from_dlpack(image)` consumes the standard DLPack producer protocol. It
 preserves the message's `(rows, cols, channels)` shape, byte strides, and dtype,
-and the returned array keeps the native image lease alive until it is released.
+and the returned array keeps the native image buffer reference alive until it is released.
 
 `ImageView` is a typed DLPack projection. It exposes projection metadata such
 as `byte_size`, `device_id`, `shape`, `strides`, `dtype`, `encoding`, and
@@ -77,12 +77,12 @@ framework tensor/array
     -> DLPack managed tensor or CuPy owner
         -> retained native read state
             -> imported CUDA resource
-            -> publication lease
-                -> shared-memory slot lease
+            -> publication buffer reference
+                -> shared-memory slot refcount
 ```
 
 The first successful `__dlpack__(stream)` transfers the imported resource and
-publication lease to an export-specific read state. The mapped object is then
+publication buffer reference to an export-specific read state. The mapped object is then
 consumed: a second `__dlpack__()` and any publication-lifetime-dependent or
 raw-pointer operation are rejected, while metadata remains readable. An
 unconsumed capsule also releases its owner when the capsule is destroyed, and
@@ -92,7 +92,7 @@ The producer ready event and consumer work completion are separate. For
 DLPack, `__dlpack__(stream)` creates the completion event before publishing the
 capsule, then enqueues the producer-ready wait on the requested stream. The
 capsule deleter records completion on that same stream and puts the event,
-imported-resource reference, and publication lease into an internal deferred
+imported-resource reference, and buffer reference into an internal deferred
 queue. A process-internal worker waits for queue entries sequentially with
 `cuEventSynchronize` and then releases the handle-specific references; import
 cache entry lifetime is managed independently by the import cache.
@@ -112,7 +112,7 @@ included.
 
 Do not close or release the last array/view owner until all asynchronous CUDA
 work using the array has completed. A mapper should be reused across callbacks
-so its internal lease mapping and IPC import caches remain effective. C++
+so its internal buffer metadata mapping and IPC import caches remain effective. C++
 `BufferMapper.map()` returns an optional read; the detailed reason for a failed
 map is logged internally, while callers only receive the empty result.
 

@@ -14,9 +14,9 @@
 #include <utility>
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
-#include "ros2_cuda_ipc_core/lease/lease_handle.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber {
 namespace {
@@ -59,7 +59,7 @@ struct CompletionEvent {
 struct DeferredItem {
   std::shared_ptr<CompletionEvent> completion;
   std::shared_ptr<const backend::ImportedResources> resource;
-  std::unique_ptr<lease::LeaseHandle> lease;
+  std::unique_ptr<buffer_metadata::BufferRef> buffer_ref;
 };
 
 class DeferredReleaseQueue {
@@ -79,12 +79,14 @@ class DeferredReleaseQueue {
       }
       condition_.notify_one();
     } catch (...) {
-      // Keeping the item alive is safer than releasing a lease before the
-      // consumer stream has completed.  The item is intentionally leaked so
-      // its resource, completion event, and lease are all retained.
+      // Keeping the item alive is safer than releasing a buffer reference
+      // before the consumer stream has completed.  The item is intentionally
+      // leaked so its resource, completion event, and buffer reference are all
+      // retained.
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.subscriber.read_handle",
-          "Failed to enqueue deferred GPU read release; retaining lease");
+          "Failed to enqueue deferred GPU read release; retaining buffer "
+          "reference");
     }
   }
 
@@ -93,10 +95,10 @@ class DeferredReleaseQueue {
       std::lock_guard<std::mutex> lock(mutex_);
       failed_.emplace_back(item);
     } catch (...) {
-      RCUTILS_LOG_ERROR_NAMED(
-          "ros2_cuda_ipc_core.subscriber.read_handle",
-          "Failed to retain failed GPU read release; lease remains held by "
-          "the process-lifetime read state");
+      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.subscriber.read_handle",
+                              "Failed to retain failed GPU read release; "
+                              "buffer reference remains held by "
+                              "the process-lifetime read state");
       // There is no safe release path after completion recording failed.  The
       // item is intentionally leaked so all of its ownership is retained.
     }
@@ -136,7 +138,8 @@ class DeferredReleaseQueue {
       if (result != CUDA_SUCCESS) {
         RCUTILS_LOG_ERROR_NAMED(
             "ros2_cuda_ipc_core.subscriber.read_handle",
-            "cuEventSynchronize failed; retaining publication lease: %s",
+            "cuEventSynchronize failed; retaining publication buffer "
+            "reference: %s",
             ros2_cuda_ipc_core::detail::CudaDriverError(result)
                 .to_string()
                 .c_str());
@@ -146,10 +149,10 @@ class DeferredReleaseQueue {
 
       // The item is destroyed only after the event has completed.  Its
       // completion event is destroyed first, then the resource deleter and
-      // lease handle release their handle-specific ownership.
+      // the buffer reference releases its handle-specific ownership.
       item->completion.reset();
       item->resource.reset();
-      item->lease.reset();
+      item->buffer_ref.reset();
       delete item;
     }
   }
@@ -252,10 +255,10 @@ namespace detail {
 
 MappedPublication::MappedPublication(
     std::shared_ptr<const backend::ImportedResources> resource,
-    std::unique_ptr<lease::LeaseHandle> lease, std::size_t byte_size,
-    int device_id) noexcept
+    std::unique_ptr<buffer_metadata::BufferRef> buffer_ref,
+    std::size_t byte_size, int device_id) noexcept
     : resource_(std::move(resource)),
-      lease_(std::move(lease)),
+      buffer_ref_(std::move(buffer_ref)),
       byte_size_(byte_size),
       device_id_(device_id) {}
 
@@ -268,7 +271,7 @@ MappedPublication& MappedPublication::operator=(
     MappedPublication&& other) noexcept = default;
 
 bool MappedPublication::valid() const noexcept {
-  return resource_ && resource_->dev_ptr != nullptr && lease_ != nullptr;
+  return resource_ && resource_->dev_ptr != nullptr && buffer_ref_ != nullptr;
 }
 
 void* MappedPublication::device_ptr() const noexcept {
@@ -283,7 +286,7 @@ int MappedPublication::device_id() const noexcept { return device_id_; }
 
 struct ReadHandle::Impl {
   std::shared_ptr<const backend::ImportedResources> resource;
-  std::unique_ptr<lease::LeaseHandle> lease;
+  std::unique_ptr<buffer_metadata::BufferRef> buffer_ref;
   std::unique_ptr<DeferredItem> deferred_item;
   std::size_t byte_size = 0;
   int device_id = -1;
@@ -293,14 +296,14 @@ struct ReadHandle::Impl {
   ~Impl() noexcept { release(); }
 
   void release() noexcept {
-    if (!lease) {
+    if (!buffer_ref) {
       return;
     }
 
     if (!completion || completion->event == nullptr || !completion->context) {
       completion.reset();
       resource.reset();
-      lease.reset();
+      buffer_ref.reset();
       deferred_item.reset();
       return;
     }
@@ -309,7 +312,7 @@ struct ReadHandle::Impl {
       auto* item = deferred_item.release();
       item->completion = std::move(completion);
       item->resource = std::move(resource);
-      item->lease = std::move(lease);
+      item->buffer_ref = std::move(buffer_ref);
       try {
         auto& queue = DeferredReleaseQueue::instance();
         if (failed) {
@@ -319,12 +322,12 @@ struct ReadHandle::Impl {
         }
       } catch (...) {
         // No destructor may run here: retaining the raw item keeps the
-        // resource, completion event, and lease alive if queue initialization
-        // or worker creation fails.
+        // resource, completion event, and buffer reference alive if queue
+        // initialization or worker creation fails.
         RCUTILS_LOG_ERROR_NAMED(
             "ros2_cuda_ipc_core.subscriber.read_handle",
             "Failed to initialize deferred GPU read release queue; retaining "
-            "publication lease");
+            "publication buffer reference");
       }
     };
 
@@ -339,7 +342,7 @@ struct ReadHandle::Impl {
       }
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.subscriber.read_handle",
-          "cuEventRecord failed; retaining publication lease: %s",
+          "cuEventRecord failed; retaining publication buffer reference: %s",
           ros2_cuda_ipc_core::detail::CudaDriverError(result)
               .to_string()
               .c_str());
@@ -347,7 +350,7 @@ struct ReadHandle::Impl {
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.subscriber.read_handle",
           "Failed to activate CUDA context while recording completion event; "
-          "retaining publication lease");
+          "retaining publication buffer reference");
     }
 
     submit(true);
@@ -374,7 +377,7 @@ ReadHandle& ReadHandle::operator=(ReadHandle&& other) noexcept {
 
 bool ReadHandle::valid() const noexcept {
   return impl_ && impl_->resource && impl_->resource->dev_ptr != nullptr &&
-         impl_->lease != nullptr;
+         impl_->buffer_ref != nullptr;
 }
 
 void* ReadHandle::device_ptr() const noexcept {
@@ -393,14 +396,14 @@ namespace detail {
 
 std::unique_ptr<MappedPublication> ReadHandleFactory::make_publication(
     std::shared_ptr<const backend::ImportedResources> resource,
-    std::unique_ptr<lease::LeaseHandle> lease, std::size_t byte_size,
-    int device_id) {
-  if (!resource || !lease || resource->dev_ptr == nullptr) {
+    std::unique_ptr<buffer_metadata::BufferRef> buffer_ref,
+    std::size_t byte_size, int device_id) {
+  if (!resource || !buffer_ref || resource->dev_ptr == nullptr) {
     return nullptr;
   }
 
   return std::unique_ptr<MappedPublication>(new MappedPublication(
-      std::move(resource), std::move(lease), byte_size, device_id));
+      std::move(resource), std::move(buffer_ref), byte_size, device_id));
 }
 
 std::optional<ReadHandle> ReadHandleFactory::make_bound(
@@ -432,7 +435,7 @@ std::optional<ReadHandle> ReadHandleFactory::make_bound(
   impl->completion = std::move(completion);
   // This is the ownership commit.  No fallible operation follows it.
   impl->resource = std::move(publication.resource_);
-  impl->lease = std::move(publication.lease_);
+  impl->buffer_ref = std::move(publication.buffer_ref_);
   return ReadHandle(std::move(impl));
 }
 

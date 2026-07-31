@@ -18,9 +18,9 @@ class BufferMapperTest : public ::testing::Test {
   static void TearDownTestSuite() { test::RclcppScope::TearDown(); }
 };
 
-TEST_F(BufferMapperTest, LeaseFailureReturnsEmptyOptional) {
+TEST_F(BufferMapperTest, BufferReferenceFailureReturnsEmptyOptional) {
   const std::string shm_name = test::make_unique_shm_name("buffer_mapper_fail");
-  auto mapping = lease::LeaseMapping::create(
+  auto mapping = buffer_metadata::BufferMetadata::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
 
@@ -43,9 +43,9 @@ TEST_F(BufferMapperTest, PublisherInstanceMismatchRejectsMessage) {
   const std::string shm_name =
       test::make_unique_shm_name("buffer_mapper_instance");
   const auto owner_id = test::publisher_instance_id(shm_name);
-  auto mapping = lease::LeaseMapping::create(shm_name, owner_id, 1);
+  auto mapping = buffer_metadata::BufferMetadata::create(shm_name, owner_id, 1);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
+  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
 
   auto msg = test::make_cached_buffer_core_message(
@@ -54,21 +54,21 @@ TEST_F(BufferMapperTest, PublisherInstanceMismatchRejectsMessage) {
       test::publisher_instance_id(shm_name + "_different");
   subscriber::BufferMapper mapper;
   EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
-  auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
-  ASSERT_TRUE(refcnt.has_value());
-  EXPECT_EQ(*refcnt, 1u);
-  ASSERT_TRUE(lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
-                                                 reservation->generation));
+  auto refcount = buffer_metadata::BufferRef::current_refcount(mapping, 0);
+  ASSERT_TRUE(refcount.has_value());
+  EXPECT_EQ(*refcount, 1u);
+  ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
+      mapping, reservation->slot_id, reservation->generation));
   ::shm_unlink(shm_name.c_str());
 }
 
 TEST_F(BufferMapperTest, UnsupportedBackendReturnsEmptyOptional) {
   const std::string shm_name =
       test::make_unique_shm_name("buffer_mapper_backend");
-  auto mapping = lease::LeaseMapping::create(
+  auto mapping = buffer_metadata::BufferMetadata::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
+  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -83,11 +83,11 @@ TEST_F(BufferMapperTest, UnsupportedBackendReturnsEmptyOptional) {
   subscriber::BufferMapper mapper;
   EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
 
-  auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
-  ASSERT_TRUE(refcnt.has_value());
-  EXPECT_EQ(refcnt.value(), 1u);
-  ASSERT_TRUE(lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
-                                                 reservation->generation));
+  auto refcount = buffer_metadata::BufferRef::current_refcount(mapping, 0);
+  ASSERT_TRUE(refcount.has_value());
+  EXPECT_EQ(refcount.value(), 1u);
+  ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
+      mapping, reservation->slot_id, reservation->generation));
 
   ::shm_unlink(shm_name.c_str());
 }
@@ -95,10 +95,10 @@ TEST_F(BufferMapperTest, UnsupportedBackendReturnsEmptyOptional) {
 TEST_F(BufferMapperTest, InvalidVmmPayloadReturnsEmptyOptional) {
   const std::string shm_name =
       test::make_unique_shm_name("buffer_mapper_vmm_payload");
-  auto mapping = lease::LeaseMapping::create(
+  auto mapping = buffer_metadata::BufferMetadata::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
+  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -115,22 +115,22 @@ TEST_F(BufferMapperTest, InvalidVmmPayloadReturnsEmptyOptional) {
   subscriber::BufferMapper mapper;
   EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
 
-  auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
-  ASSERT_TRUE(refcnt.has_value());
-  EXPECT_EQ(refcnt.value(), 1u);
-  ASSERT_TRUE(lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
-                                                 reservation->generation));
+  auto refcount = buffer_metadata::BufferRef::current_refcount(mapping, 0);
+  ASSERT_TRUE(refcount.has_value());
+  EXPECT_EQ(refcount.value(), 1u);
+  ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
+      mapping, reservation->slot_id, reservation->generation));
 
   ::shm_unlink(shm_name.c_str());
 }
 
-TEST_F(BufferMapperTest, MissingVmmSocketReturnsEmptyAndReleasesLease) {
+TEST_F(BufferMapperTest, MissingVmmSocketReturnsEmptyAndReleasesBufferRef) {
   const std::string shm_name =
       test::make_unique_shm_name("buffer_mapper_vmm_sock");
-  auto mapping = lease::LeaseMapping::create(
+  auto mapping = buffer_metadata::BufferMetadata::create(
       shm_name, test::publisher_instance_id(shm_name), 1);
   ASSERT_TRUE(mapping);
-  auto reservation = lease::LeaseHandle::reserve_for_publish(mapping);
+  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
 
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
@@ -148,11 +148,11 @@ TEST_F(BufferMapperTest, MissingVmmSocketReturnsEmptyAndReleasesLease) {
   subscriber::BufferMapper mapper;
   EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
 
-  auto refcnt = lease::LeaseHandle::current_refcount(mapping, 0);
-  ASSERT_TRUE(refcnt.has_value());
-  EXPECT_EQ(refcnt.value(), 1u);
-  ASSERT_TRUE(lease::LeaseHandle::cancel_publish(mapping, reservation->slot_id,
-                                                 reservation->generation));
+  auto refcount = buffer_metadata::BufferRef::current_refcount(mapping, 0);
+  ASSERT_TRUE(refcount.has_value());
+  EXPECT_EQ(refcount.value(), 1u);
+  ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
+      mapping, reservation->slot_id, reservation->generation));
 
   ::shm_unlink(shm_name.c_str());
 }
