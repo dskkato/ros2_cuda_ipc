@@ -37,8 +37,7 @@ class GpuImageSubscriber(Node):
             cp.cuda.get_current_stream().synchronize()
             self.get_logger().info(
                 f"received {image.encoding or '<unspecified>'} "
-                f"shape={array.shape} dtype={array.dtype} "
-                f"device_ptr=0x{image.device_ptr:x}"
+                f"shape={array.shape} dtype={array.dtype}"
             )
         except (MappingError, RuntimeError, TypeError, ValueError) as exc:
             self.get_logger().warning(f"skipping GPU image: {exc}")
