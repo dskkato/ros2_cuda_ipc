@@ -40,7 +40,7 @@ class GpuImageTorchSubscriber(Node):
             consumer_stream.synchronize()
             self.get_logger().info(
                 f"received shape={tuple(result.shape)} dtype={result.dtype} "
-                f"device_ptr=0x{image.device_ptr:x}"
+                f"device={result.device}"
             )
         except (MappingError, RuntimeError, TypeError, ValueError) as exc:
             self.get_logger().warning(f"skipping GPU image: {exc}")
