@@ -8,7 +8,7 @@ usage() {
 Usage: build_container.sh [options]
 
 Options:
-  -t, --tag TAG            Set the image tag (default: ros2-cuda-ipc-dev:<ros-distro>)
+  -t, --tag TAG            Set the image tag (default: ros2-cuda-ipc-dev:<ros-distro>-20260802)
   -r, --ros-distro DISTRO  Override ROS_DISTRO build arg (default: humble)
       --build-arg ARG      Provide an additional docker build argument (repeatable)
       --no-cache           Disable build cache
@@ -22,6 +22,7 @@ DOCKERFILE_PATH="${SCRIPT_DIR}/Dockerfile"
 BUILD_CONTEXT="${SCRIPT_DIR}"
 REGISTRY_URL="ghcr.io/dskkato"
 DEFAULT_ROS_DISTRO="humble"
+IMAGE_VERSION="20260802"
 
 TAG=""
 ROS_DISTRO="${ROS_DISTRO:-${DEFAULT_ROS_DISTRO}}"
@@ -67,7 +68,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${TAG}" ]]; then
-  TAG="ros2-cuda-ipc-dev:${ROS_DISTRO}"
+  TAG="ros2-cuda-ipc-dev:${ROS_DISTRO}-${IMAGE_VERSION}"
 fi
 
 if [[ ! -f "${DOCKERFILE_PATH}" ]]; then

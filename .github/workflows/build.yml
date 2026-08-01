@@ -18,11 +18,11 @@ jobs:
       matrix:
         include:
           - ros_distro: humble
-            container_tag: humble
+            container_tag: humble-20260802
           - ros_distro: jazzy
-            container_tag: jazzy
+            container_tag: jazzy-20260802
           - ros_distro: lyrical
-            container_tag: lyrical
+            container_tag: lyrical-20260802
     container:
       image: ghcr.io/dskkato/ros2-cuda-ipc-dev:${{ matrix.container_tag }}
     env:
