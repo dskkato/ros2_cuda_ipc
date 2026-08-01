@@ -29,11 +29,14 @@ RUN . /etc/os-release \
         "cuda-nvcc-${CUDA_TOOLKIT_VERSION}" \
         "cuda-cudart-dev-${CUDA_TOOLKIT_VERSION}" \
         "cuda-nvtx-${CUDA_TOOLKIT_VERSION}" \
+        "cuda-compat-${CUDA_TOOLKIT_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH="${CUDA_HOME}/bin:${PATH}"
-ENV LD_LIBRARY_PATH="${CUDA_HOME}/lib64"
+# Keep the user-space driver available in GPU-less CI containers. On a GPU
+# host, the NVIDIA Container Toolkit may provide a compatible host driver.
+ENV LD_LIBRARY_PATH="${CUDA_HOME}/compat:${CUDA_HOME}/lib64"
 
 # Initialize rosdep (safe to rerun if already initialized)
 RUN rosdep update || (rosdep init && rosdep update)
