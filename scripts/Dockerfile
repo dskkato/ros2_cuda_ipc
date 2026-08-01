@@ -26,13 +26,14 @@ RUN . /etc/os-release \
     && rm "${CUDA_REPO_KEYRING}" \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        "cuda-toolkit-${CUDA_TOOLKIT_VERSION}" \
-        "cuda-compat-${CUDA_TOOLKIT_VERSION}" \
+        "cuda-nvcc-${CUDA_TOOLKIT_VERSION}" \
+        "cuda-cudart-dev-${CUDA_TOOLKIT_VERSION}" \
+        "cuda-nvtx-${CUDA_TOOLKIT_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH="${CUDA_HOME}/bin:${PATH}"
-ENV LD_LIBRARY_PATH="${CUDA_HOME}/compat:${CUDA_HOME}/lib64"
+ENV LD_LIBRARY_PATH="${CUDA_HOME}/lib64"
 
 # Initialize rosdep (safe to rerun if already initialized)
 RUN rosdep update || (rosdep init && rosdep update)
