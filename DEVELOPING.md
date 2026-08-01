@@ -149,7 +149,9 @@ kernels. A large device-to-host image copy should appear only in `preview_node`.
 ## CI Container Images
 
 GitHub Actions expects images named
-`ghcr.io/dskkato/ros2-cuda-ipc-dev:<ROS_DISTRO>`.
+`ghcr.io/dskkato/ros2-cuda-ipc-dev:<ROS_DISTRO>-20260802`. The date suffix
+pins CI and devcontainer use to a specific image revision instead of a mutable
+ROS-distribution tag.
 
 ```bash
 ./scripts/build_container.sh --ros-distro humble --push
