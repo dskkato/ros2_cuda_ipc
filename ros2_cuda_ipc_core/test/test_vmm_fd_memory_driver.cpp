@@ -88,7 +88,7 @@ TEST(VmmFdMemoryDriverTest, ImportsReadsAndReleasesInChildProcess) {
   }
   ASSERT_TRUE(pool.record_ready(0, nullptr));
 
-  VmmFdMemoryTestPayload payload;
+  ros2_cuda_ipc_core::test::VmmFdMemoryTestPayload payload;
   payload.device_id = 0;
   payload.byte_size = kByteSize;
   payload.expected_value = kExpectedValue;
