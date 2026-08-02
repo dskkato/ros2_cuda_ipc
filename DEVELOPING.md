@@ -97,6 +97,10 @@ source /opt/ros/humble/setup.bash
 colcon build --symlink-install --packages-up-to multi_process_image_fanout
 ```
 
+The fanout demo uses the host GPU's native CUDA architecture by default with
+CMake 3.24 or newer. GPU-less CI and package builds should pass an explicit
+`CMAKE_CUDA_ARCHITECTURES` list instead.
+
 Core unit tests:
 
 ```bash

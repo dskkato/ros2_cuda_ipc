@@ -1,10 +1,17 @@
 cmake_minimum_required(VERSION 3.16)
 project(multi_process_image_fanout)
 
-# Leave architecture selection to the CUDA toolchain unless a build or release
-# configuration explicitly supplies CMAKE_CUDA_ARCHITECTURES.
+# Build for the host GPU by default so local binaries contain native cubins and
+# do not depend on runtime PTX JIT. CI and package builds should provide an
+# explicit CMAKE_CUDA_ARCHITECTURES value because they may not have a GPU.
 if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-  set(CMAKE_CUDA_ARCHITECTURES OFF)
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
+    set(CMAKE_CUDA_ARCHITECTURES native)
+  else()
+    message(WARNING
+      "CMake ${CMAKE_VERSION} cannot detect native CUDA architectures; "
+      "set CMAKE_CUDA_ARCHITECTURES explicitly for a portable build.")
+  endif()
 endif()
 
 enable_language(CUDA)
@@ -92,8 +99,13 @@ target_link_libraries(inference_like_node
     ${ros2_cuda_ipc_msgs_TARGETS}
 )
 
+install(TARGETS ${PROJECT_NAME}_kernels
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
 install(TARGETS
-  ${PROJECT_NAME}_kernels
   gpu_image_publisher
   preview_node
   encoder_like_node

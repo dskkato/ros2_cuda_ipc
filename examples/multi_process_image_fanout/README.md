@@ -57,6 +57,15 @@ source install/setup.bash
 
 Use `--packages-up-to` so workspace dependencies are built as needed.
 
+When CMake 3.24 or newer is available, the demo automatically builds for the
+host GPU's native CUDA architecture. For a GPU-less build or a package build,
+provide the target architectures explicitly, for example:
+
+```bash
+colcon build --symlink-install --packages-up-to multi_process_image_fanout \
+  --cmake-args "-DCMAKE_CUDA_ARCHITECTURES=75"
+```
+
 ## Launch
 
 ```bash
