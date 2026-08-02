@@ -8,7 +8,7 @@
 #include <cstring>
 #include <utility>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/detail/buffer_metadata_cache.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_backend.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_backend.hpp"
 
 #include <cuda.h>
 #include <fcntl.h>
@@ -21,10 +21,9 @@
 #include <utility>
 #include <vector>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_payload.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_payload.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
-#include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 
 namespace ros2_cuda_ipc_core::backend {
 namespace {
@@ -232,7 +231,7 @@ class UnixFdServer {
  * allocation. Destruction tears down the mapping, frees the allocation, closes
  * the FD, and stops the Unix socket server.
  */
-struct VmmSlotState : public publisher::GpuBufferPool::SlotBackendState {
+struct VmmSlotState : public SlotBackendState {
   ~VmmSlotState() override {
     if (server) {
       server->stop();
@@ -259,193 +258,165 @@ struct VmmSlotState : public publisher::GpuBufferPool::SlotBackendState {
   std::unique_ptr<UnixFdServer> server;
 };
 
-/**
- * @brief Memory backend that emulates cudaMalloc via CUDA VMM + shareable FDs.
- *
- * Jetson Orin lacks CUDA IPC memory handles, so we allocate memory through the
- * driver API (`cuMemCreate` + `cuMemMap`) and export a POSIX FD that
- * subscribers import. Each slot has a dedicated UUID + Unix socket for
- * distributing the FD.
- */
-class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
- public:
-  /**
-   * @brief Allocate and share GPU memory for every slot.
-   *
-   * Layout:
-   * 1. Build a `CUmemAllocationProp` that targets the publishing device.
-   * 2. Query the device granularity so we request aligned sizes.
-   * 3. For each slot: reserve address space, create allocation, map it, set
-   *    access rights, export to FD, and spin up a UnixFdServer that hands out
-   *    the FD using a randomly generated UUID.
-   */
-  bool allocate(
-      uint64_t frame_size_bytes, int device_index,
-      std::vector<publisher::GpuBufferPool::SlotResources>& slots) override {
-    if (!ensure_driver()) {
+}  // namespace
+
+namespace {
+bool ensure_driver();
+}  // namespace
+
+bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
+                             std::vector<SlotResources>& slots) {
+  if (!ensure_driver()) {
+    return false;
+  }
+
+  CUmemAllocationProp prop{};
+  // Request pinned memory on the publisher's GPU.
+  prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+  prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+  prop.location.id = device_index;
+  // Exportable as a POSIX file descriptor for peer processes.
+  prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
+
+  size_t granularity = 0;
+  CUresult res = cuMemGetAllocationGranularity(
+      &granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM);
+  if (res != CUDA_SUCCESS) {
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd",
+        "cuMemGetAllocationGranularity failed: %s",
+        ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
+    return false;
+  }
+
+  const uint64_t aligned_size = align_up(frame_size_bytes, granularity);
+  for (auto& slot : slots) {
+    auto state = std::make_shared<VmmSlotState>();
+    state->allocation_size = aligned_size;
+
+    CUdeviceptr address = 0;
+    // Reserve virtual address space (no backing memory yet).
+    res = cuMemAddressReserve(&address, aligned_size, 0, 0, 0);
+    if (res != CUDA_SUCCESS) {
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemAddressReserve failed: %s",
+          ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
+      destroy(slots);
+      return false;
+    }
+    state->address = address;
+
+    // cuMemCreate: allocate physical memory described by prop.
+    res = cuMemCreate(&state->allocation, aligned_size, &prop, 0);
+    if (res != CUDA_SUCCESS) {
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemCreate failed: %s",
+          ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
+      destroy(slots);
       return false;
     }
 
-    CUmemAllocationProp prop{};
-    // Request pinned memory on the publisher's GPU.
-    prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
-    prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
-    prop.location.id = device_index;
-    // Exportable as a POSIX file descriptor for peer processes.
-    prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
+    res = cuMemMap(address, aligned_size, 0, state->allocation, 0);
+    if (res != CUDA_SUCCESS) {
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemMap failed: %s",
+          ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
+      destroy(slots);
+      return false;
+    }
 
-    size_t granularity = 0;
-    CUresult res = cuMemGetAllocationGranularity(
-        &granularity, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM);
+    CUmemAccessDesc access_desc{};
+    access_desc.location = prop.location;
+    // Allow both read and write so publishers/subscribers can update content.
+    access_desc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+    res = cuMemSetAccess(address, aligned_size, &access_desc, 1);
+    if (res != CUDA_SUCCESS) {
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemSetAccess failed: %s",
+          ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
+      destroy(slots);
+      return false;
+    }
+
+    // Export allocation as an inheritable POSIX FD so other processes can
+    // import.
+    res = cuMemExportToShareableHandle(&state->shareable_fd, state->allocation,
+                                       CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR,
+                                       0);
     if (res != CUDA_SUCCESS) {
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.backend.vmm_fd",
-          "cuMemGetAllocationGranularity failed: %s",
+          "cuMemExportToShareableHandle failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
+      destroy(slots);
+      return false;
+    }
+    if (state->shareable_fd >= 0) {
+      int flags = fcntl(state->shareable_fd, F_GETFD);
+      if (flags >= 0) {
+        fcntl(state->shareable_fd, F_SETFD, flags | FD_CLOEXEC);
+      }
+    }
+
+    // Generate a UUID that subscribers embed in ROS messages to discover the
+    // socket.
+    uuid_t uuid_bytes;
+    uuid_generate(uuid_bytes);
+    char uuid_str[37] = {};
+    uuid_unparse_lower(uuid_bytes, uuid_str);
+    state->uuid = uuid_str;
+
+    const auto socket_path = build_socket_path(state->uuid);
+    state->server =
+        std::make_unique<UnixFdServer>(socket_path, state->shareable_fd);
+    if (!state->server->start()) {
+      destroy(slots);
       return false;
     }
 
-    const uint64_t aligned_size = align_up(frame_size_bytes, granularity);
-    for (auto& slot : slots) {
-      auto state = std::make_shared<VmmSlotState>();
-      state->allocation_size = aligned_size;
-
-      CUdeviceptr address = 0;
-      // Reserve virtual address space (no backing memory yet).
-      res = cuMemAddressReserve(&address, aligned_size, 0, 0, 0);
-      if (res != CUDA_SUCCESS) {
-        RCUTILS_LOG_ERROR_NAMED(
-            "ros2_cuda_ipc_core.backend.vmm_fd",
-            "cuMemAddressReserve failed: %s",
-            ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots);
-        return false;
-      }
-      state->address = address;
-
-      // cuMemCreate: allocate physical memory described by prop.
-      res = cuMemCreate(&state->allocation, aligned_size, &prop, 0);
-      if (res != CUDA_SUCCESS) {
-        RCUTILS_LOG_ERROR_NAMED(
-            "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemCreate failed: %s",
-            ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots);
-        return false;
-      }
-
-      res = cuMemMap(address, aligned_size, 0, state->allocation, 0);
-      if (res != CUDA_SUCCESS) {
-        RCUTILS_LOG_ERROR_NAMED(
-            "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemMap failed: %s",
-            ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots);
-        return false;
-      }
-
-      CUmemAccessDesc access_desc{};
-      access_desc.location = prop.location;
-      // Allow both read and write so publishers/subscribers can update content.
-      access_desc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
-      res = cuMemSetAccess(address, aligned_size, &access_desc, 1);
-      if (res != CUDA_SUCCESS) {
-        RCUTILS_LOG_ERROR_NAMED(
-            "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemSetAccess failed: %s",
-            ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots);
-        return false;
-      }
-
-      // Export allocation as an inheritable POSIX FD so other processes can
-      // import.
-      res = cuMemExportToShareableHandle(
-          &state->shareable_fd, state->allocation,
-          CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR, 0);
-      if (res != CUDA_SUCCESS) {
-        RCUTILS_LOG_ERROR_NAMED(
-            "ros2_cuda_ipc_core.backend.vmm_fd",
-            "cuMemExportToShareableHandle failed: %s",
-            ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-        destroy(slots);
-        return false;
-      }
-      if (state->shareable_fd >= 0) {
-        int flags = fcntl(state->shareable_fd, F_GETFD);
-        if (flags >= 0) {
-          fcntl(state->shareable_fd, F_SETFD, flags | FD_CLOEXEC);
-        }
-      }
-
-      // Generate a UUID that subscribers embed in ROS messages to discover the
-      // socket.
-      uuid_t uuid_bytes;
-      uuid_generate(uuid_bytes);
-      char uuid_str[37] = {};
-      uuid_unparse_lower(uuid_bytes, uuid_str);
-      state->uuid = uuid_str;
-
-      const auto socket_path = build_socket_path(state->uuid);
-      state->server =
-          std::make_unique<UnixFdServer>(socket_path, state->shareable_fd);
-      if (!state->server->start()) {
-        destroy(slots);
-        return false;
-      }
-
-      slot.device_ptr = reinterpret_cast<void*>(state->address);
-      slot.backend_state = state;
-      // Store UUID bytes into the ROS message payload so subscribers know which
-      // socket to contact.
-      if (!encode_uuid_payload(state->uuid, slot.mem_handle)) {
-        RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
-                                "Failed to encode UUID payload for slot %u",
-                                slot.index);
-        destroy(slots);
-        return false;
-      }
-    }
-    return true;
-  }
-
-  /**
-   * @brief Release slot allocations and clear metadata.
-   *
-   * The per-slot VmmSlotState RAII cleanup tears down CUDA driver resources and
-   * socket servers; here we simply drop pointers and reset bookkeeping fields.
-   */
-  void destroy(std::vector<publisher::GpuBufferPool::SlotResources>&
-                   slots) noexcept override {
-    for (auto& slot : slots) {
-      slot.device_ptr = nullptr;
-      slot.backend_state.reset();
-      slot.mem_handle.fill(0);
-    }
-  }
-
- private:
-  /**
-   * @brief Ensure the CUDA driver is initialised before using driver APIs.
-   *
-   * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
-   */
-  bool ensure_driver() {
-    static std::once_flag once;
-    static CUresult status = CUDA_SUCCESS;
-    std::call_once(once, [&]() { status = cuInit(0); });
-    if (status != CUDA_SUCCESS) {
-      RCUTILS_LOG_ERROR_NAMED(
-          "ros2_cuda_ipc_core.backend.vmm_fd", "cuInit failed: %s",
-          ros2_cuda_ipc_core::detail::cu_result_to_string(status).c_str());
+    slot.device_ptr = reinterpret_cast<void*>(state->address);
+    slot.backend_state = state;
+    // Store UUID bytes into the ROS message payload so subscribers know which
+    // socket to contact.
+    if (!encode_uuid_payload(state->uuid, slot.mem_handle)) {
+      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
+                              "Failed to encode UUID payload for slot %u",
+                              slot.index);
+      destroy(slots);
       return false;
     }
-    return true;
   }
-};
+  return true;
+}
+
+void MemoryBackend::destroy(std::vector<SlotResources>& slots) noexcept {
+  for (auto& slot : slots) {
+    slot.device_ptr = nullptr;
+    slot.backend_state.reset();
+    slot.mem_handle.fill(0);
+  }
+}
+
+/**
+ * @brief Ensure the CUDA driver is initialised before using driver APIs.
+ *
+ * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
+ */
+namespace {
+
+bool ensure_driver() {
+  static std::once_flag once;
+  static CUresult status = CUDA_SUCCESS;
+  std::call_once(once, [&]() { status = cuInit(0); });
+  if (status != CUDA_SUCCESS) {
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd", "cuInit failed: %s",
+        ros2_cuda_ipc_core::detail::cu_result_to_string(status).c_str());
+    return false;
+  }
+  return true;
+}
 
 }  // namespace
-
-std::unique_ptr<publisher::GpuBufferPool::MemoryBackend>
-make_vmm_fd_memory_backend() {
-  return std::make_unique<VmmFdMemoryBackend>();
-}
 
 }  // namespace ros2_cuda_ipc_core::backend

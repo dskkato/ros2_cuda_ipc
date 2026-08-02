@@ -25,7 +25,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"

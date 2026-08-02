@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 
 #include <fcntl.h>
 #include <rcutils/logging_macros.h>
@@ -14,7 +14,7 @@
 #include <optional>
 #include <string>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_payload.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_payload.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"

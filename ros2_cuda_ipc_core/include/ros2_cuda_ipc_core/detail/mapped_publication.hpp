@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <memory>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber::detail {

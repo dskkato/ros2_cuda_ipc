@@ -11,7 +11,7 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 

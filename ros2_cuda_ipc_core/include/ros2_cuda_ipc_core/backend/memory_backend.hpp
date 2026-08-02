@@ -28,10 +28,9 @@ struct SlotResources {
 
 class MemoryBackend {
  public:
-  virtual ~MemoryBackend() = default;
-  virtual bool allocate(uint64_t byte_size, int device_index,
-                        std::vector<SlotResources>& slots) = 0;
-  virtual void destroy(std::vector<SlotResources>& slots) noexcept = 0;
+  bool allocate(uint64_t byte_size, int device_index,
+                std::vector<SlotResources>& slots);
+  void destroy(std::vector<SlotResources>& slots) noexcept;
 };
 
 }  // namespace ros2_cuda_ipc_core::backend

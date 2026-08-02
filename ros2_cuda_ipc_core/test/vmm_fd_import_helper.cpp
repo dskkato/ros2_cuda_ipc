@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 #include "vmm_fd_memory_test_protocol.hpp"
 

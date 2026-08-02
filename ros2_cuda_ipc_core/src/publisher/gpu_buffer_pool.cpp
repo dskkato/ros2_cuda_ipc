@@ -7,16 +7,10 @@
 
 #include <optional>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_backend.hpp"
-
 namespace ros2_cuda_ipc_core::publisher {
 
 GpuBufferPool::GpuBufferPool(std::size_t slot_count)
-    : GpuBufferPool(slot_count, nullptr) {}
-
-GpuBufferPool::GpuBufferPool(std::size_t slot_count,
-                             std::unique_ptr<MemoryBackend> memory_backend)
-    : slot_count_(slot_count), memory_backend_(std::move(memory_backend)) {}
+    : slot_count_(slot_count) {}
 
 GpuBufferPool::~GpuBufferPool() { destroy_slots(); }
 
@@ -90,12 +84,6 @@ bool GpuBufferPool::allocate_slots() {
                             "CUDA primary context is unavailable");
     return false;
   }
-  if (!memory_backend_) {
-    memory_backend_ = backend::make_vmm_fd_memory_backend();
-  }
-  if (!memory_backend_) {
-    return false;
-  }
   {
     auto memory_guard_result = context_->push_current();
     if (!memory_guard_result) {
@@ -105,9 +93,8 @@ bool GpuBufferPool::allocate_slots() {
       return false;
     }
     auto memory_guard = std::move(memory_guard_result).value();
-    if (!memory_backend_->allocate(byte_size_, device_index_, slots_)) {
-      memory_backend_->destroy(slots_);
-      memory_backend_.reset();
+    if (!memory_backend_.allocate(byte_size_, device_index_, slots_)) {
+      memory_backend_.destroy(slots_);
       return false;
     }
   }
@@ -140,10 +127,7 @@ void GpuBufferPool::destroy_slots() noexcept {
       guard.emplace(std::move(guard_result).value());
     }
   }
-  if (memory_backend_) {
-    memory_backend_->destroy(slots_);
-    memory_backend_.reset();
-  }
+  memory_backend_.destroy(slots_);
   slots_.clear();
   byte_size_ = 0;
   device_index_ = -1;

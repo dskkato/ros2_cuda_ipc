@@ -8,7 +8,7 @@
 #include <memory>
 #include <optional>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/detail/mapped_publication.hpp"
 #include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"

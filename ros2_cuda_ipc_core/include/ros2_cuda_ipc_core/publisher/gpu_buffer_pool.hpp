@@ -17,11 +17,8 @@ class GpuBufferPool {
  public:
   using SlotBackendState = backend::SlotBackendState;
   using SlotResources = backend::SlotResources;
-  using MemoryBackend = backend::MemoryBackend;
 
   explicit GpuBufferPool(std::size_t slot_count);
-  GpuBufferPool(std::size_t slot_count,
-                std::unique_ptr<MemoryBackend> memory_backend);
   ~GpuBufferPool();
 
   GpuBufferPool(const GpuBufferPool&) = delete;
@@ -51,7 +48,7 @@ class GpuBufferPool {
   uint64_t byte_size_ = 0;
   int device_index_ = -1;
   bool initialised_ = false;
-  std::unique_ptr<MemoryBackend> memory_backend_;
+  backend::MemoryBackend memory_backend_;
   std::shared_ptr<detail::CudaDeviceContext> context_;
 };
 

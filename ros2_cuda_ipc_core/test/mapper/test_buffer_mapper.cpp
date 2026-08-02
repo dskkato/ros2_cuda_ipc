@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd_payload.hpp"
+#include "ros2_cuda_ipc_core/backend/memory_payload.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "test_mapper_utils.hpp"
 
