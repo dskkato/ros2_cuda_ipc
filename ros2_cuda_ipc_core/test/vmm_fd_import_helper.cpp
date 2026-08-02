@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
     return 3;
   }
 
-  VmmFdMemoryTestPayload payload;
+  ros2_cuda_ipc_core::test::VmmFdMemoryTestPayload payload;
   const bool received =
       read_all(static_cast<int>(parsed_fd), &payload, sizeof(payload));
   ::close(static_cast<int>(parsed_fd));
@@ -79,7 +79,8 @@ int main(int argc, char** argv) {
         std::vector<uint8_t> host(payload.byte_size);
         const auto device_ptr = static_cast<CUdeviceptr>(
             reinterpret_cast<uintptr_t>(imported->dev_ptr));
-        if (cuMemcpyDtoH(host.data(), device_ptr, host.size()) == CUDA_SUCCESS) {
+        if (cuMemcpyDtoH(host.data(), device_ptr, host.size()) ==
+            CUDA_SUCCESS) {
           success = true;
           for (const uint8_t value : host) {
             success = success && value == payload.expected_value;
@@ -89,9 +90,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  return success &&
-                 ros2_cuda_ipc_core::backend::vmm_fd::release_imported_resources(
-                     *imported)
+  return success && ros2_cuda_ipc_core::backend::vmm_fd::
+                        release_imported_resources(*imported)
              ? 0
              : 6;
 }

@@ -98,15 +98,14 @@ TEST(VmmFdMemoryDriverTest, ImportsReadsAndReleasesInChildProcess) {
   int payload_pipe[2] = {-1, -1};
   ASSERT_EQ(::pipe(payload_pipe), 0);
   const std::string fd_arg = std::to_string(payload_pipe[0]);
-  char* const child_argv[] = {
-      const_cast<char*>(VMM_FD_IMPORT_HELPER_PATH),
-      const_cast<char*>(fd_arg.c_str()), nullptr};
+  char* const child_argv[] = {const_cast<char*>(VMM_FD_IMPORT_HELPER_PATH),
+                              const_cast<char*>(fd_arg.c_str()), nullptr};
   posix_spawn_file_actions_t actions;
   ASSERT_EQ(::posix_spawn_file_actions_init(&actions), 0);
   ASSERT_EQ(::posix_spawn_file_actions_addclose(&actions, payload_pipe[1]), 0);
   pid_t child = -1;
-  const int spawn_result = posix_spawn(
-      &child, VMM_FD_IMPORT_HELPER_PATH, &actions, nullptr, child_argv, environ);
+  const int spawn_result = posix_spawn(&child, VMM_FD_IMPORT_HELPER_PATH,
+                                       &actions, nullptr, child_argv, environ);
   ASSERT_EQ(::posix_spawn_file_actions_destroy(&actions), 0);
   ASSERT_EQ(spawn_result, 0);
   ::close(payload_pipe[0]);

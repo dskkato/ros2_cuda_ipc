@@ -281,12 +281,11 @@ bool release_imported_resources(const ImportedResources& imported) noexcept {
   };
 
   if (imported.vmm_address != 0 && imported.allocation_size != 0) {
-    report_cleanup_failure("cuMemUnmap",
-                           cuMemUnmap(imported.vmm_address,
-                                      imported.allocation_size));
-    report_cleanup_failure("cuMemAddressFree",
-                           cuMemAddressFree(imported.vmm_address,
-                                             imported.allocation_size));
+    report_cleanup_failure("cuMemUnmap", cuMemUnmap(imported.vmm_address,
+                                                    imported.allocation_size));
+    report_cleanup_failure(
+        "cuMemAddressFree",
+        cuMemAddressFree(imported.vmm_address, imported.allocation_size));
   }
   if (imported.vmm_allocation != 0) {
     report_cleanup_failure("cuMemRelease",

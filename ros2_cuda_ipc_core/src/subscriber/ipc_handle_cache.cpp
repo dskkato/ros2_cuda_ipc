@@ -46,24 +46,23 @@ IpcHandleCache::Entry IpcHandleCache::find(const IpcHandleKey& key) const {
 }
 
 IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
-    const IpcHandleKey& key,
-    backend::vmm_fd::ImportedResources imported) {
+    const IpcHandleKey& key, backend::vmm_fd::ImportedResources imported) {
   Entry candidate;
   bool resource_constructed = false;
   try {
     ReleaseFn release = release_fn_;
-    auto deleter = [release = std::move(release)](
-                       const backend::vmm_fd::ImportedResources* resource)
-                       noexcept {
-      try {
-        release(*resource);
-      } catch (...) {
-        // shared_ptr deleters must not throw.
-      }
-      delete resource;
-    };
-    using OwnedResource = std::unique_ptr<backend::vmm_fd::ImportedResources,
-                                          decltype(deleter)>;
+    auto deleter =
+        [release = std::move(release)](
+            const backend::vmm_fd::ImportedResources* resource) noexcept {
+          try {
+            release(*resource);
+          } catch (...) {
+            // shared_ptr deleters must not throw.
+          }
+          delete resource;
+        };
+    using OwnedResource =
+        std::unique_ptr<backend::vmm_fd::ImportedResources, decltype(deleter)>;
     OwnedResource resource(
         new backend::vmm_fd::ImportedResources(std::move(imported)),
         std::move(deleter));

@@ -16,8 +16,7 @@ GpuBufferPool::GpuBufferPool(std::size_t slot_count)
 
 GpuBufferPool::GpuBufferPool(std::size_t slot_count,
                              std::unique_ptr<MemoryBackend> memory_backend)
-      : slot_count_(slot_count),
-      memory_backend_(std::move(memory_backend)) {}
+    : slot_count_(slot_count), memory_backend_(std::move(memory_backend)) {}
 
 GpuBufferPool::~GpuBufferPool() { destroy_slots(); }
 

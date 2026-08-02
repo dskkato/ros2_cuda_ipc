@@ -25,8 +25,8 @@ struct IpcHandleKey {
 
   bool operator==(const IpcHandleKey& other) const noexcept {
     return publisher_instance_id == other.publisher_instance_id &&
-           device_id == other.device_id &&
-           mem == other.mem && event == other.event;
+           device_id == other.device_id && mem == other.mem &&
+           event == other.event;
   }
 };
 
@@ -49,8 +49,8 @@ class IpcHandleCache {
   static IpcHandleCache& instance();
 
   Entry find(const IpcHandleKey& key) const;
-  Entry insert_or_discard_duplicate(const IpcHandleKey& key,
-                                    backend::vmm_fd::ImportedResources imported);
+  Entry insert_or_discard_duplicate(
+      const IpcHandleKey& key, backend::vmm_fd::ImportedResources imported);
   void clear();
   std::size_t size() const;
 

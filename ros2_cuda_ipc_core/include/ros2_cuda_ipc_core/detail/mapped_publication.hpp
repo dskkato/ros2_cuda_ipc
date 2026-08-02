@@ -34,8 +34,8 @@ class MappedPublication {
  private:
   MappedPublication(
       std::shared_ptr<const backend::vmm_fd::ImportedResources> resource,
-                    std::unique_ptr<buffer_metadata::BufferRef> buffer_ref,
-                    std::size_t byte_size, int device_id) noexcept;
+      std::unique_ptr<buffer_metadata::BufferRef> buffer_ref,
+      std::size_t byte_size, int device_id) noexcept;
 
   std::shared_ptr<const backend::vmm_fd::ImportedResources> resource_;
   std::unique_ptr<buffer_metadata::BufferRef> buffer_ref_;

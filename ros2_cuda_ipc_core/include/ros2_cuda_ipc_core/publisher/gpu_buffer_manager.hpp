@@ -91,7 +91,6 @@ class GpuBufferManager {
 
     /// CUDA device index on which the buffers are allocated.
     int device_index = 0;
-
   };
 
   /// Construct a manager with the given configuration.

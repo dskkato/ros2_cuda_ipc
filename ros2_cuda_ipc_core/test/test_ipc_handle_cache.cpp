@@ -13,8 +13,7 @@
 
 namespace ros2_cuda_ipc_core {
 
-TEST(IpcHandleCacheTest,
-     KeyEqualityAndHashUseInstanceDevicePayloadAndEvent) {
+TEST(IpcHandleCacheTest, KeyEqualityAndHashUseInstanceDevicePayloadAndEvent) {
   subscriber::IpcHandleKey lhs{};
   lhs.publisher_instance_id = test::publisher_instance_id("lhs");
   lhs.device_id = 2;
