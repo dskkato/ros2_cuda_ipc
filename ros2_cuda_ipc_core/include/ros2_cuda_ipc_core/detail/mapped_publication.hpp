@@ -6,7 +6,7 @@
 #include <cstddef>
 #include <memory>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 
 namespace ros2_cuda_ipc_core::subscriber::detail {
@@ -32,12 +32,11 @@ class MappedPublication {
   int device_id() const noexcept;
 
  private:
-  MappedPublication(
-      std::shared_ptr<const backend::vmm_fd::ImportedResources> resource,
-      std::unique_ptr<buffer_metadata::BufferRef> buffer_ref,
-      std::size_t byte_size, int device_id) noexcept;
+  MappedPublication(std::shared_ptr<const backend::ImportedResources> resource,
+                    std::unique_ptr<buffer_metadata::BufferRef> buffer_ref,
+                    std::size_t byte_size, int device_id) noexcept;
 
-  std::shared_ptr<const backend::vmm_fd::ImportedResources> resource_;
+  std::shared_ptr<const backend::ImportedResources> resource_;
   std::unique_ptr<buffer_metadata::BufferRef> buffer_ref_;
   std::size_t byte_size_ = 0;
   int device_id_ = -1;

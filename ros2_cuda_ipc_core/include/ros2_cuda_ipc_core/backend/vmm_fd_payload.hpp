@@ -15,7 +15,7 @@
 
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
-namespace ros2_cuda_ipc_core::backend::vmm_fd {
+namespace ros2_cuda_ipc_core::backend {
 
 constexpr std::size_t kUuidMaxLength = 36;
 
@@ -77,4 +77,4 @@ inline std::optional<std::string> decode_uuid_payload(
   return std::string(uuid_str, length);
 }
 
-}  // namespace ros2_cuda_ipc_core::backend::vmm_fd
+}  // namespace ros2_cuda_ipc_core::backend

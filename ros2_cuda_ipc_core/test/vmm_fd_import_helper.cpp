@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 #include "vmm_fd_memory_test_protocol.hpp"
 
@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
   static_assert(sizeof(event_handle) == sizeof(payload.event_handle));
   std::memcpy(&event_handle, payload.event_handle.data(), sizeof(event_handle));
 
-  ros2_cuda_ipc_core::backend::vmm_fd::MemoryImporter importer;
+  ros2_cuda_ipc_core::backend::MemoryImporter importer;
   auto imported = importer.import(msg, event_handle);
   if (!imported.has_value()) {
     return 5;
@@ -90,8 +90,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  return success && ros2_cuda_ipc_core::backend::vmm_fd::
-                        release_imported_resources(*imported)
+  return success && ros2_cuda_ipc_core::backend::release_imported_resources(
+                        *imported)
              ? 0
              : 6;
 }

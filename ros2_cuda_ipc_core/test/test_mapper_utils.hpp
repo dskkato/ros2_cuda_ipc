@@ -12,7 +12,7 @@
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"

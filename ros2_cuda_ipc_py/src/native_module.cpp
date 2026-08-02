@@ -25,7 +25,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
@@ -694,7 +694,7 @@ py::tuple make_test_image() {
   key.device_id = message.core.device_id;
   key.mem = message.core.mem_handle;
   key.event = message.core.event_handle;
-  ros2_cuda_ipc_core::backend::vmm_fd::ImportedResources imported;
+  ros2_cuda_ipc_core::backend::ImportedResources imported;
   imported.dev_ptr = reinterpret_cast<void*>(static_cast<uintptr_t>(0x100000));
   // A null event makes this deterministic, while the normal native wait path
   // still receives and forwards the requested stream pointer.

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_backend.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_backend.hpp"
 
 #include <cuda.h>
 #include <fcntl.h>
@@ -21,12 +21,12 @@
 #include <utility>
 #include <vector>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd/payload.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_payload.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 
-namespace ros2_cuda_ipc_core::backend::vmm_fd {
+namespace ros2_cuda_ipc_core::backend {
 namespace {
 
 uint64_t align_up(uint64_t value, uint64_t alignment) {
@@ -448,4 +448,4 @@ make_vmm_fd_memory_backend() {
   return std::make_unique<VmmFdMemoryBackend>();
 }
 
-}  // namespace ros2_cuda_ipc_core::backend::vmm_fd
+}  // namespace ros2_cuda_ipc_core::backend

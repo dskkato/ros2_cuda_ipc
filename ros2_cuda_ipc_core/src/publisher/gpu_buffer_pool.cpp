@@ -7,7 +7,7 @@
 
 #include <optional>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_backend.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_backend.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 
@@ -91,7 +91,7 @@ bool GpuBufferPool::allocate_slots() {
     return false;
   }
   if (!memory_backend_) {
-    memory_backend_ = backend::vmm_fd::make_vmm_fd_memory_backend();
+    memory_backend_ = backend::make_vmm_fd_memory_backend();
   }
   if (!memory_backend_) {
     return false;

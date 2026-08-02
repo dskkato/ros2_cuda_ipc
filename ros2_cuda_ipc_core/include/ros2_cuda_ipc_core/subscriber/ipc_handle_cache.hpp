@@ -11,7 +11,7 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
 #include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
 #include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
@@ -37,20 +37,18 @@ struct IpcHandleKeyHash {
 /// Internal cache for imported CUDA resources.
 class IpcHandleCache {
  public:
-  using ReleaseFn =
-      std::function<void(const backend::vmm_fd::ImportedResources&)>;
-  using Entry = std::shared_ptr<const backend::vmm_fd::ImportedResources>;
+  using ReleaseFn = std::function<void(const backend::ImportedResources&)>;
+  using Entry = std::shared_ptr<const backend::ImportedResources>;
 
   explicit IpcHandleCache(
-      ReleaseFn release_fn =
-          backend::vmm_fd::release_imported_resources_best_effort);
+      ReleaseFn release_fn = backend::release_imported_resources_best_effort);
   ~IpcHandleCache();
 
   static IpcHandleCache& instance();
 
   Entry find(const IpcHandleKey& key) const;
-  Entry insert_or_discard_duplicate(
-      const IpcHandleKey& key, backend::vmm_fd::ImportedResources imported);
+  Entry insert_or_discard_duplicate(const IpcHandleKey& key,
+                                    backend::ImportedResources imported);
   void clear();
   std::size_t size() const;
 

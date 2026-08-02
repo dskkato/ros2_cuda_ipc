@@ -34,8 +34,8 @@ add_library(${PROJECT_NAME}
   src/detail/interprocess_event.cpp
   src/publisher/gpu_buffer_manager.cpp
   src/publisher/gpu_buffer_pool.cpp
-  src/backend/vmm_fd/memory_backend.cpp
-  src/backend/vmm_fd/memory_importer.cpp
+  src/backend/vmm_fd_memory_backend.cpp
+  src/backend/vmm_fd_memory_importer.cpp
   src/subscriber/read_handle.cpp
   src/subscriber/buffer_metadata_cache.cpp
   src/image/image_view.cpp

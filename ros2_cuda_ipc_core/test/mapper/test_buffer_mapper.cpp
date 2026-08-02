@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd/payload.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_payload.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "test_mapper_utils.hpp"
 
@@ -109,7 +109,7 @@ TEST_F(BufferMapperTest, MissingVmmSocketReturnsEmptyAndReleasesBufferRef) {
   msg.generation = reservation->generation;
   msg.byte_size = 64;
   msg.event_handle.fill(0);
-  ASSERT_TRUE(backend::vmm_fd::encode_uuid_payload(
+  ASSERT_TRUE(backend::encode_uuid_payload(
       "12345678-1234-5678-1234-567812345678", msg.mem_handle));
 
   subscriber::BufferMapper mapper;

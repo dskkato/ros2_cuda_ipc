@@ -8,7 +8,7 @@
 #include <cstring>
 #include <utility>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/detail/buffer_metadata_cache.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
@@ -59,7 +59,7 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
 
   auto imported = IpcHandleCache::instance().find(key);
   if (!imported) {
-    static const backend::vmm_fd::MemoryImporter importer;
+    static const backend::MemoryImporter importer;
     auto opened = importer.import(msg, event_handle);
     if (!opened.has_value()) {
       RCUTILS_LOG_WARN_NAMED(

@@ -46,26 +46,24 @@ IpcHandleCache::Entry IpcHandleCache::find(const IpcHandleKey& key) const {
 }
 
 IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
-    const IpcHandleKey& key, backend::vmm_fd::ImportedResources imported) {
+    const IpcHandleKey& key, backend::ImportedResources imported) {
   Entry candidate;
   bool resource_constructed = false;
   try {
     ReleaseFn release = release_fn_;
-    auto deleter =
-        [release = std::move(release)](
-            const backend::vmm_fd::ImportedResources* resource) noexcept {
-          try {
-            release(*resource);
-          } catch (...) {
-            // shared_ptr deleters must not throw.
-          }
-          delete resource;
-        };
+    auto deleter = [release = std::move(release)](
+                       const backend::ImportedResources* resource) noexcept {
+      try {
+        release(*resource);
+      } catch (...) {
+        // shared_ptr deleters must not throw.
+      }
+      delete resource;
+    };
     using OwnedResource =
-        std::unique_ptr<backend::vmm_fd::ImportedResources, decltype(deleter)>;
-    OwnedResource resource(
-        new backend::vmm_fd::ImportedResources(std::move(imported)),
-        std::move(deleter));
+        std::unique_ptr<backend::ImportedResources, decltype(deleter)>;
+    OwnedResource resource(new backend::ImportedResources(std::move(imported)),
+                           std::move(deleter));
     resource_constructed = true;
     // The unique_ptr owns the resource while shared_ptr allocates its control
     // block.  If this copy throws, the unique_ptr still invokes the moved-in

@@ -9,7 +9,7 @@
 #include <memory>
 #include <string>
 
-#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd_memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"

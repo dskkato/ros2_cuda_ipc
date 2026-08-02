@@ -13,7 +13,7 @@
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
-namespace ros2_cuda_ipc_core::backend::vmm_fd {
+namespace ros2_cuda_ipc_core::backend {
 
 // The imported VMM mapping and its synchronization event share one lifetime.
 // ReadHandle keeps this complete resource bundle alive after cache eviction.
@@ -59,12 +59,4 @@ inline void release_imported_resources_best_effort(
   (void)release_imported_resources(imported);
 }
 
-}  // namespace ros2_cuda_ipc_core::backend::vmm_fd
-
-// Internal compatibility aliases for subscriber lifetime plumbing. There is
-// no backend dispatch behind these names; the resource type is VMM-FD only.
-namespace ros2_cuda_ipc_core::backend {
-using ImportedResources = vmm_fd::ImportedResources;
-using vmm_fd::release_imported_resources;
-using vmm_fd::release_imported_resources_best_effort;
 }  // namespace ros2_cuda_ipc_core::backend
