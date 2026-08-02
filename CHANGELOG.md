@@ -3,6 +3,16 @@
 This document records the user-visible changes between releases of
 `ros2_cuda_ipc`.
 
+## Unreleased
+
+- Removed the CUDA IPC memory-sharing backend. The core library now uses CUDA
+  VMM plus POSIX file descriptors exclusively.
+- Removed `BufferCore.backend` and the publisher/launch backend-selection APIs.
+  Existing messages using the old wire shape are not compatible with this
+  release.
+- The standalone `cuda_ipc_poc` comparison programs remain available, but are
+  no longer library backends.
+
 ## [0.4.0] - 2026-07-30
 
 This release adds the first supported Python subscriber API and simplifies

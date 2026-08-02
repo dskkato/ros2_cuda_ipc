@@ -6,19 +6,17 @@
 #include <cuda.h>
 
 #include <cstddef>
-#include <cstdint>
+#include <memory>
 #include <optional>
 #include <utility>
 
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
-#include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
 namespace ros2_cuda_ipc_core::backend {
 
-// The imported memory mapping and its synchronization event must have one
-// lifetime.  In particular, ReadHandle keeps this whole bundle alive after
-// the cache entry itself has been detached.
+// The imported VMM mapping and its synchronization event share one lifetime.
+// ReadHandle keeps this complete resource bundle alive after cache eviction.
 struct ImportedResources {
   ImportedResources() = default;
   ImportedResources(const ImportedResources&) = delete;
@@ -47,25 +45,18 @@ struct ImportedResources {
   std::size_t allocation_size = 0;
 };
 
-class MemoryImporter {
+class VmmFdMemoryImporter {
  public:
-  virtual ~MemoryImporter() = default;
-
-  virtual std::optional<ImportedResources> import(
+  std::optional<ImportedResources> import(
       const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
-      const CUipcEventHandle& event_handle) const = 0;
+      const CUipcEventHandle& event_handle) const;
 };
 
 bool release_imported_resources(const ImportedResources& imported) noexcept;
 
-// Cache destruction cannot propagate a cleanup error, so its deleter uses an
-// explicit best-effort adapter.  The checked function above remains available
-// to callers such as cross-process tests that need the result.
 inline void release_imported_resources_best_effort(
     const ImportedResources& imported) noexcept {
   (void)release_imported_resources(imported);
 }
-
-const MemoryImporter& get_memory_importer(uint8_t backend);
 
 }  // namespace ros2_cuda_ipc_core::backend

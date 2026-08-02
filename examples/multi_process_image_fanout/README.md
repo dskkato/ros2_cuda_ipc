@@ -2,7 +2,7 @@
 
 `multi_process_image_fanout` is the primary `ros2_cuda_ipc` demo. It shows one
 publisher process generating an RGBA image in GPU memory and three independent
-subscriber processes consuming the same buffer through CUDA IPC without copying
+subscriber processes consuming the same buffer through CUDA VMM+FD without copying
 the full image through host memory.
 
 ## Process graph
@@ -16,7 +16,7 @@ gpu_image_publisher
 
 The XML launch file starts all four nodes as separate processes. Intra-process
 communication is disabled intentionally because this demo is about
-inter-process CUDA IPC.
+inter-process VMM-FD sharing.
 
 ## Subscribers
 
@@ -57,6 +57,15 @@ source install/setup.bash
 
 Use `--packages-up-to` so workspace dependencies are built as needed.
 
+When CMake 3.24 or newer is available, the demo automatically builds for the
+host GPU's native CUDA architecture. For a GPU-less build or a package build,
+provide the target architectures explicitly, for example:
+
+```bash
+colcon build --symlink-install --packages-up-to multi_process_image_fanout \
+  --cmake-args "-DCMAKE_CUDA_ARCHITECTURES=75"
+```
+
 ## Launch
 
 ```bash
@@ -70,21 +79,12 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   width:=1280 \
   height:=720 \
   publish_rate_hz:=60.0 \
-  memory_backend:=cuda_ipc \
   slot_count:=4 \
   shm_name_prefix:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```
 
-On environments where the core package supports VMM-FD sharing, for example
-Jetson Orin:
-
-```bash
-ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
-  memory_backend:=vmm_fd
-```
-
-The `width`, `height`, `memory_backend`, and `slot_count`,
+The `width`, `height`, and `slot_count`,
 `shm_name_prefix`, and `device_index` arguments are publisher-side pseudo-camera
 parameters.
 

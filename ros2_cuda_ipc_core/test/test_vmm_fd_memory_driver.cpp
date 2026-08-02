@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
+#include <cuda.h>
+#include <cuda_runtime_api.h>
 #include <gtest/gtest.h>
 #include <spawn.h>
 #include <sys/wait.h>
@@ -9,17 +11,16 @@
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <string>
+#include <utility>
 
-#include "cuda_ipc_memory_test_protocol.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
+#include "vmm_fd_memory_test_protocol.hpp"
 
-#ifndef CUDA_IPC_IMPORT_HELPER_PATH
-#error "CUDA_IPC_IMPORT_HELPER_PATH is not defined"
+#ifndef VMM_FD_IMPORT_HELPER_PATH
+#error "VMM_FD_IMPORT_HELPER_PATH is not defined"
 #endif
 
 extern char** environ;
@@ -58,11 +59,9 @@ bool write_all(int fd, const void* data, std::size_t size) {
 
 }  // namespace
 
-TEST(CudaIpcMemoryDriverTest, ImportsReadsAndClosesInChildProcess) {
+TEST(VmmFdMemoryDriverTest, ImportsReadsAndReleasesInChildProcess) {
   using ros2_cuda_ipc_core::detail::CudaDeviceContext;
   using ros2_cuda_ipc_core::publisher::GpuBufferPool;
-  using ros2_cuda_ipc_core::test::CudaIpcMemoryTestPayload;
-  using ros2_cuda_ipc_core::transport::MemoryBackendKind;
 
   auto context_result = CudaDeviceContext::retain_primary(0);
   if (!context_result) {
@@ -73,7 +72,7 @@ TEST(CudaIpcMemoryDriverTest, ImportsReadsAndClosesInChildProcess) {
 
   constexpr uint64_t kByteSize = 4096;
   constexpr uint8_t kExpectedValue = 0x5a;
-  GpuBufferPool pool(1, MemoryBackendKind::CUDA_IPC);
+  GpuBufferPool pool(1);
   ASSERT_TRUE(pool.initialise(kByteSize, 0));
   const auto* resources = pool.resources(0);
   ASSERT_NE(resources, nullptr);
@@ -89,7 +88,7 @@ TEST(CudaIpcMemoryDriverTest, ImportsReadsAndClosesInChildProcess) {
   }
   ASSERT_TRUE(pool.record_ready(0, nullptr));
 
-  CudaIpcMemoryTestPayload payload;
+  ros2_cuda_ipc_core::test::VmmFdMemoryTestPayload payload;
   payload.device_id = 0;
   payload.byte_size = kByteSize;
   payload.expected_value = kExpectedValue;
@@ -99,15 +98,14 @@ TEST(CudaIpcMemoryDriverTest, ImportsReadsAndClosesInChildProcess) {
   int payload_pipe[2] = {-1, -1};
   ASSERT_EQ(::pipe(payload_pipe), 0);
   const std::string fd_arg = std::to_string(payload_pipe[0]);
-  char* const child_argv[] = {const_cast<char*>(CUDA_IPC_IMPORT_HELPER_PATH),
+  char* const child_argv[] = {const_cast<char*>(VMM_FD_IMPORT_HELPER_PATH),
                               const_cast<char*>(fd_arg.c_str()), nullptr};
   posix_spawn_file_actions_t actions;
   ASSERT_EQ(::posix_spawn_file_actions_init(&actions), 0);
   ASSERT_EQ(::posix_spawn_file_actions_addclose(&actions, payload_pipe[1]), 0);
   pid_t child = -1;
-  const int spawn_result =
-      ::posix_spawn(&child, CUDA_IPC_IMPORT_HELPER_PATH, &actions, nullptr,
-                    child_argv, environ);
+  const int spawn_result = posix_spawn(&child, VMM_FD_IMPORT_HELPER_PATH,
+                                       &actions, nullptr, child_argv, environ);
   ASSERT_EQ(::posix_spawn_file_actions_destroy(&actions), 0);
   ASSERT_EQ(spawn_result, 0);
   ::close(payload_pipe[0]);

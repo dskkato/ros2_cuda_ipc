@@ -47,9 +47,7 @@ class GpuBufferManagerTest : public ::testing::Test {
     shm_name_ = unique_name();
   }
   GpuBufferManager make_manager() {
-    return GpuBufferManager(
-        {shm_name_, 1, 1024, 0,
-         ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC});
+    return GpuBufferManager({shm_name_, 1, 1024, 0});
   }
   std::string shm_name_;
 };

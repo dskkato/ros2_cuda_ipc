@@ -20,6 +20,10 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_library(UUID_LIB uuid)
 
+if(CUDAToolkit_VERSION VERSION_LESS 10.2)
+  message(FATAL_ERROR "ros2_cuda_ipc_core requires CUDA Toolkit 10.2 or newer")
+endif()
+
 if(NOT UUID_LIB)
   message(FATAL_ERROR "Failed to find libuuid (uuid)")
 endif()
@@ -30,11 +34,8 @@ add_library(${PROJECT_NAME}
   src/detail/interprocess_event.cpp
   src/publisher/gpu_buffer_manager.cpp
   src/publisher/gpu_buffer_pool.cpp
+  src/backend/memory_backend.cpp
   src/backend/memory_importer.cpp
-  src/backend/cuda_ipc/memory_backend.cpp
-  src/backend/cuda_ipc/memory_importer.cpp
-  src/backend/vmm_fd/memory_backend.cpp
-  src/backend/vmm_fd/memory_importer.cpp
   src/subscriber/read_handle.cpp
   src/subscriber/buffer_metadata_cache.cpp
   src/image/image_view.cpp
@@ -111,19 +112,18 @@ if(BUILD_TESTING)
   target_link_libraries(test_buffer_metadata_manager ${PROJECT_NAME})
   ament_add_gtest(test_cuda_driver_context test/test_cuda_driver_context.cpp)
   target_link_libraries(test_cuda_driver_context ${PROJECT_NAME} CUDA::cudart)
-  add_executable(cuda_ipc_import_helper
-                 test/cuda_ipc_import_helper.cpp)
-  target_include_directories(cuda_ipc_import_helper PRIVATE test)
-  target_link_libraries(cuda_ipc_import_helper ${PROJECT_NAME})
-  ament_add_gtest(test_cuda_ipc_memory_driver
-                  test/test_cuda_ipc_memory_driver.cpp)
-  target_include_directories(test_cuda_ipc_memory_driver PRIVATE test)
+  add_executable(vmm_fd_import_helper test/vmm_fd_import_helper.cpp)
+  target_include_directories(vmm_fd_import_helper PRIVATE test)
+  target_link_libraries(vmm_fd_import_helper ${PROJECT_NAME})
+  ament_add_gtest(test_vmm_fd_memory_driver
+                  test/test_vmm_fd_memory_driver.cpp)
+  target_include_directories(test_vmm_fd_memory_driver PRIVATE test)
   target_compile_definitions(
-    test_cuda_ipc_memory_driver
+    test_vmm_fd_memory_driver
     PRIVATE
-      CUDA_IPC_IMPORT_HELPER_PATH="$<TARGET_FILE:cuda_ipc_import_helper>")
-  target_link_libraries(test_cuda_ipc_memory_driver ${PROJECT_NAME})
-  add_dependencies(test_cuda_ipc_memory_driver cuda_ipc_import_helper)
+      VMM_FD_IMPORT_HELPER_PATH="$<TARGET_FILE:vmm_fd_import_helper>")
+  target_link_libraries(test_vmm_fd_memory_driver ${PROJECT_NAME})
+  add_dependencies(test_vmm_fd_memory_driver vmm_fd_import_helper)
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

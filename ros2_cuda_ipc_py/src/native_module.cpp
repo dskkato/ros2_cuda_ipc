@@ -135,8 +135,6 @@ std::array<T, N> fixed_sequence(py::handle value, const std::string& path) {
 ros2_cuda_ipc_msgs::msg::BufferCore buffer_core_from_descriptor(
     const py::dict& descriptor) {
   ros2_cuda_ipc_msgs::msg::BufferCore message;
-  message.backend =
-      unsigned_integer<uint8_t>(required(descriptor, "backend"), "backend");
   message.mem_handle = fixed_sequence<uint8_t, 64>(
       required(descriptor, "mem_handle"), "mem_handle");
   message.event_handle = fixed_sequence<uint8_t, 64>(
@@ -557,7 +555,7 @@ class PyBufferMapper {
       throw MappingError(
           "BufferCore was rejected by the C++ mapper (buffer reference, "
           "generation, "
-          "backend, or CUDA import failure)");
+          "VMM-FD import failure)");
     }
     return PyReadHandle(std::move(*view));
   }
@@ -581,7 +579,7 @@ class PyImageMapper {
       throw MappingError(
           "GpuImage was rejected by the C++ mapper (buffer reference, "
           "generation, "
-          "backend, or CUDA import failure)");
+          "VMM-FD import failure)");
     }
     // Keep the C++ implementation's complete bounds check as the final
     // authority after the native core view has been attached.
@@ -680,7 +678,6 @@ py::tuple make_test_image() {
   message.shape = {2, 3, 4};
   message.strides = {12, 4, 1};
   message.encoding = "rgba8";
-  message.core.backend = ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC;
   message.core.mem_handle.fill(0);
   message.core.event_handle.fill(0);
   message.core.mem_handle[0] = 17;
@@ -694,7 +691,6 @@ py::tuple make_test_image() {
 
   ros2_cuda_ipc_core::subscriber::IpcHandleKey key{};
   key.publisher_instance_id = instance_id;
-  key.backend = message.core.backend;
   key.device_id = message.core.device_id;
   key.mem = message.core.mem_handle;
   key.event = message.core.event_handle;
@@ -719,7 +715,6 @@ py::tuple make_test_image() {
   }
 
   py::dict core;
-  core["backend"] = message.core.backend;
   core["mem_handle"] = bytes_to_list(message.core.mem_handle);
   core["event_handle"] = bytes_to_list(message.core.event_handle);
   core["shm_name"] = message.core.shm_name;

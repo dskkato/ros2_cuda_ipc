@@ -10,7 +10,7 @@ namespace ros2_cuda_ipc_core::subscriber {
 std::size_t IpcHandleKeyHash::operator()(
     const IpcHandleKey& key) const noexcept {
   constexpr std::size_t PRIME{131};
-  std::size_t hash = key.backend;
+  std::size_t hash = 0;
   for (unsigned int shift = 0; shift < sizeof(key.device_id) * 8; shift += 8) {
     hash = hash * PRIME + ((key.device_id >> shift) & 0xffU);
   }

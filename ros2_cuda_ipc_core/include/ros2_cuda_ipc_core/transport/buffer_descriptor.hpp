@@ -21,7 +21,6 @@ struct BufferDescriptor {
   uint32_t generation = 0;
   int device_id = -1;
   uint64_t byte_size = 0;
-  MemoryBackendKind backend = MemoryBackendKind::CUDA_IPC;
   MemoryHandlePayload memory_handle{};
   EventHandlePayload ready_event_handle{};
 };

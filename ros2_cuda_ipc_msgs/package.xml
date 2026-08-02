@@ -2,7 +2,7 @@
 <package format="3">
   <name>ros2_cuda_ipc_msgs</name>
   <version>0.4.0</version>
-  <description>Message definitions for ROS 2 GPU zero-copy transport using CUDA IPC.</description>
+  <description>Message definitions for ROS 2 GPU zero-copy transport using CUDA VMM and POSIX file descriptors.</description>
   <maintainer email="dskkato@example.com">dskkato</maintainer>
   <license>MIT</license>
 

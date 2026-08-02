@@ -19,15 +19,14 @@ namespace ros2_cuda_ipc_core::subscriber {
 
 struct IpcHandleKey {
   PublisherInstanceId publisher_instance_id{};
-  uint8_t backend = 0;
   uint32_t device_id = 0;
   transport::MemoryHandlePayload mem{};
   transport::EventHandlePayload event{};
 
   bool operator==(const IpcHandleKey& other) const noexcept {
     return publisher_instance_id == other.publisher_instance_id &&
-           backend == other.backend && device_id == other.device_id &&
-           mem == other.mem && event == other.event;
+           device_id == other.device_id && mem == other.mem &&
+           event == other.event;
   }
 };
 

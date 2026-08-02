@@ -80,7 +80,6 @@ def test_generated_rclpy_message_crosses_the_descriptor_boundary():
     message.shape = descriptor["shape"]
     message.strides = descriptor["strides"]
     message.encoding = descriptor["encoding"]
-    message.core.backend = descriptor["core"]["backend"]
     message.core.mem_handle = descriptor["core"]["mem_handle"]
     message.core.event_handle = descriptor["core"]["event_handle"]
     message.core.shm_name = descriptor["core"]["shm_name"]

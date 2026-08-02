@@ -21,6 +21,38 @@ colcon build --symlink-install --packages-up-to ros2_cuda_ipc_py
 source install/setup.bash
 ```
 
+### CuPy runtime environment
+
+CuPy is an optional runtime dependency. Create the virtual environment with
+system site packages enabled so that ROS 2 Python packages and system packages
+such as `python3-empy` remain visible from the virtual environment:
+
+```bash
+sudo apt install python3-venv python3-empy
+
+# Replace `lyrical` with the ROS 2 distribution installed on the system.
+source /opt/ros/lyrical/setup.bash
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+source install/setup.bash
+
+python -m pip install --upgrade pip
+# Select the wheel matching the installed CUDA major version.
+python -m pip install cupy-cuda12x  # CUDA 12.x
+# python -m pip install cupy-cuda13x  # CUDA 13.x
+```
+
+Verify the environment before running the subscriber:
+
+```bash
+python -c 'import em, rclpy, cupy; print(cupy.__version__)'
+python -m cupy.show_config
+ros2 run ros2_cuda_ipc_py gpu_image_cupy_subscriber.py
+```
+
+Do not install both `cupy` and a `cupy-cudaXX` package. PyTorch setup is not
+covered by this procedure.
+
 ## Usage
 
 ```python

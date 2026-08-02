@@ -41,7 +41,9 @@ jobs:
           colcon build \
             --symlink-install \
             --event-handlers console_direct+ \
-            --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+            --cmake-args \
+              -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+              "-DCMAKE_CUDA_ARCHITECTURES=75"
 
       - name: Run tests
         run: |

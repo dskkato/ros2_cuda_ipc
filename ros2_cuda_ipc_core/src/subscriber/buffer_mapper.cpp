@@ -27,23 +27,9 @@ CUipcEventHandle to_cuda_event_handle(
   return handle;
 }
 
-bool is_supported_backend(uint8_t backend) noexcept {
-  return backend == transport::to_backend_byte(
-                        transport::MemoryBackendKind::CUDA_IPC) ||
-         backend ==
-             transport::to_backend_byte(transport::MemoryBackendKind::VMM_FD);
-}
-
 std::unique_ptr<detail::MappedPublication> map_descriptor(
     const std::shared_ptr<detail::BufferMetadataCache>& mapping_cache,
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
-  if (!is_supported_backend(static_cast<uint8_t>(msg.backend))) {
-    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_mapper",
-                           "Unsupported BufferCore.backend=%u",
-                           static_cast<unsigned>(msg.backend));
-    return nullptr;
-  }
-
   const PublisherInstanceId instance_id = msg.publisher_instance_id;
   if (is_nil(instance_id)) {
     RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_mapper",
@@ -67,15 +53,13 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
   const CUipcEventHandle event_handle = to_cuda_event_handle(msg);
   IpcHandleKey key{};
   key.publisher_instance_id = instance_id;
-  key.backend = static_cast<uint8_t>(msg.backend);
   key.device_id = msg.device_id;
   key.mem = msg.mem_handle;
   std::memcpy(key.event.data(), msg.event_handle.data(), key.event.size());
 
   auto imported = IpcHandleCache::instance().find(key);
   if (!imported) {
-    const auto& importer =
-        backend::get_memory_importer(static_cast<uint8_t>(msg.backend));
+    static const backend::VmmFdMemoryImporter importer;
     auto opened = importer.import(msg, event_handle);
     if (!opened.has_value()) {
       RCUTILS_LOG_WARN_NAMED(

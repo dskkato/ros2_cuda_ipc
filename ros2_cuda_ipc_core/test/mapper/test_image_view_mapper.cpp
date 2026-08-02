@@ -34,7 +34,6 @@ TEST_F(ImageViewMapperTest, InvalidCoreReturnsDefaultImageView) {
   msg.core.device_id = 0;
   msg.core.generation = 42;
   msg.core.byte_size = 60;
-  msg.core.backend = ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC;
 
   image::ImageViewMapper mapper;
   auto view = mapper.map(msg);

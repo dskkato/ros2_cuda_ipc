@@ -9,7 +9,9 @@ This package contains standalone test programs that demonstrate and verify diffe
 1. **CUDA IPC** (`cuda_ipc_producer.cu`, `cuda_ipc_consumer.cu`): Traditional CUDA IPC using `cudaIpcGetMemHandle`/`cudaIpcOpenMemHandle` and `cudaIpcGetEventHandle`/`cudaIpcOpenEventHandle`
 2. **VMM-FD** (`vmm_fd_producer.cu`, `vmm_fd_consumer.cu`): Modern approach using CUDA Driver API Virtual Memory Management with POSIX file descriptor export and CUDA IPC event synchronization
 
-These tests are intentionally kept as standalone applications with no ROS2 dependencies in the source code, making them useful for debugging IPC issues independently of ROS2.
+These tests are intentionally kept as standalone applications with no ROS2
+dependencies in the source code. They are independent environment/comparison
+tools; the `ros2_cuda_ipc_core` library itself uses VMM-FD only.
 
 ## Build Options
 

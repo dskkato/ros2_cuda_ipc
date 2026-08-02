@@ -42,7 +42,7 @@ Only the preview path copies the full image back to CPU memory.
 
 - Ubuntu 22.04
 - ROS 2 Humble or newer
-- CUDA Toolkit 11.8 or newer
+- CUDA Toolkit 10.2 or newer with VMM and POSIX file-descriptor support
 - A CUDA-capable NVIDIA GPU
 - `colcon`
 
@@ -59,23 +59,14 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   width:=1280 \
   height:=720 \
   publish_rate_hz:=60.0 \
-  memory_backend:=cuda_ipc \
   slot_count:=4 \
   shm_name_prefix:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```
 
-The memory backend can be selected at launch:
-
-```bash
-# Standard CUDA IPC path, typically used on x86_64 + dGPU systems.
-ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
-  memory_backend:=cuda_ipc
-
-# VMM + file-descriptor path, intended for systems such as Jetson Orin.
-ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
-  memory_backend:=vmm_fd
-```
+The library uses CUDA VMM plus POSIX file descriptors as its only memory-sharing
+backend. File descriptors are distributed through a Unix domain socket and
+ready-event synchronization still uses CUDA IPC event handles.
 
 ## Viewing The Demo
 

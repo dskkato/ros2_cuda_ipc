@@ -42,7 +42,6 @@ def buffer_core_descriptor(message):
     if isinstance(message, Mapping):
         return dict(message)
     return {
-        "backend": _field(message, "backend"),
         "mem_handle": _sequence(_field(message, "mem_handle")),
         "event_handle": _sequence(_field(message, "event_handle")),
         "shm_name": _field(message, "shm_name"),

@@ -10,19 +10,14 @@
 
 #include "ros2_cuda_ipc_core/backend/memory_backend.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
-#include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 
 class GpuBufferPool {
  public:
-  using SlotBackendState = backend::SlotBackendState;
   using SlotResources = backend::SlotResources;
-  using MemoryBackend = backend::MemoryBackend;
 
-  GpuBufferPool(std::size_t slot_count, transport::MemoryBackendKind backend);
-  GpuBufferPool(std::size_t slot_count, transport::MemoryBackendKind backend,
-                std::unique_ptr<MemoryBackend> memory_backend);
+  explicit GpuBufferPool(std::size_t slot_count);
   ~GpuBufferPool();
 
   GpuBufferPool(const GpuBufferPool&) = delete;
@@ -48,12 +43,10 @@ class GpuBufferPool {
   void destroy_slots() noexcept;
 
   std::size_t slot_count_;
-  transport::MemoryBackendKind backend_kind_;
   std::vector<SlotResources> slots_;
   uint64_t byte_size_ = 0;
   int device_index_ = -1;
   bool initialised_ = false;
-  std::unique_ptr<MemoryBackend> memory_backend_;
   std::shared_ptr<detail::CudaDeviceContext> context_;
 };
 

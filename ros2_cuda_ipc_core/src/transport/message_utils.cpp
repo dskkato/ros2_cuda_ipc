@@ -32,7 +32,6 @@ void fill_buffer_core_message(const BufferDescriptor& descriptor,
   message.slot_id = descriptor.slot_id;
   message.generation = descriptor.generation;
   message.byte_size = descriptor.byte_size;
-  message.backend = to_backend_byte(descriptor.backend);
   std::memcpy(message.mem_handle.data(), descriptor.memory_handle.data(),
               sizeof(message.mem_handle));
   std::memcpy(message.event_handle.data(), &descriptor.ready_event_handle,

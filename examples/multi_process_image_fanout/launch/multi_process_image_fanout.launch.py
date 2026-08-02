@@ -25,11 +25,6 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("width", default_value="1920"),
         DeclareLaunchArgument("height", default_value="1080"),
         DeclareLaunchArgument("device_index", default_value="0"),
-        DeclareLaunchArgument(
-            "memory_backend",
-            default_value="cuda_ipc",
-            description="Memory backend: cuda_ipc or vmm_fd",
-        ),
         DeclareLaunchArgument("frame_id", default_value="fanout_camera_frame"),
         DeclareLaunchArgument("slot_count", default_value="4"),
         DeclareLaunchArgument(
@@ -72,7 +67,6 @@ def launch_setup(context) -> List[Node]:
     publish_rate = as_float("publish_rate_hz")
     slot_count = as_int("slot_count")
     device_index = as_int("device_index")
-    memory_backend = value("memory_backend")
     image_topic = value("image_topic")
     preview_topic = value("preview_topic")
     encoder_status_topic = value("encoder_status_topic")
@@ -106,7 +100,6 @@ def launch_setup(context) -> List[Node]:
                 "slot_count": slot_count,
                 "shm_name_prefix": value("shm_name_prefix"),
                 "device_index": device_index,
-                "memory_backend": memory_backend,
             }
         ],
         output="screen",

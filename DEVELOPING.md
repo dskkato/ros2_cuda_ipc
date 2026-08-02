@@ -60,20 +60,10 @@ destroyed and its completion event has been recorded. A failed optional map
 contains no public error detail; the mapper writes diagnostic detail to the
 internal log.
 
-## Memory Backends
+## Memory Sharing
 
-`ros2_cuda_ipc` supports two GPU memory sharing backends.
-
-### CUDA IPC
-
-This is the default backend for x86_64 + dGPU systems that support CUDA IPC.
-It uses `cudaIpcMemHandle_t` and `cudaIpcEventHandle_t` to share GPU memory and
-ready events between processes.
-
-### VMM + FD
-
-This backend is intended for systems such as Jetson Orin where CUDA IPC memory
-sharing is not available. It uses CUDA Driver API Virtual Memory Management:
+`ros2_cuda_ipc` uses CUDA VMM plus POSIX file descriptors as its only GPU memory
+sharing backend. It uses CUDA Driver API Virtual Memory Management:
 
 - publisher allocates GPU memory with `cuMemCreate`
 - publisher exports it with `cuMemExportToShareableHandle`
@@ -81,14 +71,13 @@ sharing is not available. It uses CUDA Driver API Virtual Memory Management:
 - subscribers import memory with `cuMemImportFromShareableHandle`
 - ready-event synchronization still uses CUDA IPC event handles
 
-Both publisher and subscribers must use the same backend.
-
-Accepted backend names include `cuda_ipc`, `vmm_fd`, `vmm-fd`, `vmm`, and `fd`.
+The library requires CUDA Toolkit 10.2 or newer. The standalone
+`cuda_ipc_poc` package still contains CUDA IPC and VMM-FD comparison programs,
+but CUDA IPC is not a supported backend of the library.
 
 ## Environment Checks
 
-Before debugging the ROS path, check whether the platform supports the intended
-memory sharing backend:
+Before debugging the ROS path, check whether the platform supports VMM+FD:
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -107,6 +96,10 @@ See [utils/cuda_ipc_poc/README.md](utils/cuda_ipc_poc/README.md).
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install --packages-up-to multi_process_image_fanout
 ```
+
+The fanout demo uses the host GPU's native CUDA architecture by default with
+CMake 3.24 or newer. GPU-less CI and package builds should pass an explicit
+`CMAKE_CUDA_ARCHITECTURES` list instead.
 
 Core unit tests:
 
