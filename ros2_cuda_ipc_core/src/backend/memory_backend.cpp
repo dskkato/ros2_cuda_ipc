@@ -258,11 +258,24 @@ struct VmmSlotState : public SlotBackendState {
   std::unique_ptr<UnixFdServer> server;
 };
 
-}  // namespace
-
-namespace {
-bool ensure_driver();
-}  // namespace
+/**
+ * @brief Ensure the CUDA driver is initialised before using driver APIs.
+ *
+ * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
+ */
+bool ensure_driver() {
+  static std::once_flag once;
+  static CUresult status = CUDA_SUCCESS;
+  std::call_once(once, [&]() { status = cuInit(0); });
+  if (status != CUDA_SUCCESS) {
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd", "cuInit failed: %s",
+        ros2_cuda_ipc_core::detail::cu_result_to_string(status).c_str());
+    return false;
+  }
+  return true;
+}
+}
 
 bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
                              std::vector<SlotResources>& slots) {
@@ -396,27 +409,5 @@ void MemoryBackend::destroy(std::vector<SlotResources>& slots) noexcept {
     slot.mem_handle.fill(0);
   }
 }
-
-/**
- * @brief Ensure the CUDA driver is initialised before using driver APIs.
- *
- * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
- */
-namespace {
-
-bool ensure_driver() {
-  static std::once_flag once;
-  static CUresult status = CUDA_SUCCESS;
-  std::call_once(once, [&]() { status = cuInit(0); });
-  if (status != CUDA_SUCCESS) {
-    RCUTILS_LOG_ERROR_NAMED(
-        "ros2_cuda_ipc_core.backend.vmm_fd", "cuInit failed: %s",
-        ros2_cuda_ipc_core::detail::cu_result_to_string(status).c_str());
-    return false;
-  }
-  return true;
-}
-
-}  // namespace
 
 }  // namespace ros2_cuda_ipc_core::backend
