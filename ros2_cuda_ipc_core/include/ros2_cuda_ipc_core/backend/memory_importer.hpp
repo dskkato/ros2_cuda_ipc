@@ -45,7 +45,7 @@ struct ImportedResources {
   std::size_t allocation_size = 0;
 };
 
-class MemoryImporter final {
+class VmmFdMemoryImporter {
  public:
   std::optional<ImportedResources> import(
       const ros2_cuda_ipc_msgs::msg::BufferCore& msg,

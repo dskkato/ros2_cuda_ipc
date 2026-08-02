@@ -16,7 +16,7 @@ gpu_image_publisher
 
 The XML launch file starts all four nodes as separate processes. Intra-process
 communication is disabled intentionally because this demo is about
-inter-process CUDA IPC.
+inter-process VMM-FD sharing.
 
 ## Subscribers
 

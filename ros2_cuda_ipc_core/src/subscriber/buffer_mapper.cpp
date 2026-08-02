@@ -59,7 +59,7 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
 
   auto imported = IpcHandleCache::instance().find(key);
   if (!imported) {
-    static const backend::MemoryImporter importer;
+    static const backend::VmmFdMemoryImporter importer;
     auto opened = importer.import(msg, event_handle);
     if (!opened.has_value()) {
       RCUTILS_LOG_WARN_NAMED(

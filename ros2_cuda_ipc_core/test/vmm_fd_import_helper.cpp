@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
   static_assert(sizeof(event_handle) == sizeof(payload.event_handle));
   std::memcpy(&event_handle, payload.event_handle.data(), sizeof(event_handle));
 
-  ros2_cuda_ipc_core::backend::MemoryImporter importer;
+  ros2_cuda_ipc_core::backend::VmmFdMemoryImporter importer;
   auto imported = importer.import(msg, event_handle);
   if (!imported.has_value()) {
     return 5;

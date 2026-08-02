@@ -15,7 +15,6 @@ namespace ros2_cuda_ipc_core::publisher {
 
 class GpuBufferPool {
  public:
-  using SlotBackendState = backend::SlotBackendState;
   using SlotResources = backend::SlotResources;
 
   explicit GpuBufferPool(std::size_t slot_count);
@@ -48,7 +47,6 @@ class GpuBufferPool {
   uint64_t byte_size_ = 0;
   int device_index_ = -1;
   bool initialised_ = false;
-  backend::MemoryBackend memory_backend_;
   std::shared_ptr<detail::CudaDeviceContext> context_;
 };
 

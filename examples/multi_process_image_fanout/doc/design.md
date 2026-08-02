@@ -115,7 +115,7 @@ They do not need to be parsed by production code.
 ## Common ROS 2 policy
 
 All nodes must disable intra-process communication because this demo is about
-inter-process CUDA IPC:
+inter-process VMM-FD sharing:
 
 ```cpp
 rclcpp::NodeOptions().use_intra_process_comms(false)

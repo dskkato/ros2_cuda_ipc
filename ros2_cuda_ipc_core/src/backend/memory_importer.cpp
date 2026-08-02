@@ -119,7 +119,7 @@ std::optional<int> request_fd_from_publisher(const std::string& path) {
 
 }  // namespace
 
-std::optional<ImportedResources> MemoryImporter::import(
+std::optional<ImportedResources> VmmFdMemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
     const CUipcEventHandle& event_handle) const {
   const auto meta = parse_vmm_payload(msg.mem_handle);

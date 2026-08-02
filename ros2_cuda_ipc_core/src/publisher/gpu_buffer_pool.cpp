@@ -93,8 +93,8 @@ bool GpuBufferPool::allocate_slots() {
       return false;
     }
     auto memory_guard = std::move(memory_guard_result).value();
-    if (!memory_backend_.allocate(byte_size_, device_index_, slots_)) {
-      memory_backend_.destroy(slots_);
+    if (!backend::allocate_vmm_fd_memory(byte_size_, device_index_, slots_)) {
+      backend::destroy_vmm_fd_memory(slots_);
       return false;
     }
   }
@@ -127,7 +127,7 @@ void GpuBufferPool::destroy_slots() noexcept {
       guard.emplace(std::move(guard_result).value());
     }
   }
-  memory_backend_.destroy(slots_);
+  backend::destroy_vmm_fd_memory(slots_);
   slots_.clear();
   byte_size_ = 0;
   device_index_ = -1;

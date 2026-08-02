@@ -231,8 +231,8 @@ class UnixFdServer {
  * allocation. Destruction tears down the mapping, frees the allocation, closes
  * the FD, and stops the Unix socket server.
  */
-struct VmmSlotState : public SlotBackendState {
-  ~VmmSlotState() override {
+struct VmmFdSlotState {
+  ~VmmFdSlotState() {
     if (server) {
       server->stop();
       server.reset();
@@ -277,8 +277,13 @@ bool ensure_driver() {
 }
 }  // namespace
 
-bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
-                             std::vector<SlotResources>& slots) {
+SlotResources::SlotResources() = default;
+SlotResources::~SlotResources() = default;
+SlotResources::SlotResources(SlotResources&&) noexcept = default;
+SlotResources& SlotResources::operator=(SlotResources&&) noexcept = default;
+
+bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
+                            std::vector<SlotResources>& slots) {
   if (!ensure_driver()) {
     return false;
   }
@@ -304,7 +309,7 @@ bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
 
   const uint64_t aligned_size = align_up(frame_size_bytes, granularity);
   for (auto& slot : slots) {
-    auto state = std::make_shared<VmmSlotState>();
+    auto state = std::make_unique<VmmFdSlotState>();
     state->allocation_size = aligned_size;
 
     CUdeviceptr address = 0;
@@ -314,7 +319,7 @@ bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemAddressReserve failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy(slots);
+      destroy_vmm_fd_memory(slots);
       return false;
     }
     state->address = address;
@@ -325,7 +330,7 @@ bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemCreate failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy(slots);
+      destroy_vmm_fd_memory(slots);
       return false;
     }
 
@@ -334,7 +339,7 @@ bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemMap failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy(slots);
+      destroy_vmm_fd_memory(slots);
       return false;
     }
 
@@ -347,7 +352,7 @@ bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemSetAccess failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy(slots);
+      destroy_vmm_fd_memory(slots);
       return false;
     }
 
@@ -361,7 +366,7 @@ bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
           "ros2_cuda_ipc_core.backend.vmm_fd",
           "cuMemExportToShareableHandle failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy(slots);
+      destroy_vmm_fd_memory(slots);
       return false;
     }
     if (state->shareable_fd >= 0) {
@@ -383,29 +388,29 @@ bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
     state->server =
         std::make_unique<UnixFdServer>(socket_path, state->shareable_fd);
     if (!state->server->start()) {
-      destroy(slots);
+      destroy_vmm_fd_memory(slots);
       return false;
     }
 
-    slot.device_ptr = reinterpret_cast<void*>(state->address);
-    slot.backend_state = state;
     // Store UUID bytes into the ROS message payload so subscribers know which
     // socket to contact.
     if (!encode_uuid_payload(state->uuid, slot.mem_handle)) {
       RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
                               "Failed to encode UUID payload for slot %u",
                               slot.index);
-      destroy(slots);
+      destroy_vmm_fd_memory(slots);
       return false;
     }
+    slot.device_ptr = reinterpret_cast<void*>(state->address);
+    slot.vmm_fd_state = std::move(state);
   }
   return true;
 }
 
-void MemoryBackend::destroy(std::vector<SlotResources>& slots) noexcept {
+void destroy_vmm_fd_memory(std::vector<SlotResources>& slots) noexcept {
   for (auto& slot : slots) {
     slot.device_ptr = nullptr;
-    slot.backend_state.reset();
+    slot.vmm_fd_state.reset();
     slot.mem_handle.fill(0);
   }
 }
