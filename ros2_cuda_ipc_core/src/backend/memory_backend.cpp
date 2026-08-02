@@ -275,7 +275,7 @@ bool ensure_driver() {
   }
   return true;
 }
-}
+}  // namespace
 
 bool MemoryBackend::allocate(uint64_t frame_size_bytes, int device_index,
                              std::vector<SlotResources>& slots) {
