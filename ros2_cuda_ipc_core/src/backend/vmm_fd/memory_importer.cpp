@@ -253,4 +253,49 @@ std::optional<ImportedResources> MemoryImporter::import(
   return imported;
 }
 
+bool release_imported_resources(const ImportedResources& imported) noexcept {
+  if (!imported.context) {
+    return true;
+  }
+
+  auto guard_result = imported.context->push_current();
+  if (!guard_result) {
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd",
+        "Failed to activate CUDA context for imported resource cleanup: %s",
+        guard_result.error().to_string().c_str());
+    return false;
+  }
+  auto guard = std::move(guard_result).value();
+  bool success = true;
+  const auto report_cleanup_failure = [&success](const char* operation,
+                                                 CUresult result) {
+    if (result == CUDA_SUCCESS) {
+      return;
+    }
+    success = false;
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd",
+        "%s failed during imported resource cleanup: %s", operation,
+        detail::CudaDriverError(result).to_string().c_str());
+  };
+
+  if (imported.vmm_address != 0 && imported.allocation_size != 0) {
+    report_cleanup_failure("cuMemUnmap",
+                           cuMemUnmap(imported.vmm_address,
+                                      imported.allocation_size));
+    report_cleanup_failure("cuMemAddressFree",
+                           cuMemAddressFree(imported.vmm_address,
+                                             imported.allocation_size));
+  }
+  if (imported.vmm_allocation != 0) {
+    report_cleanup_failure("cuMemRelease",
+                           cuMemRelease(imported.vmm_allocation));
+  }
+  if (imported.event != nullptr) {
+    report_cleanup_failure("cuEventDestroy", cuEventDestroy(imported.event));
+  }
+  return success;
+}
+
 }  // namespace ros2_cuda_ipc_core::backend::vmm_fd

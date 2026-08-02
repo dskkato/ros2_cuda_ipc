@@ -10,7 +10,7 @@
 
 namespace ros2_cuda_ipc_core::test {
 
-struct CudaIpcMemoryTestPayload {
+struct VmmFdMemoryTestPayload {
   uint32_t device_id = 0;
   uint64_t byte_size = 0;
   uint8_t expected_value = 0;
@@ -18,6 +18,6 @@ struct CudaIpcMemoryTestPayload {
   transport::EventHandlePayload event_handle{};
 };
 
-static_assert(std::is_trivially_copyable_v<CudaIpcMemoryTestPayload>);
+static_assert(std::is_trivially_copyable_v<VmmFdMemoryTestPayload>);
 
 }  // namespace ros2_cuda_ipc_core::test

@@ -55,8 +55,7 @@ TEST(GpuBufferPoolTest, PartialBackendFailureIsRolledBack) {
   }
   auto observation = std::make_shared<CleanupObservation>();
   ros2_cuda_ipc_core::publisher::GpuBufferPool pool(
-      2, ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC,
-      std::make_unique<PartiallyFailingBackend>(observation));
+      2, std::make_unique<PartiallyFailingBackend>(observation));
   EXPECT_FALSE(pool.initialise(1024, 0));
   EXPECT_FALSE(pool.is_initialised());
   EXPECT_EQ(observation->destroy_calls, 1);

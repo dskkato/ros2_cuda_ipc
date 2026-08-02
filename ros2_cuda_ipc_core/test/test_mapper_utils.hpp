@@ -12,7 +12,7 @@
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
+#include "ros2_cuda_ipc_core/backend/vmm_fd/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
@@ -48,7 +48,6 @@ inline subscriber::IpcHandleKey make_key(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
   subscriber::IpcHandleKey key{};
   key.publisher_instance_id = msg.publisher_instance_id;
-  key.backend = static_cast<uint8_t>(msg.backend);
   key.device_id = msg.device_id;
   key.mem = msg.mem_handle;
   std::memcpy(key.event.data(), msg.event_handle.data(),
@@ -58,9 +57,7 @@ inline subscriber::IpcHandleKey make_key(
 
 inline ros2_cuda_ipc_msgs::msg::BufferCore make_cached_buffer_core_message(
     const std::string& shm_name, uint32_t slot_id, uint32_t generation,
-    uint8_t key_seed,
-    transport::MemoryBackendKind backend =
-        transport::MemoryBackendKind::CUDA_IPC) {
+    uint8_t key_seed) {
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
   msg.publisher_instance_id = publisher_instance_id(shm_name);
@@ -68,7 +65,6 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_cached_buffer_core_message(
   msg.slot_id = slot_id;
   msg.generation = generation;
   msg.byte_size = 64;
-  msg.backend = to_backend_byte(backend);
   msg.mem_handle.fill(0);
   msg.event_handle.fill(0);
   msg.mem_handle[0] = key_seed;

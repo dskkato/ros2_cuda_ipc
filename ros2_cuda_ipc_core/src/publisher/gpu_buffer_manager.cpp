@@ -105,7 +105,7 @@ void PublishSlot::cancel() noexcept {
 
 GpuBufferManager::GpuBufferManager(Config config)
     : config_(std::move(config)),
-      buffer_pool_(config_.slot_count, config_.backend),
+      buffer_pool_(config_.slot_count),
       buffer_metadata_manager_(config_.shm_name_prefix, config_.slot_count) {}
 
 GpuBufferManager::~GpuBufferManager() { reset(); }
@@ -192,7 +192,6 @@ GpuBufferManager::try_build_descriptor(
   result.generation = reservation.generation;
   result.device_id = config_.device_index;
   result.byte_size = config_.byte_size;
-  result.backend = resources->backend;
   result.memory_handle = resources->mem_handle;
   result.ready_event_handle = resources->ready_event->ipc_handle();
   return result;

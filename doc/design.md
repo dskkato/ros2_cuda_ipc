@@ -11,10 +11,7 @@ ROS 2 の通常のメッセージ配送を使いながら、GPU payload 自体�
 Subscriber プロセスへコピーせずに共有する。メッセージには payload の識別子と
 レイアウトメタデータを載せ、実際の GPU resource と slot lifetime は core が管理する。
 
-現在の transport は次を対象とする。
-
-- CUDA IPC memory backend
-- CUDA VMM + shareable FD (`VMM_FD`) backend
+現在の transport は CUDA VMM + shareable FD を唯一の memory sharing backend とする。
 - 固定 slot pool と shared-memory buffer reference による publisher/subscriber 間の lifetime 管理
 - C++ の raw pointer API、画像／点群の typed adapter、Python の GpuImage/DLPack adapter
 
@@ -58,8 +55,7 @@ event、deferred release queue は lifetime を実装する内部要素であり
 
 | field | 意味 |
 | --- | --- |
-| `backend` | `CUDA_IPC` または `VMM_FD` |
-| `mem_handle` | backend 固有の opaque payload。CUDA IPC handle または VMM allocation の UUID |
+| `mem_handle` | VMM allocation を配布する Unix socket の UUID payload |
 | `event_handle` | producer の ready event を識別する CUDA IPC event handle |
 | `shm_name` | buffer reference/refcount 用 POSIX shared memory 名 |
 | `publisher_instance_id` | publisher 初期化単位の識別子 |
@@ -83,18 +79,7 @@ Subscriber は `publisher_instance_id`、`slot_id`、`generation` を検証し�
 
 メッセージ定義そのものは [ros2_cuda_ipc_msgs/msg](../ros2_cuda_ipc_msgs/msg) を正とする。
 
-## Memory backend
-
-backend は message の wire format と subscriber の mapper API を変えず、GPU resource の
-確保・配布・import 方法だけを切り替える。
-
-### CUDA IPC
-
-Publisher は CUDA IPC memory/event handle を `BufferCore` に格納する。Subscriber は
-`cudaIpcOpenMemHandle` 相当の backend importer で memory を開き、`cudaIpcOpenEventHandle`
-で ready event を開く。
-
-### VMM + FD
+## Memory sharing: VMM + FD
 
 Publisher は CUDA VMM allocation を slot ごとに作り、POSIX shareable FD を Unix domain socket
 経由で配布する。`mem_handle` には socket を特定する UUID payload を格納し、Subscriber は
@@ -137,10 +122,10 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> read =
 
 `BufferMapper::map()` は次を一つの mapping 操作として行う。
 
-1. backend と `publisher_instance_id` を検証する。
+1. `publisher_instance_id` を検証する。
 2. `shm_name` に対応する buffer metadata mapping を取得または attach する。
 3. `slot_id` と `generation` を検証し、buffer reference を取得する。
-4. `IpcHandleCache` から imported resource を取得する。未登録なら backend importer で import する。
+4. `IpcHandleCache` から imported resource を取得する。未登録なら VMM-FD importer で import する。
 5. consumer stream に producer ready event の wait を enqueue する。
 6. imported resource と buffer reference を所有する `ReadHandle` を返す。
 

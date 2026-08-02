@@ -36,7 +36,6 @@ TEST_F(PointCloud2ViewMapperTest, InvalidCorePreservesHeaderOnlyBehavior) {
   msg.core.device_id = 0;
   msg.core.generation = 42;
   msg.core.byte_size = 24;
-  msg.core.backend = ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC;
 
   pointcloud2::PointCloud2ViewMapper mapper;
   auto view = mapper.map(msg);

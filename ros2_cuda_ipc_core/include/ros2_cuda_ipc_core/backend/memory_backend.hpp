@@ -22,7 +22,6 @@ struct SlotResources {
   uint32_t index = 0;
   void* device_ptr = nullptr;
   std::unique_ptr<detail::InterprocessEvent> ready_event;
-  transport::MemoryBackendKind backend = transport::MemoryBackendKind::CUDA_IPC;
   transport::MemoryHandlePayload mem_handle{};
   std::shared_ptr<SlotBackendState> backend_state;
 };

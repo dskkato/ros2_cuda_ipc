@@ -10,7 +10,7 @@ namespace ros2_cuda_ipc_core::subscriber {
 std::size_t IpcHandleKeyHash::operator()(
     const IpcHandleKey& key) const noexcept {
   constexpr std::size_t PRIME{131};
-  std::size_t hash = key.backend;
+  std::size_t hash = 0;
   for (unsigned int shift = 0; shift < sizeof(key.device_id) * 8; shift += 8) {
     hash = hash * PRIME + ((key.device_id >> shift) & 0xffU);
   }
@@ -46,13 +46,15 @@ IpcHandleCache::Entry IpcHandleCache::find(const IpcHandleKey& key) const {
 }
 
 IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
-    const IpcHandleKey& key, backend::ImportedResources imported) {
+    const IpcHandleKey& key,
+    backend::vmm_fd::ImportedResources imported) {
   Entry candidate;
   bool resource_constructed = false;
   try {
     ReleaseFn release = release_fn_;
     auto deleter = [release = std::move(release)](
-                       const backend::ImportedResources* resource) noexcept {
+                       const backend::vmm_fd::ImportedResources* resource)
+                       noexcept {
       try {
         release(*resource);
       } catch (...) {
@@ -60,10 +62,11 @@ IpcHandleCache::Entry IpcHandleCache::insert_or_discard_duplicate(
       }
       delete resource;
     };
-    using OwnedResource =
-        std::unique_ptr<backend::ImportedResources, decltype(deleter)>;
-    OwnedResource resource(new backend::ImportedResources(std::move(imported)),
-                           std::move(deleter));
+    using OwnedResource = std::unique_ptr<backend::vmm_fd::ImportedResources,
+                                          decltype(deleter)>;
+    OwnedResource resource(
+        new backend::vmm_fd::ImportedResources(std::move(imported)),
+        std::move(deleter));
     resource_constructed = true;
     // The unique_ptr owns the resource while shared_ptr allocates its control
     // block.  If this copy throws, the unique_ptr still invokes the moved-in

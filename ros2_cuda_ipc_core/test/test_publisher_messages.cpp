@@ -25,8 +25,6 @@ ros2_cuda_ipc_core::transport::BufferDescriptor make_descriptor() {
   descriptor.generation = 11;
   descriptor.device_id = 2;
   descriptor.byte_size = 120;
-  descriptor.backend =
-      ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC;
   std::memset(descriptor.memory_handle.data(), 0x12,
               descriptor.memory_handle.size());
   std::memset(&descriptor.ready_event_handle, 0x34,
@@ -47,7 +45,6 @@ TEST(PublisherMessagesTest,
   EXPECT_EQ(message.generation, descriptor.generation);
   EXPECT_EQ(message.device_id, 2u);
   EXPECT_EQ(message.byte_size, descriptor.byte_size);
-  EXPECT_EQ(message.backend, ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC);
   EXPECT_EQ(message.mem_handle[0], 0x12);
   EXPECT_EQ(message.event_handle[0], 0x34);
 }

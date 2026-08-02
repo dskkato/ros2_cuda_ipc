@@ -13,7 +13,6 @@
 #include "multi_process_image_fanout/cuda_checks.hpp"
 #include "multi_process_image_fanout/kernels.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "ros2_cuda_ipc_core/backend/memory_backend_utils.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
 #include "ros2_cuda_ipc_core/image/image_view.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_manager.hpp"
@@ -44,8 +43,6 @@ class GpuImagePublisherNode : public rclcpp::Node {
     const auto shm_name_prefix = declare_parameter<std::string>(
         "shm_name_prefix", "/ros2_cuda_ipc_fanout");
     const int device_index = declare_parameter<int>("device_index", 0);
-    const auto backend = ros2_cuda_ipc_core::backend::parse_memory_backend(
-        declare_parameter<std::string>("memory_backend", "cuda_ipc"));
     encoding_ = declare_parameter<std::string>("encoding", kDefaultEncoding);
 
     if (width <= 0 || height <= 0) {
@@ -64,8 +61,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     manager_ =
         std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferManager>(
             ros2_cuda_ipc_core::publisher::GpuBufferManager::Config{
-                shm_name_prefix, slot_count, frame_size_bytes, device_index,
-                backend});
+                shm_name_prefix, slot_count, frame_size_bytes, device_index});
     if (!manager_->initialise()) {
       throw std::runtime_error("Failed to initialise GPU buffer manager");
     }

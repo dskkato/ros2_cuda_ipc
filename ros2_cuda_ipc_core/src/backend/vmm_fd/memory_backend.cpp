@@ -25,7 +25,6 @@
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
-#include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend::vmm_fd {
 namespace {
@@ -393,7 +392,6 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
       }
 
       slot.device_ptr = reinterpret_cast<void*>(state->address);
-      slot.backend = ros2_cuda_ipc_core::transport::MemoryBackendKind::VMM_FD;
       slot.backend_state = state;
       // Store UUID bytes into the ROS message payload so subscribers know which
       // socket to contact.
@@ -418,12 +416,8 @@ class VmmFdMemoryBackend : public publisher::GpuBufferPool::MemoryBackend {
                    slots) noexcept override {
     for (auto& slot : slots) {
       slot.device_ptr = nullptr;
-      if (slot.backend ==
-          ros2_cuda_ipc_core::transport::MemoryBackendKind::VMM_FD) {
-        slot.backend_state.reset();
-      }
+      slot.backend_state.reset();
       slot.mem_handle.fill(0);
-      slot.backend = ros2_cuda_ipc_core::transport::MemoryBackendKind::CUDA_IPC;
     }
   }
 

@@ -14,17 +14,14 @@
 namespace ros2_cuda_ipc_core {
 
 TEST(IpcHandleCacheTest,
-     KeyEqualityAndHashUseInstanceBackendDevicePayloadAndEvent) {
+     KeyEqualityAndHashUseInstanceDevicePayloadAndEvent) {
   subscriber::IpcHandleKey lhs{};
   lhs.publisher_instance_id = test::publisher_instance_id("lhs");
-  lhs.backend = 1;
   lhs.device_id = 2;
   lhs.mem[0] = 3;
   lhs.event[0] = 5;
 
   subscriber::IpcHandleKey same = lhs;
-  subscriber::IpcHandleKey different_backend = lhs;
-  different_backend.backend = 2;
   subscriber::IpcHandleKey different_device = lhs;
   different_device.device_id = 3;
   subscriber::IpcHandleKey different_mem = lhs;
@@ -38,7 +35,6 @@ TEST(IpcHandleCacheTest,
   subscriber::IpcHandleKeyHash hash;
   EXPECT_TRUE(lhs == same);
   EXPECT_EQ(hash(lhs), hash(same));
-  EXPECT_FALSE(lhs == different_backend);
   EXPECT_FALSE(lhs == different_device);
   EXPECT_NE(hash(lhs), hash(different_device));
   EXPECT_FALSE(lhs == different_mem);
@@ -50,7 +46,6 @@ TEST(IpcHandleCacheTest,
 TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
   subscriber::IpcHandleCache cache([](const backend::ImportedResources&) {});
   subscriber::IpcHandleKey key{};
-  key.backend = 1;
   key.mem[0] = 11;
   key.event[0] = 13;
 
@@ -87,7 +82,6 @@ TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
       });
   cache_ptr = &cache;
   subscriber::IpcHandleKey key{};
-  key.backend = 1;
   key.mem[0] = 17;
   key.event[0] = 19;
 
@@ -184,7 +178,6 @@ TEST(IpcHandleCacheTest, CacheHitReusesTheSameEntry) {
         released.fetch_add(1);
       });
   subscriber::IpcHandleKey key{};
-  key.backend = 1;
   key.mem[0] = 41;
   key.event[0] = 43;
 
@@ -249,7 +242,6 @@ TEST(IpcHandleCacheTest, DuplicateInsertionsAreThreadSafeAndReleaseLosers) {
         released.fetch_add(1);
       });
   subscriber::IpcHandleKey key{};
-  key.backend = 1;
   key.mem[0] = 51;
   key.event[0] = 53;
 

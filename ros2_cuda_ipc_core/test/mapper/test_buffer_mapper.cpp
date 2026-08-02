@@ -31,7 +31,6 @@ TEST_F(BufferMapperTest, BufferReferenceFailureReturnsEmptyOptional) {
   msg.device_id = 0;
   msg.generation = 99;
   msg.byte_size = 64;
-  msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::CUDA_IPC;
 
   subscriber::BufferMapper mapper;
   EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
@@ -62,36 +61,6 @@ TEST_F(BufferMapperTest, PublisherInstanceMismatchRejectsMessage) {
   ::shm_unlink(shm_name.c_str());
 }
 
-TEST_F(BufferMapperTest, UnsupportedBackendReturnsEmptyOptional) {
-  const std::string shm_name =
-      test::make_unique_shm_name("buffer_mapper_backend");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-
-  ros2_cuda_ipc_msgs::msg::BufferCore msg;
-  msg.shm_name = shm_name;
-  msg.publisher_instance_id = test::publisher_instance_id(shm_name);
-  msg.slot_id = 0;
-  msg.device_id = 0;
-  msg.generation = reservation->generation;
-  msg.byte_size = 64;
-  msg.backend = 255;
-
-  subscriber::BufferMapper mapper;
-  EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
-
-  auto refcount = buffer_metadata::BufferRef::current_refcount(mapping, 0);
-  ASSERT_TRUE(refcount.has_value());
-  EXPECT_EQ(refcount.value(), 1u);
-  ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
-      mapping, reservation->slot_id, reservation->generation));
-
-  ::shm_unlink(shm_name.c_str());
-}
-
 TEST_F(BufferMapperTest, InvalidVmmPayloadReturnsEmptyOptional) {
   const std::string shm_name =
       test::make_unique_shm_name("buffer_mapper_vmm_payload");
@@ -108,7 +77,6 @@ TEST_F(BufferMapperTest, InvalidVmmPayloadReturnsEmptyOptional) {
   msg.device_id = 0;
   msg.generation = reservation->generation;
   msg.byte_size = 64;
-  msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD;
   msg.mem_handle.fill(0);
   msg.event_handle.fill(0);
 
@@ -140,7 +108,6 @@ TEST_F(BufferMapperTest, MissingVmmSocketReturnsEmptyAndReleasesBufferRef) {
   msg.device_id = 0;
   msg.generation = reservation->generation;
   msg.byte_size = 64;
-  msg.backend = ros2_cuda_ipc_msgs::msg::BufferCore::VMM_FD;
   msg.event_handle.fill(0);
   ASSERT_TRUE(backend::vmm_fd::encode_uuid_payload(
       "12345678-1234-5678-1234-567812345678", msg.mem_handle));

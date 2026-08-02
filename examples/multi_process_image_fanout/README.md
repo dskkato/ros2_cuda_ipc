@@ -2,7 +2,7 @@
 
 `multi_process_image_fanout` is the primary `ros2_cuda_ipc` demo. It shows one
 publisher process generating an RGBA image in GPU memory and three independent
-subscriber processes consuming the same buffer through CUDA IPC without copying
+subscriber processes consuming the same buffer through CUDA VMM+FD without copying
 the full image through host memory.
 
 ## Process graph
@@ -70,21 +70,12 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   width:=1280 \
   height:=720 \
   publish_rate_hz:=60.0 \
-  memory_backend:=cuda_ipc \
   slot_count:=4 \
   shm_name_prefix:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```
 
-On environments where the core package supports VMM-FD sharing, for example
-Jetson Orin:
-
-```bash
-ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
-  memory_backend:=vmm_fd
-```
-
-The `width`, `height`, `memory_backend`, and `slot_count`,
+The `width`, `height`, and `slot_count`,
 `shm_name_prefix`, and `device_index` arguments are publisher-side pseudo-camera
 parameters.
 

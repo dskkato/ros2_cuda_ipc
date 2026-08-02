@@ -13,7 +13,6 @@
 #include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/transport/buffer_descriptor.hpp"
-#include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 
@@ -93,9 +92,6 @@ class GpuBufferManager {
     /// CUDA device index on which the buffers are allocated.
     int device_index = 0;
 
-    /// Memory backend used to allocate and export the buffers.
-    transport::MemoryBackendKind backend =
-        transport::MemoryBackendKind::CUDA_IPC;
   };
 
   /// Construct a manager with the given configuration.
