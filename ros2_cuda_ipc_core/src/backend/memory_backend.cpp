@@ -225,6 +225,25 @@ class UnixFdServer {
 };
 
 /**
+ * @brief Ensure the CUDA driver is initialised before using driver APIs.
+ *
+ * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
+ */
+bool ensure_driver() {
+  static std::once_flag once;
+  static CUresult status = CUDA_SUCCESS;
+  std::call_once(once, [&]() { status = cuInit(0); });
+  if (status != CUDA_SUCCESS) {
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.backend.vmm_fd", "cuInit failed: %s",
+        ros2_cuda_ipc_core::detail::cu_result_to_string(status).c_str());
+    return false;
+  }
+  return true;
+}
+}  // namespace
+
+/**
  * @brief Runtime state for a VMM-backed slot (address, FD server, etc.).
  *
  * Owns the CUDA driver objects and POSIX FD server used to share the
@@ -257,25 +276,6 @@ struct VmmFdSlotState {
   std::string uuid;
   std::unique_ptr<UnixFdServer> server;
 };
-
-/**
- * @brief Ensure the CUDA driver is initialised before using driver APIs.
- *
- * Uses `std::call_once` so repeated allocate() calls do not re-run cuInit.
- */
-bool ensure_driver() {
-  static std::once_flag once;
-  static CUresult status = CUDA_SUCCESS;
-  std::call_once(once, [&]() { status = cuInit(0); });
-  if (status != CUDA_SUCCESS) {
-    RCUTILS_LOG_ERROR_NAMED(
-        "ros2_cuda_ipc_core.backend.vmm_fd", "cuInit failed: %s",
-        ros2_cuda_ipc_core::detail::cu_result_to_string(status).c_str());
-    return false;
-  }
-  return true;
-}
-}  // namespace
 
 SlotResources::SlotResources() = default;
 SlotResources::~SlotResources() = default;
