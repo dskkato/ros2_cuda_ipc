@@ -47,4 +47,32 @@ TEST_F(PointCloud2ReadHandleTest, CopiesAndValidatesMessageMetadata) {
   ::shm_unlink(name.c_str());
 }
 
+TEST_F(PointCloud2ReadHandleTest, RejectsZeroCountAndEndOffsetFields) {
+  const auto core = test::make_seeded_buffer_core_message(44);
+  const auto name = test::metadata_shm_name(core);
+  auto mapping = buffer_metadata::BufferMetadata::attach(name);
+  ASSERT_TRUE(mapping);
+
+  ros2_cuda_ipc_msgs::msg::GpuPointCloud2 message;
+  message.height = 1;
+  message.width = 1;
+  message.point_step = 4;
+  message.row_step = 4;
+  sensor_msgs::msg::PointField field;
+  field.datatype = sensor_msgs::msg::PointField::FLOAT32;
+
+  for (const auto [offset, count] :
+       {std::pair<uint32_t, uint32_t>{0, 0}, {message.point_step, 1}}) {
+    auto read = (subscriber::BufferMapper{}).map(core, CU_STREAM_LEGACY);
+    ASSERT_TRUE(read);
+    field.offset = offset;
+    field.count = count;
+    message.fields = {field};
+    EXPECT_FALSE(pointcloud2::PointCloud2ReadHandle::from_message(
+        message, std::move(*read)));
+    EXPECT_EQ(buffer_metadata::BufferRef::current_refcount(mapping), 0u);
+  }
+  ::shm_unlink(name.c_str());
+}
+
 }  // namespace ros2_cuda_ipc_core

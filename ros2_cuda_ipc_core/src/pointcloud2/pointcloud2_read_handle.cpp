@@ -6,6 +6,8 @@
 #include <limits>
 #include <utility>
 
+#include "sensor_msgs/msg/point_field.hpp"
+
 namespace ros2_cuda_ipc_core::pointcloud2 {
 
 std::optional<PointCloud2ReadHandle> PointCloud2ReadHandle::from_message(
@@ -41,20 +43,20 @@ std::optional<PointCloud2ReadHandle> PointCloud2ReadHandle::from_message(
   for (const auto& field : result.fields) {
     uint32_t element_size = 0;
     switch (field.datatype) {
-      case 1:  // INT8
-      case 2:  // UINT8
+      case sensor_msgs::msg::PointField::INT8:
+      case sensor_msgs::msg::PointField::UINT8:
         element_size = 1;
         break;
-      case 3:  // INT16
-      case 4:  // UINT16
+      case sensor_msgs::msg::PointField::INT16:
+      case sensor_msgs::msg::PointField::UINT16:
         element_size = 2;
         break;
-      case 5:  // INT32
-      case 6:  // UINT32
-      case 7:  // FLOAT32
+      case sensor_msgs::msg::PointField::INT32:
+      case sensor_msgs::msg::PointField::UINT32:
+      case sensor_msgs::msg::PointField::FLOAT32:
         element_size = 4;
         break;
-      case 8:  // FLOAT64
+      case sensor_msgs::msg::PointField::FLOAT64:
         element_size = 8;
         break;
       default:
@@ -62,7 +64,7 @@ std::optional<PointCloud2ReadHandle> PointCloud2ReadHandle::from_message(
     }
     const uint64_t field_bytes =
         static_cast<uint64_t>(element_size) * field.count;
-    if (field.offset > result.point_step ||
+    if (field.count == 0 || field.offset >= result.point_step ||
         field_bytes > result.point_step - field.offset) {
       return std::nullopt;
     }

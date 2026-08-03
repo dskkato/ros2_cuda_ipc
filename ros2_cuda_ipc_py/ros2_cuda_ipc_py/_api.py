@@ -114,7 +114,13 @@ class ImageReadHandle:
 
     @classmethod
     def from_message(cls, message, read):
-        """Attach image metadata to an already stream-bound read lease."""
+        """Consume a stream-bound read lease and attach image metadata.
+
+        ``read`` is invalid after this call. Its consumer stream must be the
+        stream used by all downstream CUDA work; this early-bound path is not
+        suitable when a DLPack framework chooses that stream at export time.
+        Use :class:`ImageMapper` for DLPack late binding.
+        """
 
         try:
             native_view = _native.ImageReadHandle.from_message(
