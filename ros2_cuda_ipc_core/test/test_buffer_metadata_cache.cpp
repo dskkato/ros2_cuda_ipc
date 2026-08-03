@@ -103,4 +103,23 @@ TEST(BufferMetadataCacheTest, FailedAttachDoesNotPopulateCache) {
   EXPECT_EQ(cache.size(), 0u);
 }
 
+TEST(BufferMetadataCacheTest, StaleNewAttachDoesNotPopulateCache) {
+  const uint32_t pid = static_cast<uint32_t>(::getpid());
+  const uint32_t block_id = next_block_id();
+  const auto name = name_for(block_id);
+  auto owner = buffer_metadata::BufferMetadata::create(name);
+  ASSERT_TRUE(owner);
+  const auto reservation =
+      buffer_metadata::BufferRef::reserve_for_publish(owner);
+  ASSERT_TRUE(reservation);
+
+  subscriber::detail::BufferMetadataCache cache;
+  EXPECT_FALSE(cache.get_or_attach(pid, block_id, reservation->uid + 1));
+  EXPECT_EQ(cache.size(), 0u);
+
+  ASSERT_TRUE(
+      buffer_metadata::BufferRef::cancel_publish(owner, reservation->uid));
+  ::shm_unlink(name.c_str());
+}
+
 }  // namespace ros2_cuda_ipc_core

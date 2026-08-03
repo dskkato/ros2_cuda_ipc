@@ -122,7 +122,8 @@ bool BufferMetadataManager::initialise() {
           "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
           "Replacing stale block metadata after PID reuse name=%s",
           shm_name.c_str());
-      if (::shm_unlink(shm_name.c_str()) == 0) {
+      const int unlink_result = ::shm_unlink(shm_name.c_str());
+      if (unlink_result == 0 || errno == ENOENT) {
         mapping = buffer_metadata::BufferMetadata::create(shm_name);
       }
     }
@@ -185,7 +186,6 @@ std::optional<uint32_t> BufferMetadataManager::block_id_for_pool_index(
 
 std::optional<BufferMetadataManager::Reservation>
 BufferMetadataManager::reserve_for_publish() {
-  Entry entry;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!initialised_ || entries_.empty()) return std::nullopt;

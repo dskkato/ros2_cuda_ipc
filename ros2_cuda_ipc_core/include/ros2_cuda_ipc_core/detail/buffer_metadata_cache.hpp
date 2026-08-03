@@ -48,8 +48,10 @@ class BufferMetadataCache {
 
   struct KeyHash {
     std::size_t operator()(const Key& key) const noexcept {
-      return (static_cast<std::size_t>(key.publisher_pid) << 32) ^
-             static_cast<std::size_t>(key.block_id);
+      std::size_t seed = std::hash<uint32_t>{}(key.publisher_pid);
+      seed ^= std::hash<uint32_t>{}(key.block_id) +
+              static_cast<std::size_t>(0x9e3779b9U) + (seed << 6) + (seed >> 2);
+      return seed;
     }
   };
 

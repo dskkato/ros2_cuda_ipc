@@ -36,13 +36,21 @@ BufferMetadataCache::get_or_attach(uint32_t publisher_pid, uint32_t block_id,
 
   auto candidate = attach_fn_(publisher_pid, block_id);
   if (!candidate) return nullptr;
+  const auto candidate_uid = buffer_metadata::BufferRef::current_uid(candidate);
+  if (!candidate_uid || *candidate_uid != expected_uid) return nullptr;
 
   std::shared_ptr<buffer_metadata::BufferMetadata> result;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto [it, inserted] = mappings_.emplace(key, candidate);
-    (void)inserted;
-    result = it->second;
+    const auto it = mappings_.find(key);
+    if (it != mappings_.end()) {
+      const auto current_uid =
+          buffer_metadata::BufferRef::current_uid(it->second);
+      if (current_uid && *current_uid == expected_uid) return it->second;
+      mappings_.erase(it);
+    }
+    mappings_.emplace(key, candidate);
+    result = std::move(candidate);
   }
   return result;
 }
