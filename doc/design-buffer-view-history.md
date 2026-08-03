@@ -6,14 +6,14 @@
 ## 背景
 
 以前の Subscriber API は、`BufferCore` を import した結果をコピー可能な
-`BufferView` として返していた。`BufferView` は device pointer、byte size、slot の
+`BufferView` として返していた。`BufferView` は device pointer、byte size、block の
 識別情報、imported resource、`LeaseHandle` をまとめて保持し、画像と点群の view は
 これを内包していた。
 
 このモデルでは、producer ready event の wait は `enqueue_ready_event(stream)` を
 呼び出す利用者の責務であり、view の生存期間が publication lease の生存期間でもあった。
 そのため、GPU work を enqueue した直後に view が破棄されると、consumer work が完了する
-前に slot が再利用され得るという制約があった。
+前に block が再利用され得るという制約があった。
 
 ## `ReadHandle` への移行理由
 

@@ -26,9 +26,9 @@ TEST_F(BufferMapperTest, BufferReferenceFailureReturnsEmptyOptional) {
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
   msg.publisher_instance_id = test::publisher_instance_id(shm_name);
-  msg.slot_id = 0;
+  msg.block_id = 0;
   msg.device_id = 0;
-  msg.generation = 99;
+  msg.uid = 99;
   msg.byte_size = 64;
 
   subscriber::BufferMapper mapper;
@@ -47,7 +47,7 @@ TEST_F(BufferMapperTest, PublisherInstanceMismatchRejectsMessage) {
   ASSERT_TRUE(reservation.has_value());
 
   auto msg = test::make_cached_buffer_core_message(
-      shm_name, reservation->slot_id, reservation->generation, 91);
+      shm_name, reservation->block_id, reservation->uid, 91);
   msg.publisher_instance_id =
       test::publisher_instance_id(shm_name + "_different");
   subscriber::BufferMapper mapper;
@@ -56,7 +56,7 @@ TEST_F(BufferMapperTest, PublisherInstanceMismatchRejectsMessage) {
   ASSERT_TRUE(refcount.has_value());
   EXPECT_EQ(*refcount, 1u);
   ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
-      mapping, reservation->slot_id, reservation->generation));
+      mapping, reservation->block_id, reservation->uid));
   ::shm_unlink(shm_name.c_str());
 }
 
@@ -72,9 +72,9 @@ TEST_F(BufferMapperTest, InvalidVmmPayloadReturnsEmptyOptional) {
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
   msg.publisher_instance_id = test::publisher_instance_id(shm_name);
-  msg.slot_id = 0;
+  msg.block_id = 0;
   msg.device_id = 0;
-  msg.generation = reservation->generation;
+  msg.uid = reservation->uid;
   msg.byte_size = 64;
   msg.vmm_socket_path.clear();
   msg.event_handle.fill(0);
@@ -86,7 +86,7 @@ TEST_F(BufferMapperTest, InvalidVmmPayloadReturnsEmptyOptional) {
   ASSERT_TRUE(refcount.has_value());
   EXPECT_EQ(refcount.value(), 1u);
   ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
-      mapping, reservation->slot_id, reservation->generation));
+      mapping, reservation->block_id, reservation->uid));
 
   ::shm_unlink(shm_name.c_str());
 }
@@ -103,9 +103,9 @@ TEST_F(BufferMapperTest, MissingVmmSocketReturnsEmptyAndReleasesBufferRef) {
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
   msg.publisher_instance_id = test::publisher_instance_id(shm_name);
-  msg.slot_id = 0;
+  msg.block_id = 0;
   msg.device_id = 0;
-  msg.generation = reservation->generation;
+  msg.uid = reservation->uid;
   msg.byte_size = 64;
   msg.event_handle.fill(0);
   msg.vmm_socket_path =
@@ -118,7 +118,7 @@ TEST_F(BufferMapperTest, MissingVmmSocketReturnsEmptyAndReleasesBufferRef) {
   ASSERT_TRUE(refcount.has_value());
   EXPECT_EQ(refcount.value(), 1u);
   ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
-      mapping, reservation->slot_id, reservation->generation));
+      mapping, reservation->block_id, reservation->uid));
 
   ::shm_unlink(shm_name.c_str());
 }

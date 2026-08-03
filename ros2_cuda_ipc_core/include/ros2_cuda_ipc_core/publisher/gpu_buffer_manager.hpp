@@ -20,34 +20,34 @@ class GpuBufferManager;
 
 /// Represents one active publish attempt.
 ///
-/// The owning GpuBufferManager must outlive every PublishSlot created from
-/// it. Calling GpuBufferManager::reset() invalidates slot resource
+/// The owning GpuBufferManager must outlive every PublishBlock created from
+/// it. Calling GpuBufferManager::reset() invalidates block resource
 /// operations. Destruction cancels an ordinary uncommitted reservation, while
 /// a failed preparation intentionally retains its reservation until reset.
-class PublishSlot {
+class PublishBlock {
  public:
-  /// Move a publish slot while transferring ownership of its reservation.
-  PublishSlot(PublishSlot&& other) noexcept;
+  /// Move a publish block while transferring ownership of its reservation.
+  PublishBlock(PublishBlock&& other) noexcept;
 
   /// Cancel the current reservation, if any, before taking ownership of other.
-  PublishSlot& operator=(PublishSlot&& other) noexcept;
+  PublishBlock& operator=(PublishBlock&& other) noexcept;
 
-  PublishSlot(const PublishSlot&) = delete;
-  PublishSlot& operator=(const PublishSlot&) = delete;
+  PublishBlock(const PublishBlock&) = delete;
+  PublishBlock& operator=(const PublishBlock&) = delete;
 
   /// Cancel an ordinary uncommitted reservation on destruction.
-  ~PublishSlot() noexcept;
+  ~PublishBlock() noexcept;
 
-  /// Return the device pointer associated with the reserved slot.
+  /// Return the device pointer associated with the reserved block.
   ///
-  /// @return Device pointer when the slot is usable; nullptr otherwise.
+  /// @return Device pointer when the block is usable; nullptr otherwise.
   void* device_ptr() const noexcept;
 
   /// Build the descriptor, record the ready event, and commit the reservation.
   ///
   /// A successful return commits the Publisher reservation. A failed
-  /// preparation leaves the slot unavailable until GpuBufferManager::reset().
-  /// The subsequent middleware publish result does not affect slot lifecycle.
+  /// preparation leaves the block unavailable until GpuBufferManager::reset().
+  /// The subsequent middleware publish result does not affect block lifecycle.
   ///
   /// @return The descriptor when preparation and commit succeed; a failed
   /// result otherwise.
@@ -57,16 +57,16 @@ class PublishSlot {
   /// Cancel an active reservation. A failed preparation cannot be cancelled.
   void cancel() noexcept;
 
-  /// Check whether the slot can still be used for publishing.
+  /// Check whether the block can still be used for publishing.
   bool valid() const noexcept;
 
  private:
-  /// Allow the manager to construct slots only from valid reservations.
+  /// Allow the manager to construct blocks only from valid reservations.
   friend class GpuBufferManager;
 
-  PublishSlot(GpuBufferManager* owner,
-              BufferMetadataManager::Reservation reservation) noexcept;
-  void move_from(PublishSlot&& other) noexcept;
+  PublishBlock(GpuBufferManager* owner,
+               BufferMetadataManager::Reservation reservation) noexcept;
+  void move_from(PublishBlock&& other) noexcept;
   void quarantine(const char* step,
                   const detail::CudaDriverError* error = nullptr) noexcept;
 
@@ -74,7 +74,7 @@ class PublishSlot {
   BufferMetadataManager::Reservation reservation_{};
 };
 
-/// Owns the GPU buffer pool and shared-memory slot reservations used for
+/// Owns the GPU buffer pool and shared-memory block reservations used for
 /// publishing.
 class GpuBufferManager {
  public:
@@ -83,8 +83,8 @@ class GpuBufferManager {
     /// Prefix used to create a publisher-instance-specific shared-memory name.
     std::string shm_name_prefix;
 
-    /// Number of reusable GPU buffer slots.
-    std::size_t slot_count = 0;
+    /// Number of reusable GPU buffer blocks.
+    std::size_t block_count = 0;
 
     /// Size in bytes of each GPU buffer.
     uint64_t byte_size = 0;
@@ -121,15 +121,15 @@ class GpuBufferManager {
   /// Return the current publisher instance identity.
   PublisherInstanceId publisher_instance_id() const;
 
-  /// Reserve a slot for a new publish attempt.
-  /// @return A publish slot when a reservation is available; std::nullopt
+  /// Reserve a block for a new publish attempt.
+  /// @return A publish block when a reservation is available; std::nullopt
   /// otherwise.
-  [[nodiscard]] std::optional<PublishSlot> acquire_for_publish();
+  [[nodiscard]] std::optional<PublishBlock> acquire_for_publish();
 
  private:
-  /// Allow a slot to delegate resource operations to its owning manager
+  /// Allow a block to delegate resource operations to its owning manager
   /// without exposing those operations as part of the public manager API.
-  friend class PublishSlot;
+  friend class PublishBlock;
 
   void* device_ptr(
       const BufferMetadataManager::Reservation& reservation) const noexcept;

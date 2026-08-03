@@ -144,10 +144,9 @@ ros2_cuda_ipc_msgs::msg::BufferCore buffer_core_from_descriptor(
       required(descriptor, "publisher_instance_id"), "publisher_instance_id");
   message.device_id = unsigned_integer<uint32_t>(
       required(descriptor, "device_id"), "device_id");
-  message.slot_id =
-      unsigned_integer<uint32_t>(required(descriptor, "slot_id"), "slot_id");
-  message.generation = unsigned_integer<uint32_t>(
-      required(descriptor, "generation"), "generation");
+  message.block_id =
+      unsigned_integer<uint32_t>(required(descriptor, "block_id"), "block_id");
+  message.uid = unsigned_integer<uint32_t>(required(descriptor, "uid"), "uid");
   message.byte_size = unsigned_integer<uint64_t>(
       required(descriptor, "byte_size"), "byte_size");
   return message;
@@ -554,7 +553,7 @@ class PyBufferMapper {
     if (!view) {
       throw MappingError(
           "BufferCore was rejected by the C++ mapper (buffer reference, "
-          "generation, "
+          "uid, "
           "VMM-FD import failure)");
     }
     return PyReadHandle(std::move(*view));
@@ -578,7 +577,7 @@ class PyImageMapper {
     if (!view.valid()) {
       throw MappingError(
           "GpuImage was rejected by the C++ mapper (buffer reference, "
-          "generation, "
+          "uid, "
           "VMM-FD import failure)");
     }
     // Keep the C++ implementation's complete bounds check as the final
@@ -618,9 +617,9 @@ class TestBufferRefProbe {
   TestBufferRefProbe(
       std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata>
           mapping,
-      uint32_t slot_id, std::string shm_name)
+      uint32_t block_id, std::string shm_name)
       : mapping_(std::move(mapping)),
-        slot_id_(slot_id),
+        block_id_(block_id),
         shm_name_(std::move(shm_name)) {}
 
   ~TestBufferRefProbe() {
@@ -632,7 +631,7 @@ class TestBufferRefProbe {
   uint32_t refcount() const {
     const auto value =
         ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(
-            mapping_, slot_id_);
+            mapping_, block_id_);
     return value.value_or(0);
   }
 
@@ -640,7 +639,7 @@ class TestBufferRefProbe {
 
  private:
   std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata> mapping_;
-  uint32_t slot_id_;
+  uint32_t block_id_;
   std::string shm_name_;
 };
 
@@ -685,8 +684,8 @@ py::tuple make_test_image() {
   message.core.shm_name = shm_name;
   message.core.publisher_instance_id = instance_id;
   message.core.device_id = 0;
-  message.core.slot_id = reservation->slot_id;
-  message.core.generation = reservation->generation;
+  message.core.block_id = reservation->block_id;
+  message.core.uid = reservation->uid;
   message.core.byte_size = 24;
 
   ros2_cuda_ipc_core::subscriber::IpcHandleKey key{};
@@ -707,9 +706,9 @@ py::tuple make_test_image() {
     throw std::runtime_error("test ImageViewMapper fixture failed");
   }
   if (!ros2_cuda_ipc_core::buffer_metadata::BufferRef::commit_publish(
-          mapping, reservation->slot_id, reservation->generation)) {
+          mapping, reservation->block_id, reservation->uid)) {
     (void)ros2_cuda_ipc_core::buffer_metadata::BufferRef::cancel_publish(
-        mapping, reservation->slot_id, reservation->generation);
+        mapping, reservation->block_id, reservation->uid);
     (void)::shm_unlink(shm_name.c_str());
     throw std::runtime_error("test BufferRef::commit_publish failed");
   }
@@ -721,8 +720,8 @@ py::tuple make_test_image() {
   core["publisher_instance_id"] =
       bytes_to_list(message.core.publisher_instance_id);
   core["device_id"] = message.core.device_id;
-  core["slot_id"] = message.core.slot_id;
-  core["generation"] = message.core.generation;
+  core["block_id"] = message.core.block_id;
+  core["uid"] = message.core.uid;
   core["byte_size"] = message.core.byte_size;
   py::dict stamp;
   stamp["sec"] = 0;
@@ -739,7 +738,7 @@ py::tuple make_test_image() {
   descriptor["encoding"] = message.encoding;
 
   auto probe = std::make_shared<TestBufferRefProbe>(
-      mapping, reservation->slot_id, shm_name);
+      mapping, reservation->block_id, shm_name);
   return py::make_tuple(PyImageView(std::move(view)), probe, descriptor);
 }
 

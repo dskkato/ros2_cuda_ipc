@@ -35,12 +35,12 @@ bool valid_layout(const struct stat& st, const ShmHeader& header,
       header.capacity == 0 ||
       header.capacity >
           (std::numeric_limits<std::size_t>::max() - sizeof(ShmHeader)) /
-              sizeof(SlotMetadata)) {
+              sizeof(BlockMetadata)) {
     return false;
   }
   *expected_size =
       sizeof(ShmHeader) +
-      static_cast<std::size_t>(header.capacity) * sizeof(SlotMetadata);
+      static_cast<std::size_t>(header.capacity) * sizeof(BlockMetadata);
   return *expected_size <= static_cast<std::size_t>(st.st_size);
 }
 
@@ -59,12 +59,12 @@ std::shared_ptr<BufferMetadata> BufferMetadata::create(
     return nullptr;
   }
   if (capacity > (std::numeric_limits<std::size_t>::max() - sizeof(ShmHeader)) /
-                     sizeof(SlotMetadata)) {
+                     sizeof(BlockMetadata)) {
     return nullptr;
   }
   const std::size_t size =
       sizeof(ShmHeader) +
-      static_cast<std::size_t>(capacity) * sizeof(SlotMetadata);
+      static_cast<std::size_t>(capacity) * sizeof(BlockMetadata);
   const int fd = shm_open(shm_name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0660);
   if (fd < 0) {
     RCUTILS_LOG_ERROR_NAMED(
@@ -100,12 +100,12 @@ std::shared_ptr<BufferMetadata> BufferMetadata::create(
   header->capacity = capacity;
   header->consumer_count = 0;
   header->publisher_instance_id = instance_id;
-  auto* slot_storage = static_cast<std::byte*>(addr) + sizeof(ShmHeader);
+  auto* block_storage = static_cast<std::byte*>(addr) + sizeof(ShmHeader);
   for (uint32_t i = 0; i < capacity; ++i) {
-    ::new (static_cast<void*>(slot_storage + i * sizeof(SlotMetadata)))
-        SlotMetadata{};
+    ::new (static_cast<void*>(block_storage + i * sizeof(BlockMetadata)))
+        BlockMetadata{};
   }
-  auto* slots = reinterpret_cast<SlotMetadata*>(slot_storage);
+  auto* blocks = reinterpret_cast<BlockMetadata*>(block_storage);
 
   auto mapping = std::shared_ptr<BufferMetadata>(new BufferMetadata);
   mapping->shm_name_ = shm_name;
@@ -113,7 +113,7 @@ std::shared_ptr<BufferMetadata> BufferMetadata::create(
   mapping->capacity_ = capacity;
   mapping->mapped_size_ = size;
   mapping->addr_ = addr;
-  mapping->slots_ = slots;
+  mapping->blocks_ = blocks;
   return mapping;
 }
 
@@ -185,7 +185,7 @@ std::shared_ptr<BufferMetadata> BufferMetadata::attach(
   mapping->capacity_ = header->capacity;
   mapping->mapped_size_ = static_cast<std::size_t>(st.st_size);
   mapping->addr_ = addr;
-  mapping->slots_ = reinterpret_cast<SlotMetadata*>(header + 1);
+  mapping->blocks_ = reinterpret_cast<BlockMetadata*>(header + 1);
   return mapping;
 }
 

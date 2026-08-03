@@ -9,16 +9,16 @@
 
 namespace ros2_cuda_ipc_core::publisher {
 
-PublishSlot::PublishSlot(
+PublishBlock::PublishBlock(
     GpuBufferManager* owner,
     BufferMetadataManager::Reservation reservation) noexcept
     : owner_(owner), reservation_(std::move(reservation)) {}
 
-PublishSlot::PublishSlot(PublishSlot&& other) noexcept {
+PublishBlock::PublishBlock(PublishBlock&& other) noexcept {
   move_from(std::move(other));
 }
 
-PublishSlot& PublishSlot::operator=(PublishSlot&& other) noexcept {
+PublishBlock& PublishBlock::operator=(PublishBlock&& other) noexcept {
   if (this != &other) {
     cancel();
     move_from(std::move(other));
@@ -26,21 +26,21 @@ PublishSlot& PublishSlot::operator=(PublishSlot&& other) noexcept {
   return *this;
 }
 
-PublishSlot::~PublishSlot() noexcept { cancel(); }
+PublishBlock::~PublishBlock() noexcept { cancel(); }
 
-void PublishSlot::move_from(PublishSlot&& other) noexcept {
+void PublishBlock::move_from(PublishBlock&& other) noexcept {
   owner_ = other.owner_;
   reservation_ = std::move(other.reservation_);
   other.owner_ = nullptr;
 }
 
-bool PublishSlot::valid() const noexcept { return owner_ != nullptr; }
+bool PublishBlock::valid() const noexcept { return owner_ != nullptr; }
 
-void* PublishSlot::device_ptr() const noexcept {
+void* PublishBlock::device_ptr() const noexcept {
   return valid() ? owner_->device_ptr(reservation_) : nullptr;
 }
 
-detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
+detail::CudaResult<transport::BufferDescriptor> PublishBlock::prepare_publish(
     CUstream stream) noexcept {
   if (owner_ == nullptr) {
     return detail::CudaResult<transport::BufferDescriptor>::failure(
@@ -71,29 +71,29 @@ detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
       std::move(*descriptor));
 }
 
-void PublishSlot::quarantine(const char* step,
-                             const detail::CudaDriverError* error) noexcept {
+void PublishBlock::quarantine(const char* step,
+                              const detail::CudaDriverError* error) noexcept {
   owner_ = nullptr;
   if (error != nullptr) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.publisher.gpu_buffer_manager",
-        "Failed to safely release or publish slot %u generation %u "
-        "publisher=%s during %s. The slot will not be reused until "
+        "Failed to safely release or publish block %u uid %u "
+        "publisher=%s during %s. The block will not be reused until "
         "GpuBufferManager is reset. CUDA error: %s",
-        reservation_.slot_id, reservation_.generation,
-        reservation_.shm_name.c_str(), step, error->to_string().c_str());
+        reservation_.block_id, reservation_.uid, reservation_.shm_name.c_str(),
+        step, error->to_string().c_str());
     return;
   }
   RCUTILS_LOG_ERROR_NAMED(
       "ros2_cuda_ipc_core.publisher.gpu_buffer_manager",
-      "Failed to safely release or publish slot %u generation %u "
-      "publisher=%s during %s. The slot will not be reused until "
+      "Failed to safely release or publish block %u uid %u "
+      "publisher=%s during %s. The block will not be reused until "
       "GpuBufferManager is reset.",
-      reservation_.slot_id, reservation_.generation,
-      reservation_.shm_name.c_str(), step);
+      reservation_.block_id, reservation_.uid, reservation_.shm_name.c_str(),
+      step);
 }
 
-void PublishSlot::cancel() noexcept {
+void PublishBlock::cancel() noexcept {
   if (owner_ != nullptr) {
     if (owner_->cancel(reservation_)) {
       owner_ = nullptr;
@@ -105,8 +105,8 @@ void PublishSlot::cancel() noexcept {
 
 GpuBufferManager::GpuBufferManager(Config config)
     : config_(std::move(config)),
-      buffer_pool_(config_.slot_count),
-      buffer_metadata_manager_(config_.shm_name_prefix, config_.slot_count) {}
+      buffer_pool_(config_.block_count),
+      buffer_metadata_manager_(config_.shm_name_prefix, config_.block_count) {}
 
 GpuBufferManager::~GpuBufferManager() { reset(); }
 
@@ -140,7 +140,7 @@ PublisherInstanceId GpuBufferManager::publisher_instance_id() const {
   return buffer_metadata_manager_.publisher_instance_id();
 }
 
-std::optional<PublishSlot> GpuBufferManager::acquire_for_publish() {
+std::optional<PublishBlock> GpuBufferManager::acquire_for_publish() {
   if (!is_initialised()) {
     return std::nullopt;
   }
@@ -148,7 +148,7 @@ std::optional<PublishSlot> GpuBufferManager::acquire_for_publish() {
   if (!reservation) {
     return std::nullopt;
   }
-  return PublishSlot(this, *reservation);
+  return PublishBlock(this, *reservation);
 }
 
 void* GpuBufferManager::device_ptr(
@@ -158,7 +158,7 @@ void* GpuBufferManager::device_ptr(
           buffer_metadata_manager_.publisher_instance_id()) {
     return nullptr;
   }
-  return buffer_pool_.device_ptr(reservation.slot_id);
+  return buffer_pool_.device_ptr(reservation.block_id);
 }
 
 detail::CudaResult<void> GpuBufferManager::record_ready(
@@ -170,13 +170,13 @@ detail::CudaResult<void> GpuBufferManager::record_ready(
     return detail::CudaResult<void>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
-  return buffer_pool_.record_ready(reservation.slot_id, stream);
+  return buffer_pool_.record_ready(reservation.block_id, stream);
 }
 
 std::optional<transport::BufferDescriptor>
 GpuBufferManager::try_build_descriptor(
     const BufferMetadataManager::Reservation& reservation) const noexcept {
-  const auto* resources = buffer_pool_.resources(reservation.slot_id);
+  const auto* resources = buffer_pool_.resources(reservation.block_id);
   if (resources == nullptr || !resources->ready_event) {
     return std::nullopt;
   }
@@ -188,8 +188,8 @@ GpuBufferManager::try_build_descriptor(
   transport::BufferDescriptor result;
   result.buffer_metadata_shm_name = reservation.shm_name;
   result.publisher_instance_id = reservation.publisher_instance_id;
-  result.slot_id = reservation.slot_id;
-  result.generation = reservation.generation;
+  result.block_id = reservation.block_id;
+  result.uid = reservation.uid;
   result.device_id = config_.device_index;
   result.byte_size = config_.byte_size;
   result.vmm_socket_path = resources->vmm_socket_path;

@@ -57,14 +57,14 @@ inline subscriber::IpcHandleKey make_key(
 }
 
 inline ros2_cuda_ipc_msgs::msg::BufferCore make_cached_buffer_core_message(
-    const std::string& shm_name, uint32_t slot_id, uint32_t generation,
+    const std::string& shm_name, uint32_t block_id, uint32_t uid,
     uint8_t key_seed) {
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.shm_name = shm_name;
   msg.publisher_instance_id = publisher_instance_id(shm_name);
   msg.device_id = 0;
-  msg.slot_id = slot_id;
-  msg.generation = generation;
+  msg.block_id = block_id;
+  msg.uid = uid;
   msg.byte_size = 64;
   std::ostringstream vmm_socket_path;
   vmm_socket_path << "/tmp/ros2_cuda_ipc_test_socket_" << std::hex
@@ -105,13 +105,13 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(
     ADD_FAILURE() << "BufferRef::reserve_for_publish failed for " << shm_name;
     return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }
-  auto msg = make_cached_buffer_core_message(shm_name, reservation->slot_id,
-                                             reservation->generation, key_seed);
-  if (!buffer_metadata::BufferRef::commit_publish(mapping, reservation->slot_id,
-                                                  reservation->generation)) {
+  auto msg = make_cached_buffer_core_message(shm_name, reservation->block_id,
+                                             reservation->uid, key_seed);
+  if (!buffer_metadata::BufferRef::commit_publish(
+          mapping, reservation->block_id, reservation->uid)) {
     ADD_FAILURE() << "BufferRef::commit_publish failed for " << shm_name;
     (void)buffer_metadata::BufferRef::cancel_publish(
-        mapping, reservation->slot_id, reservation->generation);
+        mapping, reservation->block_id, reservation->uid);
     (void)::shm_unlink(shm_name.c_str());
     return ros2_cuda_ipc_msgs::msg::BufferCore{};
   }

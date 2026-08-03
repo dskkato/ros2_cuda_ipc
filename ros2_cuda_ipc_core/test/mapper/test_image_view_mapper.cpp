@@ -30,9 +30,9 @@ TEST_F(ImageViewMapperTest, InvalidCoreReturnsDefaultImageView) {
   msg.encoding = "rgb8";
   msg.core.shm_name = shm_name;
   msg.core.publisher_instance_id = test::publisher_instance_id(shm_name);
-  msg.core.slot_id = 0;
+  msg.core.block_id = 0;
   msg.core.device_id = 0;
-  msg.core.generation = 42;
+  msg.core.uid = 42;
   msg.core.byte_size = 60;
 
   image::ImageViewMapper mapper;
@@ -58,7 +58,7 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenPublicationIsValid) {
       core.shm_name, core.publisher_instance_id);
   ASSERT_TRUE(mapping);
   auto before =
-      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
+      buffer_metadata::BufferRef::current_refcount(mapping, core.block_id);
   ASSERT_TRUE(before.has_value());
   EXPECT_EQ(before.value(), 0u);
 
@@ -67,7 +67,7 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenPublicationIsValid) {
   ASSERT_TRUE(view.valid());
   EXPECT_FALSE(view.core.valid());
   auto during =
-      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
+      buffer_metadata::BufferRef::current_refcount(mapping, core.block_id);
   ASSERT_TRUE(during.has_value());
   EXPECT_EQ(during.value(), 1u);
   EXPECT_EQ(view.header.frame_id, "camera_frame");
@@ -78,7 +78,7 @@ TEST_F(ImageViewMapperTest, CopiesMetadataWhenPublicationIsValid) {
 
   view = image::ImageView{};
   auto after =
-      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
+      buffer_metadata::BufferRef::current_refcount(mapping, core.block_id);
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after.value(), 0u);
   ::shm_unlink(core.shm_name.c_str());
@@ -102,13 +102,13 @@ TEST_F(ImageViewMapperTest, DlpackMappingKeepsPublicationUnbound) {
   ASSERT_TRUE(view.valid());
   EXPECT_FALSE(view.core.valid());
   auto during =
-      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
+      buffer_metadata::BufferRef::current_refcount(mapping, core.block_id);
   ASSERT_TRUE(during.has_value());
   EXPECT_EQ(during.value(), 1u);
 
   view = image::ImageView{};
   auto after =
-      buffer_metadata::BufferRef::current_refcount(mapping, core.slot_id);
+      buffer_metadata::BufferRef::current_refcount(mapping, core.block_id);
   ASSERT_TRUE(after.has_value());
   EXPECT_EQ(after.value(), 0u);
   ::shm_unlink(core.shm_name.c_str());

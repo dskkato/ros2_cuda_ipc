@@ -50,13 +50,13 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> make_read_handle(
     return std::nullopt;
   }
   if (!ros2_cuda_ipc_core::buffer_metadata::BufferRef::commit_publish(
-          mapping, reservation->slot_id, reservation->generation)) {
+          mapping, reservation->block_id, reservation->uid)) {
     (void)ros2_cuda_ipc_core::buffer_metadata::BufferRef::cancel_publish(
-        mapping, reservation->slot_id, reservation->generation);
+        mapping, reservation->block_id, reservation->uid);
     return std::nullopt;
   }
   auto buffer_ref = ros2_cuda_ipc_core::buffer_metadata::BufferRef::acquire(
-      mapping, reservation->slot_id, reservation->generation);
+      mapping, reservation->block_id, reservation->uid);
   if (!buffer_ref.valid()) {
     return std::nullopt;
   }

@@ -23,26 +23,26 @@ uint64_t now_us() {
 }
 
 bool release_publisher_reservation(
-    const std::shared_ptr<BufferMetadata>& mapping, uint32_t slot_id,
-    uint32_t generation, bool published) noexcept {
-  if (!mapping || slot_id >= mapping->capacity()) return false;
-  SlotMetadata& slot = *mapping->slot(slot_id);
-  if (slot.generation.load(std::memory_order_acquire) != generation) {
+    const std::shared_ptr<BufferMetadata>& mapping, uint32_t block_id,
+    uint32_t uid, bool published) noexcept {
+  if (!mapping || block_id >= mapping->capacity()) return false;
+  BlockMetadata& block = *mapping->block(block_id);
+  if (block.uid.load(std::memory_order_acquire) != uid) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.buffer_ref",
-        "buffer_ref:publisher_reservation_generation_mismatch slot=%u gen=%u",
-        slot_id, generation);
+        "buffer_ref:publisher_reservation_uid_mismatch block=%u uid=%u",
+        block_id, uid);
     return false;
   }
   if (published) {
-    slot.publish_timestamp_us.store(now_us(), std::memory_order_release);
+    block.publish_timestamp_us.store(now_us(), std::memory_order_release);
   }
   const uint32_t previous =
-      slot.refcount.fetch_sub(1, std::memory_order_acq_rel);
+      block.refcount.fetch_sub(1, std::memory_order_acq_rel);
   if (previous == 0) {
     RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.buffer_ref",
-                            "buffer_ref:refcount_underflow slot=%u", slot_id);
-    slot.refcount.store(0, std::memory_order_release);
+                            "buffer_ref:refcount_underflow block=%u", block_id);
+    block.refcount.store(0, std::memory_order_release);
     return false;
   }
   return true;
@@ -51,11 +51,11 @@ bool release_publisher_reservation(
 }  // namespace
 
 BufferRef::BufferRef(std::shared_ptr<BufferMetadata> mapping,
-                     SlotMetadata* slot, uint32_t slot_id, uint32_t generation)
+                     BlockMetadata* block, uint32_t block_id, uint32_t uid)
     : mapping_(std::move(mapping)),
-      slot_meta_(slot),
-      slot_id_(slot_id),
-      generation_(generation) {}
+      block_meta_(block),
+      block_id_(block_id),
+      uid_(uid) {}
 
 BufferRef::BufferRef(BufferRef&& other) noexcept { *this = std::move(other); }
 
@@ -63,48 +63,49 @@ BufferRef& BufferRef::operator=(BufferRef&& other) noexcept {
   if (this == &other) return *this;
   release();
   mapping_ = std::move(other.mapping_);
-  slot_meta_ = other.slot_meta_;
-  slot_id_ = other.slot_id_;
-  generation_ = other.generation_;
-  other.slot_meta_ = nullptr;
-  other.slot_id_ = 0;
-  other.generation_ = 0;
+  block_meta_ = other.block_meta_;
+  block_id_ = other.block_id_;
+  uid_ = other.uid_;
+  other.block_meta_ = nullptr;
+  other.block_id_ = 0;
+  other.uid_ = 0;
   return *this;
 }
 
 BufferRef::~BufferRef() { release(); }
 
 void BufferRef::release() noexcept {
-  if (!slot_meta_) return;
+  if (!block_meta_) return;
   const uint32_t previous =
-      slot_meta_->refcount.fetch_sub(1, std::memory_order_acq_rel);
+      block_meta_->refcount.fetch_sub(1, std::memory_order_acq_rel);
   if (previous == 0) {
     RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.buffer_ref",
-                            "buffer_ref:refcount_underflow slot=%u", slot_id_);
-    slot_meta_->refcount.store(0, std::memory_order_release);
+                            "buffer_ref:refcount_underflow block=%u",
+                            block_id_);
+    block_meta_->refcount.store(0, std::memory_order_release);
   }
-  slot_meta_ = nullptr;
-  slot_id_ = 0;
-  generation_ = 0;
+  block_meta_ = nullptr;
+  block_id_ = 0;
+  uid_ = 0;
   mapping_.reset();
 }
 
-std::optional<uint32_t> BufferRef::current_generation(
-    const std::shared_ptr<BufferMetadata>& mapping, uint32_t slot_id) {
-  if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
-  return mapping->slot(slot_id)->generation.load(std::memory_order_acquire);
+std::optional<uint32_t> BufferRef::current_uid(
+    const std::shared_ptr<BufferMetadata>& mapping, uint32_t block_id) {
+  if (!mapping || block_id >= mapping->capacity()) return std::nullopt;
+  return mapping->block(block_id)->uid.load(std::memory_order_acquire);
 }
 
 std::optional<uint32_t> BufferRef::current_refcount(
-    const std::shared_ptr<BufferMetadata>& mapping, uint32_t slot_id) {
-  if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
-  return mapping->slot(slot_id)->refcount.load(std::memory_order_acquire);
+    const std::shared_ptr<BufferMetadata>& mapping, uint32_t block_id) {
+  if (!mapping || block_id >= mapping->capacity()) return std::nullopt;
+  return mapping->block(block_id)->refcount.load(std::memory_order_acquire);
 }
 
 std::optional<uint64_t> BufferRef::current_publish_timestamp_us(
-    const std::shared_ptr<BufferMetadata>& mapping, uint32_t slot_id) {
-  if (!mapping || slot_id >= mapping->capacity()) return std::nullopt;
-  return mapping->slot(slot_id)->publish_timestamp_us.load(
+    const std::shared_ptr<BufferMetadata>& mapping, uint32_t block_id) {
+  if (!mapping || block_id >= mapping->capacity()) return std::nullopt;
+  return mapping->block(block_id)->publish_timestamp_us.load(
       std::memory_order_acquire);
 }
 
@@ -113,66 +114,66 @@ std::optional<BufferRef::PublisherReservation> BufferRef::reserve_for_publish(
   if (!mapping || mapping->capacity() == 0) return std::nullopt;
   const uint32_t capacity = mapping->capacity();
   const uint32_t start =
-      mapping->next_slot().fetch_add(1, std::memory_order_relaxed) % capacity;
+      mapping->next_block().fetch_add(1, std::memory_order_relaxed) % capacity;
   const uint64_t now = now_us();
   for (uint32_t offset = 0; offset < capacity; ++offset) {
-    const uint32_t slot_id = (start + offset) % capacity;
-    SlotMetadata& slot = *mapping->slot(slot_id);
-    if (slot.refcount.load(std::memory_order_acquire) != 0) continue;
+    const uint32_t block_id = (start + offset) % capacity;
+    BlockMetadata& block = *mapping->block(block_id);
+    if (block.refcount.load(std::memory_order_acquire) != 0) continue;
     const uint64_t published_at =
-        slot.publish_timestamp_us.load(std::memory_order_acquire);
+        block.publish_timestamp_us.load(std::memory_order_acquire);
     if (published_at != 0 &&
         (now < published_at || now - published_at < kGracePeriodUs))
       continue;
     uint32_t expected = 0;
-    if (!slot.refcount.compare_exchange_strong(
+    if (!block.refcount.compare_exchange_strong(
             expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
       continue;
-    const uint32_t next = slot.generation.load(std::memory_order_relaxed) + 1;
-    slot.generation.store(next, std::memory_order_release);
-    slot.publish_timestamp_us.store(0, std::memory_order_release);
-    mapping->next_slot().store((slot_id + 1) % capacity,
-                               std::memory_order_relaxed);
-    return PublisherReservation{mapping, slot_id, next};
+    const uint32_t next = block.uid.load(std::memory_order_relaxed) + 1;
+    block.uid.store(next, std::memory_order_release);
+    block.publish_timestamp_us.store(0, std::memory_order_release);
+    mapping->next_block().store((block_id + 1) % capacity,
+                                std::memory_order_relaxed);
+    return PublisherReservation{mapping, block_id, next};
   }
   return std::nullopt;
 }
 
 bool BufferRef::commit_publish(const std::shared_ptr<BufferMetadata>& mapping,
-                               uint32_t slot_id, uint32_t generation) noexcept {
-  return release_publisher_reservation(mapping, slot_id, generation, true);
+                               uint32_t block_id, uint32_t uid) noexcept {
+  return release_publisher_reservation(mapping, block_id, uid, true);
 }
 
 bool BufferRef::cancel_publish(const std::shared_ptr<BufferMetadata>& mapping,
-                               uint32_t slot_id, uint32_t generation) noexcept {
-  return release_publisher_reservation(mapping, slot_id, generation, false);
+                               uint32_t block_id, uint32_t uid) noexcept {
+  return release_publisher_reservation(mapping, block_id, uid, false);
 }
 
 BufferRef BufferRef::acquire(const std::shared_ptr<BufferMetadata>& mapping,
-                             uint32_t slot_id, uint32_t generation) {
-  if (!mapping || slot_id >= mapping->capacity()) return BufferRef{};
-  SlotMetadata* slot = mapping->slot(slot_id);
-  if (slot->generation.load(std::memory_order_acquire) != generation)
-    return BufferRef{};
+                             uint32_t block_id, uint32_t uid) {
+  if (!mapping || block_id >= mapping->capacity()) return BufferRef{};
+  BlockMetadata* block = mapping->block(block_id);
+  if (block->uid.load(std::memory_order_acquire) != uid) return BufferRef{};
 
-  uint32_t observed_ref = slot->refcount.load(std::memory_order_acquire);
+  uint32_t observed_ref = block->refcount.load(std::memory_order_acquire);
   while (true) {
     if (observed_ref == UINT32_MAX) {
       RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.buffer_ref",
-                              "buffer_ref:refcount_overflow slot=%u", slot_id);
+                              "buffer_ref:refcount_overflow block=%u",
+                              block_id);
       return BufferRef{};
     }
-    if (slot->refcount.compare_exchange_weak(observed_ref, observed_ref + 1,
-                                             std::memory_order_acq_rel,
-                                             std::memory_order_acquire))
+    if (block->refcount.compare_exchange_weak(observed_ref, observed_ref + 1,
+                                              std::memory_order_acq_rel,
+                                              std::memory_order_acquire))
       break;
   }
-  const uint32_t recheck_gen = slot->generation.load(std::memory_order_acquire);
-  if (recheck_gen != generation) {
-    slot->refcount.fetch_sub(1, std::memory_order_acq_rel);
+  const uint32_t recheck_uid = block->uid.load(std::memory_order_acquire);
+  if (recheck_uid != uid) {
+    block->refcount.fetch_sub(1, std::memory_order_acq_rel);
     return BufferRef{};
   }
-  return BufferRef(mapping, slot, slot_id, generation);
+  return BufferRef(mapping, block, block_id, uid);
 }
 
 }  // namespace ros2_cuda_ipc_core::buffer_metadata

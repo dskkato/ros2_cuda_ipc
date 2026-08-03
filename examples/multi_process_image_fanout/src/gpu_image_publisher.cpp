@@ -39,7 +39,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
             declare_parameter<std::string>("topic_name", "/fanout/image_gpu")) {
     const int width = declare_parameter<int>("width", 1920);
     const int height = declare_parameter<int>("height", 1080);
-    const int slot_count_parameter = declare_parameter<int>("slot_count", 4);
+    const int block_count_parameter = declare_parameter<int>("block_count", 4);
     const auto shm_name_prefix = declare_parameter<std::string>(
         "shm_name_prefix", "/ros2_cuda_ipc_fanout");
     const int device_index = declare_parameter<int>("device_index", 0);
@@ -48,12 +48,12 @@ class GpuImagePublisherNode : public rclcpp::Node {
     if (width <= 0 || height <= 0) {
       throw std::runtime_error("width and height must be greater than zero");
     }
-    if (slot_count_parameter <= 0) {
-      throw std::runtime_error("slot_count must be greater than zero");
+    if (block_count_parameter <= 0) {
+      throw std::runtime_error("block_count must be greater than zero");
     }
     width_ = static_cast<uint32_t>(width);
     height_ = static_cast<uint32_t>(height);
-    const auto slot_count = static_cast<std::size_t>(slot_count_parameter);
+    const auto block_count = static_cast<std::size_t>(block_count_parameter);
 
     throw_on_cuda_error(cudaSetDevice(device_index), "cudaSetDevice");
     const uint64_t frame_size_bytes =
@@ -61,7 +61,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     manager_ =
         std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferManager>(
             ros2_cuda_ipc_core::publisher::GpuBufferManager::Config{
-                shm_name_prefix, slot_count, frame_size_bytes, device_index});
+                shm_name_prefix, block_count, frame_size_bytes, device_index});
     if (!manager_->initialise()) {
       throw std::runtime_error("Failed to initialise GPU buffer manager");
     }
@@ -91,8 +91,8 @@ class GpuImagePublisherNode : public rclcpp::Node {
     }
 
     RCLCPP_INFO(get_logger(),
-                "Publishing fanout GPU image %ux%u on %s with %zu slots",
-                width_, height_, topic_name_.c_str(), slot_count);
+                "Publishing fanout GPU image %ux%u on %s with %zu blocks",
+                width_, height_, topic_name_.c_str(), block_count);
   }
 
   ~GpuImagePublisherNode() override {
@@ -111,15 +111,15 @@ class GpuImagePublisherNode : public rclcpp::Node {
   void on_timer() {
     NvtxScopedRange timer_range("GpuImagePublisherNode::on_timer");
 
-    std::optional<ros2_cuda_ipc_core::publisher::PublishSlot> slot;
+    std::optional<ros2_cuda_ipc_core::publisher::PublishBlock> block;
     {
-      NvtxScopedRange acquire_range("GpuImagePublisherNode::acquire_slot");
-      slot = manager_->acquire_for_publish();
+      NvtxScopedRange acquire_range("GpuImagePublisherNode::acquire_block");
+      block = manager_->acquire_for_publish();
     }
-    if (!slot) {
+    if (!block) {
       RCLCPP_WARN_THROTTLE(
           get_logger(), *get_clock(), 2000,
-          "No available GPU slots (all buffer references in use)");
+          "No available GPU blocks (all buffer references in use)");
       return;
     }
 
@@ -128,7 +128,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
       NvtxScopedRange kernel_range(
           "GpuImagePublisherNode::generate_rgba_pattern_kernel");
       error = launch_generate_rgba_pattern_kernel(
-          static_cast<uint8_t*>(slot->device_ptr()), static_cast<int>(width_),
+          static_cast<uint8_t*>(block->device_ptr()), static_cast<int>(width_),
           static_cast<int>(height_), width_ * kBytesPerPixel, frame_index_,
           stream_);
     }
@@ -139,7 +139,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
 
     NvtxScopedRange prepare_publish_range(
         "GpuImagePublisherNode::prepare_publish");
-    auto descriptor = slot->prepare_publish(stream_);
+    auto descriptor = block->prepare_publish(stream_);
     if (!descriptor) {
       RCLCPP_WARN(get_logger(), "prepare_publish failed: %s",
                   descriptor.error().to_string().c_str());

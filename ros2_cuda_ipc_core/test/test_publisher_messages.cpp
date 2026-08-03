@@ -21,8 +21,8 @@ ros2_cuda_ipc_core::transport::BufferDescriptor make_descriptor() {
   ros2_cuda_ipc_core::transport::BufferDescriptor descriptor;
   descriptor.buffer_metadata_shm_name = "/publisher_messages";
   descriptor.publisher_instance_id[0] = 42;
-  descriptor.slot_id = 7;
-  descriptor.generation = 11;
+  descriptor.block_id = 7;
+  descriptor.uid = 11;
   descriptor.device_id = 2;
   descriptor.byte_size = 120;
   descriptor.vmm_socket_path =
@@ -41,8 +41,8 @@ TEST(PublisherMessagesTest,
 
   EXPECT_EQ(message.shm_name, descriptor.buffer_metadata_shm_name);
   EXPECT_EQ(message.publisher_instance_id, descriptor.publisher_instance_id);
-  EXPECT_EQ(message.slot_id, descriptor.slot_id);
-  EXPECT_EQ(message.generation, descriptor.generation);
+  EXPECT_EQ(message.block_id, descriptor.block_id);
+  EXPECT_EQ(message.uid, descriptor.uid);
   EXPECT_EQ(message.device_id, 2u);
   EXPECT_EQ(message.byte_size, descriptor.byte_size);
   EXPECT_EQ(message.vmm_socket_path,
@@ -95,7 +95,7 @@ TEST(PublisherMessagesTest,
   EXPECT_EQ(message.width, 10u);
   ASSERT_EQ(message.fields.size(), 1u);
   EXPECT_EQ(message.fields[0].name, "x");
-  EXPECT_EQ(message.core.slot_id, descriptor.slot_id);
+  EXPECT_EQ(message.core.block_id, descriptor.block_id);
 }
 
 }  // namespace

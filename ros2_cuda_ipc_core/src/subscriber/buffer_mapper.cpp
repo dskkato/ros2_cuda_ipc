@@ -39,12 +39,12 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
 
   auto mapping = mapping_cache->get_or_attach(msg.shm_name, instance_id);
   auto buffer_ref =
-      buffer_metadata::BufferRef::acquire(mapping, msg.slot_id, msg.generation);
+      buffer_metadata::BufferRef::acquire(mapping, msg.block_id, msg.uid);
   if (!buffer_ref.valid()) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to acquire buffer reference shm=%s slot=%u gen=%u",
-        msg.shm_name.c_str(), msg.slot_id, msg.generation);
+        "Failed to acquire buffer reference shm=%s block=%u uid=%u",
+        msg.shm_name.c_str(), msg.block_id, msg.uid);
     return nullptr;
   }
   auto buffer_ref_ptr =
@@ -64,8 +64,8 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
     if (!opened.has_value()) {
       RCUTILS_LOG_WARN_NAMED(
           "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-          "Failed to import GPU resource shm=%s slot=%u gen=%u",
-          msg.shm_name.c_str(), msg.slot_id, msg.generation);
+          "Failed to import GPU resource shm=%s block=%u uid=%u",
+          msg.shm_name.c_str(), msg.block_id, msg.uid);
       return nullptr;
     }
     imported = IpcHandleCache::instance().insert_or_discard_duplicate(
@@ -78,8 +78,8 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
   if (!publication) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to create mapped publication for shm=%s slot=%u gen=%u",
-        msg.shm_name.c_str(), msg.slot_id, msg.generation);
+        "Failed to create mapped publication for shm=%s block=%u uid=%u",
+        msg.shm_name.c_str(), msg.block_id, msg.uid);
   }
   return publication;
 }
@@ -110,8 +110,8 @@ std::optional<ReadHandle> BufferMapper::map(
   if (!read) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to bind mapped publication for shm=%s slot=%u gen=%u",
-        msg.shm_name.c_str(), msg.slot_id, msg.generation);
+        "Failed to bind mapped publication for shm=%s block=%u uid=%u",
+        msg.shm_name.c_str(), msg.block_id, msg.uid);
   }
   return read;
 }

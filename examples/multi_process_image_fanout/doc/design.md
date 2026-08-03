@@ -248,8 +248,8 @@ Expected profiler result:
 
 * NVTX ranges appear for all four nodes.
 * Publisher process shows:
-  * slot acquisition
-  * pattern generation kernel
+  * block acquisition
+  * pattern-producing kernel
   * CUDA event record
 * Preview process shows:
   * input event wait

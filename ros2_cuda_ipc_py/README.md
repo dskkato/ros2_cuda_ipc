@@ -110,7 +110,7 @@ framework tensor/array
         -> retained native read state
             -> imported CUDA resource
             -> publication buffer reference
-                -> shared-memory slot refcount
+                -> shared-memory block refcount
 ```
 
 The first successful `__dlpack__(stream)` transfers the imported resource and

@@ -18,13 +18,15 @@ class BufferMetadataManager {
  public:
   struct Reservation {
     std::shared_ptr<buffer_metadata::BufferMetadata> mapping;
-    uint32_t slot_id = 0;
-    uint32_t generation = 0;
+    uint32_t block_id = 0;
+    uint32_t uid = 0;
     std::string shm_name;
     PublisherInstanceId publisher_instance_id{};
   };
 
-  BufferMetadataManager(std::string shm_name_prefix, std::size_t slot_count);
+  /// Owns the publisher-local POSIX mapping containing BlockMetadata[].
+  /// It is not part of the transport wire protocol.
+  BufferMetadataManager(std::string shm_name_prefix, std::size_t block_count);
 
   ~BufferMetadataManager();
 
@@ -42,7 +44,7 @@ class BufferMetadataManager {
   std::string shm_name_prefix_;
   std::string shm_name_;
   PublisherInstanceId publisher_instance_id_{};
-  std::size_t slot_count_;
+  std::size_t block_count_;
   mutable std::mutex mutex_;
   std::shared_ptr<buffer_metadata::BufferMetadata> mapping_;
   bool initialised_ = false;
