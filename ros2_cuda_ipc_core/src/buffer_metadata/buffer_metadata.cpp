@@ -14,6 +14,7 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <sstream>
 
 namespace ros2_cuda_ipc_core::buffer_metadata {
 namespace {
@@ -32,6 +33,12 @@ uint64_t initial_uid() {
 }
 
 }  // namespace
+
+std::string shm_name_for_block(uint32_t publisher_pid, uint32_t block_id) {
+  std::ostringstream name;
+  name << "/ros2_cuda_ipc_" << publisher_pid << "_" << block_id;
+  return name.str();
+}
 
 std::shared_ptr<BufferMetadata> BufferMetadata::make_mapping(
     const std::string& shm_name, void* addr, std::size_t mapped_size) {

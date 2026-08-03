@@ -10,6 +10,12 @@
 
 namespace ros2_cuda_ipc_core::buffer_metadata {
 
+/// Return the POSIX name used for one publisher block's metadata object.
+///
+/// This is part of the metadata protocol and is shared by publishers and
+/// subscribers; it does not imply ownership of the named object.
+std::string shm_name_for_block(uint32_t publisher_pid, uint32_t block_id);
+
 /// The complete contents of one per-GPU-block shared-memory object.
 struct BlockMetadata {
   std::atomic<uint64_t> uid{0};

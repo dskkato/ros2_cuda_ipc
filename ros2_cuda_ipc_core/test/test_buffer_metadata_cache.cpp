@@ -9,7 +9,6 @@
 
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/detail/buffer_metadata_cache.hpp"
-#include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 
 namespace ros2_cuda_ipc_core {
 namespace {
@@ -20,8 +19,8 @@ uint32_t next_block_id() {
 }
 
 std::string name_for(uint32_t block_id) {
-  return publisher::BufferMetadataManager::shm_name_for_block(
-      static_cast<uint32_t>(::getpid()), block_id);
+  return buffer_metadata::shm_name_for_block(static_cast<uint32_t>(::getpid()),
+                                             block_id);
 }
 
 }  // namespace

@@ -28,7 +28,6 @@
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
-#include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #endif
 
@@ -637,8 +636,8 @@ py::tuple make_test_image() {
   const uint32_t publisher_pid = static_cast<uint32_t>(::getpid());
   const uint32_t block_id = static_cast<uint32_t>(counter.fetch_add(1));
   const std::string shm_name =
-      ros2_cuda_ipc_core::publisher::BufferMetadataManager::shm_name_for_block(
-          publisher_pid, block_id);
+      ros2_cuda_ipc_core::buffer_metadata::shm_name_for_block(publisher_pid,
+                                                              block_id);
   auto mapping =
       ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(shm_name);
   if (!mapping) {

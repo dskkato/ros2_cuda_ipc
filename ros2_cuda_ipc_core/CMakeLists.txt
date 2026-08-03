@@ -43,7 +43,6 @@ add_library(${PROJECT_NAME}
   src/subscriber/ipc_handle_cache.cpp
   src/buffer_metadata/buffer_metadata.cpp
   src/buffer_metadata/buffer_ref.cpp
-  src/publisher/buffer_metadata_manager.cpp
   src/subscriber/buffer_mapper.cpp
   src/image/image_view_mapper.cpp
   src/pointcloud2/pointcloud2_view_mapper.cpp
@@ -108,8 +107,6 @@ if(BUILD_TESTING)
   target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME} CUDA::cudart)
   ament_add_gtest(test_read_handle test/test_read_handle.cpp)
   target_link_libraries(test_read_handle ${PROJECT_NAME} CUDA::cudart)
-  ament_add_gtest(test_buffer_metadata_manager test/test_buffer_metadata_manager.cpp)
-  target_link_libraries(test_buffer_metadata_manager ${PROJECT_NAME})
   ament_add_gtest(test_cuda_driver_context test/test_cuda_driver_context.cpp)
   target_link_libraries(test_cuda_driver_context ${PROJECT_NAME} CUDA::cudart)
   add_executable(vmm_fd_import_helper test/vmm_fd_import_helper.cpp)

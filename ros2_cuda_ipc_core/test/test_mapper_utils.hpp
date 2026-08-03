@@ -15,7 +15,6 @@
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
-#include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
@@ -32,8 +31,7 @@ inline uint32_t test_publisher_pid() {
 
 inline std::string metadata_shm_name(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
-  return publisher::BufferMetadataManager::shm_name_for_block(msg.publisher_pid,
-                                                              msg.block_id);
+  return buffer_metadata::shm_name_for_block(msg.publisher_pid, msg.block_id);
 }
 
 class RclcppScope {
@@ -95,8 +93,7 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_seeded_buffer_core_message(
   const uint32_t publisher_pid = test_publisher_pid();
   const uint32_t block_id = next_test_block_id();
   const std::string shm_name =
-      publisher::BufferMetadataManager::shm_name_for_block(publisher_pid,
-                                                           block_id);
+      buffer_metadata::shm_name_for_block(publisher_pid, block_id);
   auto mapping = buffer_metadata::BufferMetadata::create(shm_name);
   if (!mapping) {
     ADD_FAILURE() << "BufferMetadata::create failed for " << shm_name;

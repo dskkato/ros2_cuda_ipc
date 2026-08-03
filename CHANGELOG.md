@@ -5,6 +5,21 @@ This document records the user-visible changes between releases of
 
 ## Unreleased
 
+- Consolidated publisher block ownership in `GpuBufferPool`: each
+  `GpuBufferBlock` now owns its process-unique `block_id`, GPU resources,
+  CUDA synchronization resources, and corresponding shared `BlockMetadata`
+  mapping and shared-memory lifetime.
+- Moved publisher reservation discovery, round-robin reuse, metadata commit,
+  cancellation, and metadata shared-memory cleanup from the removed
+  `BufferMetadataManager` into `GpuBufferPool`.
+- Removed the parallel `BufferMetadataManager::Entry[]` block collection and
+  pool-index bridge APIs. `PublishBlock` now carries a pool reservation while
+  preserving the publisher-facing acquire/prepare API and wire descriptor
+  identity.
+- Added rollback coverage for pool-owned metadata/resource initialization and
+  expanded publisher tests for reservation exhaustion, cancellation reuse,
+  subscriber lifetime protection, reset cleanup, and block identity behavior.
+
 - Split shared metadata from pool-wide storage into one POSIX shared-memory
   `BlockMetadata` object per GPU block, named by the process-unique
   `publisher_pid + block_id` locator.
