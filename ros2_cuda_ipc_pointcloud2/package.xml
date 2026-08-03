@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>ros2_cuda_ipc_pointcloud2</name>
-  <version>0.4.0</version>
+  <version>0.5.0</version>
   <description>Typed GPU PointCloud2 handles and metadata helpers for ros2_cuda_ipc.</description>
   <maintainer email="dskkato@example.com">dskkato</maintainer>
   <license>MIT</license>

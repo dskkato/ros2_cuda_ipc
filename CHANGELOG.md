@@ -5,83 +5,62 @@ This document records the user-visible changes between releases of
 
 ## Unreleased
 
-- Added `ImageReader` and `PointCloud2Reader` typed subscriber facades. Each
-  reader composes `BufferMapper` with the corresponding typed
-  `from_message()` validation while reusing its mapper cache across calls.
-- Migrated the C++ fanout example and `gpu_image_transport` to the typed
-  reader facade, and added facade coverage for mapping, validation, and read
-  handle lifetime. The low-level `BufferMapper`, `ReadHandle`, and typed
-  `from_message()` APIs remain available.
+- Changes merged after v0.5.0 will be listed here.
 
-- Added the independent `ros2_cuda_ipc_image` and
-  `ros2_cuda_ipc_pointcloud2` packages for typed read handles, modality
-  metadata validation, and `GpuImage`/`GpuPointCloud2` message helpers.
-- Limited `ros2_cuda_ipc_core` to untyped `BufferCore` IPC, GPU buffer
-  lifetime, and synchronization APIs. Image and PointCloud2 headers,
-  implementations, dependencies, and unit tests now live in their typed
-  packages.
-- Updated the fanout example, Python/DLPack binding, `gpu_image_transport`,
-  package dependencies, include paths, and package-structure documentation
-  for the new layering.
-- Preserved the existing wire format, UID/refcount protocol, ownership and
-  lifetime semantics, DLPack late-binding behavior, and typed validation
-  behavior while adding package-level regression coverage.
+## [0.5.0] - 2026-08-04
 
-- Renamed subscriber typed reads from `ImageView` and `PointCloud2View` to
-  `ImageReadHandle` and `PointCloud2ReadHandle`. Typed handles now expose
-  `from_message()` and own the mapped `ReadHandle` as their sole resource
-  lifetime owner.
-- Removed `ImageViewMapper` and `PointCloud2ViewMapper`. Subscriber mapping is
-  now uniformly `BufferMapper -> ReadHandle -> typed metadata validation`,
-  with IPC import, refcount acquisition, and producer-event waits owned by
-  `BufferMapper`.
-- Migrated examples, tests, Python bindings, DLPack integration, and
-  subscriber documentation to the new typed read API.
+This release standardizes the transport on CUDA VMM file descriptors and
+reworks the publisher and subscriber APIs around explicit buffer ownership.
+It also separates the typed image and PointCloud2 layers from the core
+transport package.
 
-- Consolidated publisher block ownership in `GpuBufferPool`: each
-  `GpuBufferBlock` now owns its process-unique `block_id`, GPU resources,
-  CUDA synchronization resources, and corresponding shared `BlockMetadata`
-  mapping and shared-memory lifetime.
-- Moved publisher reservation discovery, round-robin reuse, metadata commit,
-  cancellation, and metadata shared-memory cleanup from the removed
-  `BufferMetadataManager` into `GpuBufferPool`.
-- Removed the parallel `BufferMetadataManager::Entry[]` block collection and
-  pool-index bridge APIs. `PublishBlock` now carries a pool reservation while
-  preserving the publisher-facing acquire/prepare API and wire descriptor
-  identity.
-- Added rollback coverage for pool-owned metadata/resource initialization and
-  expanded publisher tests for reservation exhaustion, cancellation reuse,
-  subscriber lifetime protection, reset cleanup, and block identity behavior.
+### Highlights
 
-- Split shared metadata from pool-wide storage into one POSIX shared-memory
-  `BlockMetadata` object per GPU block, named by the process-unique
-  `publisher_pid + block_id` locator.
-- Replaced pool/name-based wire identity with `publisher_pid`, `block_id`, and
-  `uint64 uid`; subscribers now derive metadata names, validate UID before and
-  after refcount acquisition, and invalidate stale metadata mappings before
-  reattaching.
-- Added process-unique block IDs, PID-reuse-aware UID initialization, orphaned
-  shared-memory cleanup, and expanded multi-block, multi-pool, restart, stale
-  descriptor, cache, and cleanup coverage.
-- Removed the obsolete shared-memory name-prefix configuration from the
-  publisher API and demo launch parameters; block metadata names are now
-  always derived from `publisher_pid` and `block_id`.
-- Removed the CUDA IPC memory-sharing backend. The core library now uses CUDA
-  VMM plus POSIX file descriptors exclusively.
-- Removed `BufferCore.backend` and the publisher/launch backend-selection APIs.
-  Existing messages using the old wire shape are not compatible with this
-  release.
-- Changed `BufferCore.vmm_socket_path` to carry the VMM Unix socket path as a
-  string, removed `MemoryHandlePayload`, and updated the internal descriptors,
-  caches, Python API, and tests accordingly. The VMM FD test's fixed 64-byte
-  payload is intentional: it exercises a raw child-process protocol without
-  using a ROS message and is not a mirror of the message field.
-- The standalone `cuda_ipc_poc` comparison programs remain available, but are
-  no longer library backends.
-- Renamed publisher buffer slots to blocks across the core API, metadata,
-  ROS messages, Python descriptors, launch arguments, documentation, and
-  tests. The wire/API identifiers `slot_id` and `generation` are now
-  `block_id` and `uid`, and `slot_count` is now `block_count`.
+- Standardized memory sharing on CUDA VMM plus POSIX file descriptors and
+  removed the CUDA IPC backend and backend-selection APIs.
+- Reworked publisher ownership around `GpuBufferPool` and per-block shared
+  `BlockMetadata`. Blocks now use process-unique `publisher_pid`, `block_id`,
+  and `uid` identities, with reference-counted subscriber lifetime protection.
+- Unified subscriber mapping around `BufferMapper` and move-only
+  `ReadHandle`, so import, producer synchronization, and release follow the
+  asynchronous read lifecycle.
+- Added `ros2_cuda_ipc_image` and `ros2_cuda_ipc_pointcloud2` for typed
+  validation and read handles, plus `ImageReader` and `PointCloud2Reader`
+  facades. `ros2_cuda_ipc_core` is now limited to untyped transport,
+  synchronization, and buffer-lifetime APIs.
+
+### Breaking changes and migration notes
+
+- The `BufferCore` wire format is incompatible with earlier releases:
+  `backend`, `slot_id`, and `generation` are replaced by VMM socket-path and
+  block identity fields. Publisher code should likewise migrate from slots to
+  blocks (`slot_count` to `block_count`).
+- CUDA IPC and backend-selection APIs are removed; applications must use the
+  VMM-FD transport.
+- Lease, buffer-view, and typed mapper APIs are replaced by `BufferMapper`,
+  `ReadHandle`, `ImageReadHandle`, and `PointCloud2ReadHandle`. Include typed
+  APIs from `ros2_cuda_ipc_image` or `ros2_cuda_ipc_pointcloud2`.
+
+### Tests and documentation
+
+- Added regression coverage for VMM-FD imports, block metadata and cleanup,
+  publisher/subscriber lifetime, and typed reads.
+- Updated the transport design, buffer metadata protocol, package structure,
+  development guide, and examples.
+
+### Package versions
+
+All ROS 2 packages and the Python native extension are bumped from `0.4.0`
+to `0.5.0`:
+
+- `ros2_cuda_ipc_core`
+- `ros2_cuda_ipc_msgs`
+- `ros2_cuda_ipc_py`
+- `ros2_cuda_ipc_image`
+- `ros2_cuda_ipc_pointcloud2`
+- `multi_process_image_fanout`
+- `gpu_image_transport`
+- `cuda_ipc_poc`
 
 ## [0.4.0] - 2026-07-30
 
@@ -199,3 +178,4 @@ All packages are bumped from `0.2.0` to `0.3.0`:
 
 [0.3.0]: https://github.com/dskkato/ros2_cuda_ipc/compare/v0.2.0...v0.3.0
 [0.4.0]: https://github.com/dskkato/ros2_cuda_ipc/compare/v0.3.0...v0.4.0
+[0.5.0]: https://github.com/dskkato/ros2_cuda_ipc/compare/v0.4.0...v0.5.0
