@@ -11,8 +11,9 @@ binding経由で既存のC++ mapperへ渡す。
 ```text
 rclpy message
     -> Python/C++ descriptor boundary
-    -> C++ BufferMapper / typed adapter
-    -> Python ReadHandle / ImageView
+    -> ImageMapper -> acquire_publication()
+    -> Python DLPackImage (MappedPublication, unbound)
+    -> __dlpack__(consumer stream) -> ReadHandle
     -> DLPack framework object
 ```
 
@@ -47,9 +48,14 @@ Python Publisher、任意のROS messageの自動変換、PointCloud2、CPU fallb
 
 ## Ownership model
 
-`BufferMapper`が返す`ReadHandle`は、imported resourceとbuffer referenceを
-Python objectが保持する。DLPackのtyped adapterはmap時にはstreamへbindせず、
-最初の`__dlpack__(stream)`でexport固有のread stateへownershipを移す。
+`BufferMapper`が返す`ReadHandle`は、通常のraw-pointer C++/Python経路用の
+stream-bound readである。`ImageReadHandle.from_message()`はその`ReadHandle`を
+消費してtyped metadataを追加するが、DLPack protocolは実装しない。
+
+`ImageMapper`はDLPack専用adapterである。message metadataを検証後、内部の
+`MappedPublication`（resourceとleaseを所有するがstream未bind）を取得し、
+`DLPackImage`に保持する。streamはframeworkが`__dlpack__(stream)`を呼ぶまで
+bindしない。
 
 ```text
 Python ReadHandle
@@ -61,7 +67,7 @@ Python ReadHandle
 
 blockは、completion event後にdeferred queueがhandle固有のbuffer referenceを解放するまで
 publisherから再利用されない。通常のPython `ReadHandle`の`close()`は、そのread
-stateを解放する。DLPack export後のtyped adapterは`close()`できない。
+stateを解放する。`ImageReadHandle`は同じearly-bound lifetime規則に従う。
 
 framework objectを作成する場合は、mapped objectからexport固有のnative read stateへ
 ownershipを移譲する。そのため、DLPack capsuleが生きている間はimported resourceと
@@ -86,12 +92,12 @@ handle固有のresource参照とbuffer referenceを解放する。
 
 ## DLPack adapter
 
-`ImageView`はPython DLPack producer protocolを実装する。
+`DLPackImage`だけがPython DLPack producer protocolを実装する。
 
 ```python
 import torch
 
-image = mapper.map(message)
+image = image_mapper.map(message)
 tensor = torch.from_dlpack(image)
 
 with torch.cuda.stream(consumer_stream):
@@ -99,7 +105,7 @@ with torch.cuda.stream(consumer_stream):
 consumer_stream.synchronize()
 ```
 
-CuPyでは同じ`ImageView`から`cupy.from_dlpack(image)`を呼ぶ。どちらもpayloadを
+CuPyでも同じ`DLPackImage`から`cupy.from_dlpack(image)`を呼ぶ。どちらもpayloadを
 copyせず、shape、dtype、device、non-contiguous strideをframework objectへ渡す。
 `torch.from_dlpack(image)`と`cupy.from_dlpack(image)`は
 current framework versionsで利用できるlegacy DLPack capsuleを既定値として受け取り、
@@ -116,9 +122,10 @@ framework tensor / array
                 -> shared-memory block reference
 ```
 
-capsuleがconsumerに渡された後はmanaged-tensor deleterがretained native read stateを
-解放する。未consumeのcapsuleが破棄された場合もcapsule destructorが同じdeleterを
-呼ぶ。capsuleは一度だけconsumeできる。deleterはPython APIやGILを使わない。
+export前の`DLPackImage`はAvailable、成功後はConsumed、`close()`後はClosedである。
+capsule生成がbind成功後に失敗した場合も、`ReadHandle`を破棄してleaseを安全に解放し、
+producerはClosedへ遷移する。未consumeのcapsuleが破棄された場合もcapsule destructorが
+同じdeleterを呼ぶ。capsuleは一度だけconsumeできる。deleterはPython APIやGILを使わない。
 
 `__dlpack_device__()`はCUDA device typeとmapped device IDを返す。`stream=None`は
 legacy default stream、`1`はlegacy default、`2`はper-thread default、正の値は

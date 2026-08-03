@@ -12,11 +12,13 @@
 #include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
 #include "ros2_cuda_ipc_msgs/msg/buffer_core.hpp"
 
-namespace ros2_cuda_ipc_core::image {
-class ImageViewMapper;
-}
-
 namespace ros2_cuda_ipc_core::subscriber {
+
+class BufferMapper;
+namespace detail {
+std::unique_ptr<MappedPublication> acquire_publication(
+    const BufferMapper& mapper, const ros2_cuda_ipc_msgs::msg::BufferCore& msg);
+}  // namespace detail
 
 /// Maps a BufferCore descriptor into a stream-bound ReadHandle.
 ///
@@ -37,13 +39,14 @@ class BufferMapper {
                                 CUstream consumer_stream) const;
 
  private:
-  std::unique_ptr<detail::MappedPublication> map_publication(
+  friend std::unique_ptr<detail::MappedPublication> detail::acquire_publication(
+      const BufferMapper&, const ros2_cuda_ipc_msgs::msg::BufferCore&);
+
+  std::unique_ptr<detail::MappedPublication> acquire_publication_impl(
       const ros2_cuda_ipc_msgs::msg::BufferCore& msg) const;
 
   class Impl;
   std::unique_ptr<Impl> impl_;
-
-  friend class ros2_cuda_ipc_core::image::ImageViewMapper;
 };
 
 }  // namespace ros2_cuda_ipc_core::subscriber

@@ -29,13 +29,20 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
   subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
       input_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
       [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
-        auto view = ros2_cuda_ipc_core::image::map_image_view(message, stream_);
-        if (!view.valid()) {
+        auto read = buffer_mapper_.map(message.core, stream_);
+        if (!read) {
           RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                "Failed to map received GPU image");
           return;
         }
-        on_image(view);
+        auto view = ros2_cuda_ipc_core::image::ImageReadHandle::from_message(
+            message, std::move(*read));
+        if (!view) {
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                               "Received invalid GPU image metadata");
+          return;
+        }
+        on_image(*view);
       },
       subscription_options);
 }
@@ -53,9 +60,9 @@ GpuImageTransportNodeBase::~GpuImageTransportNodeBase() {
 }
 
 void GpuImageTransportNodeBase::on_image(
-    const ros2_cuda_ipc_core::image::ImageView& view) {
+    const ros2_cuda_ipc_core::image::ImageReadHandle& view) {
   NvtxScopedRange callback_range("GpuImageTransportNodeBase::on_image");
-  if (!view.core.valid()) {
+  if (!view.read.valid()) {
     RCLCPP_WARN(get_logger(), "Received invalid GPU image view");
     return;
   }
@@ -69,7 +76,7 @@ void GpuImageTransportNodeBase::on_image(
   }
 
   cudaError_t err = cudaSuccess;
-  const std::uint64_t bytes_to_copy = view.core.byte_size();
+  const std::uint64_t bytes_to_copy = view.read.byte_size();
   if (bytes_to_copy == 0) {
     return;
   }
@@ -87,7 +94,7 @@ void GpuImageTransportNodeBase::on_image(
 
   {
     NvtxScopedRange memcpy_range("GpuImageTransportNodeBase::cudaMemcpyAsync");
-    err = cudaMemcpyAsync(pinned_host_buffer_, view.core.data<uint8_t>(),
+    err = cudaMemcpyAsync(pinned_host_buffer_, view.read.data<uint8_t>(),
                           bytes_to_copy, cudaMemcpyDeviceToHost, stream_);
   }
   if (err != cudaSuccess) {

@@ -3,18 +3,18 @@
 
 #pragma once
 
-#include <cuda.h>
-
 #include <cstdint>
-#include <std_msgs/msg/header.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
+#include "ros2_cuda_ipc_msgs/msg/gpu_point_cloud2.hpp"
+#include "std_msgs/msg/header.hpp"
 
 namespace ros2_cuda_ipc_core::pointcloud2 {
 
-struct PointCloud2View {
+struct PointCloud2ReadHandle {
   struct Field {
     std::string name;
     uint32_t offset = 0;
@@ -40,7 +40,7 @@ struct PointCloud2View {
   };
 
   std_msgs::msg::Header header{};
-  subscriber::ReadHandle core;
+  subscriber::ReadHandle read;
   uint32_t height = 1;
   uint32_t width = 0;
   uint32_t point_step = 0;
@@ -48,21 +48,18 @@ struct PointCloud2View {
   bool is_dense = true;
   std::vector<Field> fields;
 
-  PointCloud2View() = default;
-  ~PointCloud2View() = default;
-  PointCloud2View(const PointCloud2View&) = delete;
-  PointCloud2View& operator=(const PointCloud2View&) = delete;
-  PointCloud2View(PointCloud2View&&) noexcept = default;
-  PointCloud2View& operator=(PointCloud2View&&) noexcept = default;
+  static std::optional<PointCloud2ReadHandle> from_message(
+      const ros2_cuda_ipc_msgs::msg::GpuPointCloud2& message,
+      subscriber::ReadHandle read);
 
   size_t num_points() const noexcept {
     return static_cast<size_t>(width) * height;
   }
-  bool valid() const noexcept { return core.valid() && point_step > 0; }
+  bool valid() const noexcept { return read.valid() && point_step > 0; }
 
   DeviceView as_device_view(const DeviceField* device_fields,
                             int n) const noexcept {
-    return DeviceView{core.data<uint8_t>(),
+    return DeviceView{read.data<uint8_t>(),
                       static_cast<int>(width),
                       static_cast<int>(height),
                       point_step,

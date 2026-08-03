@@ -20,7 +20,7 @@ except ImportError as exc:
 class GpuImageSubscriber(Node):
     def __init__(self, topic):
         super().__init__("gpu_image_cupy_subscriber")
-        self._mapper = ImageMapper()
+        self._image_mapper = ImageMapper()
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
         self._subscription = self.create_subscription(
             GpuImage, topic, self._on_image, qos
@@ -28,7 +28,7 @@ class GpuImageSubscriber(Node):
 
     def _on_image(self, message):
         try:
-            image = self._mapper.map(message)
+            image = self._image_mapper.map(message)
             array = cp.from_dlpack(image)
 
             # CuPy passes its current stream to the DLPack producer. The

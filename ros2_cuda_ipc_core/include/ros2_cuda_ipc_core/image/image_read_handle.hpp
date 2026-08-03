@@ -3,16 +3,13 @@
 
 #pragma once
 
-#include <cuda.h>
-
 #include <array>
 #include <cstdint>
-#include <memory>
+#include <optional>
 #include <string>
 
-#include "ros2_cuda_ipc_core/detail/image_view_dlpack.hpp"
-#include "ros2_cuda_ipc_core/detail/mapped_publication.hpp"
 #include "ros2_cuda_ipc_core/subscriber/read_handle.hpp"
+#include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "std_msgs/msg/header.hpp"
 
 namespace ros2_cuda_ipc_core::image {
@@ -28,20 +25,26 @@ enum class DType : uint8_t {
   U32 = 7,
 };
 
-struct ImageView {
+/// A typed image read. The ReadHandle is the sole owner of the mapped
+/// resource and its read lease; this type only owns the validated metadata.
+struct ImageReadHandle {
   std_msgs::msg::Header header{};
-  subscriber::ReadHandle core;
+  subscriber::ReadHandle read;
   std::array<uint32_t, 3> shape{0, 0, 0};
   std::array<uint64_t, 3> strides{0, 0, 0};
   DType dtype = DType::U8;
   std::string encoding;
 
-  ImageView() noexcept;
-  ~ImageView() noexcept;
-  ImageView(const ImageView&) = delete;
-  ImageView& operator=(const ImageView&) = delete;
-  ImageView(ImageView&&) noexcept;
-  ImageView& operator=(ImageView&&) noexcept;
+  ImageReadHandle() noexcept = default;
+  ~ImageReadHandle() noexcept = default;
+  ImageReadHandle(const ImageReadHandle&) = delete;
+  ImageReadHandle& operator=(const ImageReadHandle&) = delete;
+  ImageReadHandle(ImageReadHandle&&) noexcept = default;
+  ImageReadHandle& operator=(ImageReadHandle&&) noexcept = default;
+
+  static std::optional<ImageReadHandle> from_message(
+      const ros2_cuda_ipc_msgs::msg::GpuImage& message,
+      subscriber::ReadHandle read);
 
   uint32_t rows() const noexcept { return shape[0]; }
   uint32_t cols() const noexcept { return shape[1]; }
@@ -51,7 +54,6 @@ struct ImageView {
   uint64_t strideC() const noexcept { return strides[2]; }
 
   bool valid() const noexcept;
-
   uint32_t elem_size_bytes() const noexcept;
 
   struct DeviceView {
@@ -66,7 +68,7 @@ struct ImageView {
   };
 
   DeviceView as_device_view() const noexcept {
-    return DeviceView{core.data<uint8_t>(),
+    return DeviceView{read.data<uint8_t>(),
                       static_cast<int>(rows()),
                       static_cast<int>(cols()),
                       static_cast<int>(channels()),
@@ -77,12 +79,6 @@ struct ImageView {
   }
 
   bool sanity_check() const noexcept;
-
- private:
-  std::unique_ptr<subscriber::detail::MappedPublication> publication_;
-
-  friend class ImageViewMapper;
-  friend struct detail::DLPackImageView;
 };
 
 }  // namespace ros2_cuda_ipc_core::image

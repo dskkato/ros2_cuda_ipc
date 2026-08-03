@@ -21,7 +21,7 @@ except ImportError as exc:
 class GpuImageTorchSubscriber(Node):
     def __init__(self, topic):
         super().__init__("gpu_image_torch_subscriber")
-        self._mapper = ImageMapper()
+        self._image_mapper = ImageMapper()
         self._subscription = self.create_subscription(
             GpuImage,
             topic,
@@ -31,7 +31,7 @@ class GpuImageTorchSubscriber(Node):
 
     def _on_image(self, message):
         try:
-            image = self._mapper.map(message)
+            image = self._image_mapper.map(message)
             tensor = torch.from_dlpack(image)
             consumer_stream = torch.cuda.current_stream(device=image.device_id)
             with torch.cuda.stream(consumer_stream):

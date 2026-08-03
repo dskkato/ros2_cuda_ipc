@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -14,7 +15,8 @@
 #include "multi_process_image_fanout/status_format.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/image/image_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
+#include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "std_msgs/msg/string.hpp"
 
@@ -25,7 +27,7 @@ constexpr uint32_t kChannels = 4;
 constexpr uint64_t kBytesPerPixel = 4;
 
 bool is_supported_rgba8_layout(
-    const ros2_cuda_ipc_core::image::ImageView& view) noexcept {
+    const ros2_cuda_ipc_core::image::ImageReadHandle& view) noexcept {
   const uint64_t row_bytes =
       static_cast<uint64_t>(view.cols()) * kBytesPerPixel;
   return view.strideC() == 1 && view.strideW() == kBytesPerPixel &&
@@ -75,14 +77,17 @@ class EncoderLikeNode : public rclcpp::Node {
           if (!ensure_cuda_state(static_cast<int>(message.core.device_id))) {
             return;
           }
+          auto read = buffer_mapper_.map(message.core, stream_);
           auto view =
-              ros2_cuda_ipc_core::image::map_image_view(message, stream_);
-          if (!view.valid()) {
+              read ? ros2_cuda_ipc_core::image::ImageReadHandle::from_message(
+                         message, std::move(*read))
+                   : std::nullopt;
+          if (!view) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                  "Skipping GPU image mapping failure");
             return;
           }
-          on_image(view);
+          on_image(*view);
         },
         sub_options);
 
@@ -94,14 +99,14 @@ class EncoderLikeNode : public rclcpp::Node {
   ~EncoderLikeNode() override { cleanup_cuda_state(); }
 
  private:
-  void on_image(const ros2_cuda_ipc_core::image::ImageView& view) {
+  void on_image(const ros2_cuda_ipc_core::image::ImageReadHandle& view) {
     NvtxScopedRange callback_range("EncoderLikeNode::on_image");
 
     ++received_;
 
     // Reject invalid layouts up front and never copy the full shared image or
     // derived luma plane to host memory.
-    if (!view.core.valid()) {
+    if (!view.read.valid()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Skipping invalid GPU image");
       return;
@@ -173,7 +178,7 @@ class EncoderLikeNode : public rclcpp::Node {
       NvtxScopedRange kernel_range(
           "EncoderLikeNode::rgba_to_luma_downscale2_kernel");
       err = launch_rgba_to_luma_downscale2_kernel(
-          static_cast<const uint8_t*>(view.core.data()), device_luma_,
+          static_cast<const uint8_t*>(view.read.data()), device_luma_,
           static_cast<int>(view.cols()), static_cast<int>(view.rows()),
           view.strideH(), stream_);
     }
@@ -255,9 +260,9 @@ class EncoderLikeNode : public rclcpp::Node {
     }
   }
 
-  // Move to the ImageView device and create the one non-blocking stream used by
-  // this node. Device-local scalar buffers are also allocated here because they
-  // are tied to the selected CUDA device.
+  // Move to the ImageReadHandle device and create the one non-blocking stream
+  // used by this node. Device-local scalar buffers are also allocated here
+  // because they are tied to the selected CUDA device.
   bool ensure_cuda_state(int device_id) {
     if (stream_ != nullptr && current_device_id_ == device_id) {
       return true;
@@ -297,7 +302,7 @@ class EncoderLikeNode : public rclcpp::Node {
 
   // Lazily allocate or resize the internal luma output buffer when the incoming
   // image dimensions change. The buffer remains on the GPU.
-  bool ensure_buffers(const ros2_cuda_ipc_core::image::ImageView& view) {
+  bool ensure_buffers(const ros2_cuda_ipc_core::image::ImageReadHandle& view) {
     const uint32_t required_width = view.cols() / 2;
     const uint32_t required_height = view.rows() / 2;
     const std::size_t required_bytes =
@@ -401,6 +406,7 @@ class EncoderLikeNode : public rclcpp::Node {
   uint8_t* device_luma_ = nullptr;
   uint64_t* device_checksum_ = nullptr;
   int current_device_id_ = -1;
+  ros2_cuda_ipc_core::subscriber::BufferMapper buffer_mapper_;
   uint32_t output_width_ = 0;
   uint32_t output_height_ = 0;
   std::size_t output_pixel_count_ = 0;

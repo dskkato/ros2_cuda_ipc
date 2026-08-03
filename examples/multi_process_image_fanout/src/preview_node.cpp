@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -14,7 +15,8 @@
 #include "multi_process_image_fanout/status_format.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/image/image_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
+#include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
@@ -28,7 +30,7 @@ constexpr uint32_t kChannels = 4;
 constexpr uint64_t kBytesPerPixel = 4;
 
 bool is_supported_rgba8_layout(
-    const ros2_cuda_ipc_core::image::ImageView& view) noexcept {
+    const ros2_cuda_ipc_core::image::ImageReadHandle& view) noexcept {
   const uint64_t row_bytes =
       static_cast<uint64_t>(view.cols()) * kBytesPerPixel;
   return view.strideC() == 1 && view.strideW() == kBytesPerPixel &&
@@ -81,14 +83,17 @@ class PreviewNode : public rclcpp::Node {
               cudaSuccess) {
             return;
           }
+          auto read = buffer_mapper_.map(message.core, stream_);
           auto view =
-              ros2_cuda_ipc_core::image::map_image_view(message, stream_);
-          if (!view.valid()) {
+              read ? ros2_cuda_ipc_core::image::ImageReadHandle::from_message(
+                         message, std::move(*read))
+                   : std::nullopt;
+          if (!view) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                  "Skipping GPU image mapping failure");
             return;
           }
-          on_image(view);
+          on_image(*view);
         },
         sub_options);
 
@@ -104,7 +109,7 @@ class PreviewNode : public rclcpp::Node {
   }
 
  private:
-  void on_image(const ros2_cuda_ipc_core::image::ImageView& view) {
+  void on_image(const ros2_cuda_ipc_core::image::ImageReadHandle& view) {
     NvtxScopedRange callback_range("PreviewNode::on_image");
 
     ++received_;
@@ -113,7 +118,7 @@ class PreviewNode : public rclcpp::Node {
     }
 
     // Validate the shared GPU image metadata before copying.
-    if (!view.core.valid()) {
+    if (!view.read.valid()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Skipping invalid GPU image");
       return;
@@ -170,7 +175,7 @@ class PreviewNode : public rclcpp::Node {
       NvtxScopedRange copy_range("PreviewNode::cudaMemcpy2DAsync_to_host");
       cudaEventRecord(copy_start, stream_);
       err =
-          cudaMemcpy2DAsync(msg.data.data(), msg.step, view.core.data(),
+          cudaMemcpy2DAsync(msg.data.data(), msg.step, view.read.data(),
                             view.strideH(), static_cast<std::size_t>(msg.step),
                             msg.height, cudaMemcpyDeviceToHost, stream_);
       cudaEventRecord(copy_stop, stream_);
@@ -211,7 +216,7 @@ class PreviewNode : public rclcpp::Node {
     }
   }
 
-  // Switch to the ImageView device and create/reuse the node's single
+  // Switch to the ImageReadHandle device and create/reuse the node's single
   // non-blocking CUDA stream.
   cudaError_t ensure_stream(int device_id) {
     if (stream_ != nullptr && current_device_id_ == device_id) {
@@ -242,6 +247,7 @@ class PreviewNode : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_;
   cudaStream_t stream_ = nullptr;
   int current_device_id_ = -1;
+  ros2_cuda_ipc_core::subscriber::BufferMapper buffer_mapper_;
   std::size_t received_ = 0;
   std::size_t copy_every_n_ = 1;
   std::size_t log_every_n_ = 30;

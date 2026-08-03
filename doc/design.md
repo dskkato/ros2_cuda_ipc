@@ -25,8 +25,9 @@ Python adapter の詳細は [doc/python-subscriber-implementation.md](python-sub
 | `BufferCore` | GPU allocation と publication を識別する transport descriptor |
 | `GpuImage` / `GpuPointCloud2` | `BufferCore` とアプリケーションのレイアウトメタデータを持つ ROS message |
 | `BufferMapper` | `BufferCore` を import し、consumer stream に bind した read を作る mapper |
+| `MappedPublication` | detail内部の、import済みだがconsumer stream未bindのpublication |
 | `ReadHandle` | 一つの GPU read の所有者。imported resource と buffer reference を保持する move-only handle |
-| `ImageView` / `PointCloud2View` | `ReadHandle` に画像／点群メタデータを付加する move-only typed adapter |
+| `ImageReadHandle` / `PointCloud2ReadHandle` | `ReadHandle` と画像／点群メタデータを組み合わせる move-only typed handle |
 | buffer reference | shared-memory block の refcount を保持し、publisher による再利用を防ぐ subscriber 側の所有権 |
 
 ### Blockモデル
@@ -71,9 +72,9 @@ ROS message
     -> GPU pointer + byte size
 
 GpuImage / GpuPointCloud2
-    -> ImageViewMapper / PointCloud2ViewMapper
-    -> ImageView / PointCloud2View
+    -> BufferMapper::map(message.core, consumer_stream)
     -> ReadHandle
+    -> ImageReadHandle::from_message / PointCloud2ReadHandle::from_message
 ```
 
 `MappedPublication`、`BufferRef`、`BufferMetadataCache`、`IpcHandleCache`、completion
@@ -204,36 +205,36 @@ producer ready event
 完了するまで有効でなければならない。handle を破棄した時点で直ちに block が再利用可能になる
 わけではない。
 
-### typed adapter
+### typed read handle
 
-`ImageViewMapper` と `PointCloud2ViewMapper` は、まず `BufferMapper` で core read を作り、
-ROS message のレイアウトメタデータをコピーして typed view を返す。GPU payload bytes のコピー
-は行わない。
+typed layerはIPC import、refcount取得、producer event waitを行わない。`BufferMapper`が返した
+`ReadHandle`とROS messageのレイアウトメタデータを`from_message()`へ渡し、metadata validation
+後にtyped accessorを提供する。GPU payload bytesのコピーは行わない。
 
-`ImageView` と `PointCloud2View` は `ReadHandle` を内包する move-only object である。raw pointer
-が必要な C++ caller は `view.core.data<T>()` または `view.core.device_ptr()` を使う。
+`ImageReadHandle` と `PointCloud2ReadHandle` は `ReadHandle` を唯一のlifetime ownerとして
+内包する move-only object である。raw pointerが必要なC++ callerは
+`handle.read.data<T>()` または `handle.read.device_ptr()` を使う。
 
 画像の通常の stream-bound mapping は次のように行う。
 
 ```cpp
-auto view = image_mapper.map(message, consumer_stream);
-if (!view.valid()) {
+auto read = buffer_mapper.map(message.core, consumer_stream);
+if (!read) {
   return;
 }
-launch_kernel(view.core.data<uint8_t>(), consumer_stream);
+auto image = ImageReadHandle::from_message(message, std::move(*read));
+if (!image) {
+  return;
+}
+launch_kernel(image->read.data<uint8_t>(), consumer_stream);
 ```
-
-`ImageViewMapper::map_for_dlpack()` は publication を先に取得し、DLPack の
-`__dlpack__(stream)` 時に read handle と consumer stream を bind する特殊な経路である。
-これは Python／DLPack adapter の ownership を framework object へ移すために必要であり、通常の
-raw pointer mapping と同じ API として扱わない。
 
 ## API 契約と制約
 
 - 公開 stream API は CUDA Driver API の `CUstream` を使う。stream の所有権は caller にあり、core は借用する。
-- `ReadHandle`、`ImageView`、`PointCloud2View` はコピーできない。非同期 GPU work の完了前に所有者を破棄してはならない。
+- `ReadHandle`、`ImageReadHandle`、`PointCloud2ReadHandle` はコピーできない。非同期 GPU work の完了前に所有者を破棄してはならない。
 - `ReadHandle` の失敗理由は公開 API には含まれず、内部 log を確認する。
-- `ImageView::valid()` は resource mapping と画像 shape の基本条件を確認する。metadata の境界検証には `sanity_check()` を使う。
+- `ImageReadHandle::from_message()` は resource mapping と画像 metadata の基本条件を検証する。詳細な画像境界検証には `sanity_check()` を使う。
 - import cache と buffer metadata mapping cache は現時点で unbounded policy であり、LRU、TTL、Publisher instance 単位の自動 prune は行わない。
 - Publisher process crash や長時間の Subscriber 遅延では buffer reference が残り、block が再利用できなくなる可能性がある。
 - CUDA context、CUDA stream、CUDA event の lifetime は caller／core の契約に従う必要がある。

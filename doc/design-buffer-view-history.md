@@ -38,7 +38,7 @@
 | --- | --- |
 | `BufferViewMapper::map(BufferCore)` | `BufferMapper::map(BufferCore, CUstream)` |
 | `BufferView` | move-only `ReadHandle` |
-| `ImageView` / `PointCloud2View` が `BufferView` を保持 | typed view が `ReadHandle` を保持 |
+| typed handle が `ReadHandle` を保持 | `ImageReadHandle` / `PointCloud2ReadHandle` が `ReadHandle` を保持 |
 | caller が `enqueue_ready_event()` を呼ぶ | `BufferMapper` が map 時に ready wait を enqueue |
 | view 破棄で lease release | completion event 後に deferred release |
 

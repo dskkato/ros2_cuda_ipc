@@ -5,6 +5,17 @@ This document records the user-visible changes between releases of
 
 ## Unreleased
 
+- Renamed subscriber typed reads from `ImageView` and `PointCloud2View` to
+  `ImageReadHandle` and `PointCloud2ReadHandle`. Typed handles now expose
+  `from_message()` and own the mapped `ReadHandle` as their sole resource
+  lifetime owner.
+- Removed `ImageViewMapper` and `PointCloud2ViewMapper`. Subscriber mapping is
+  now uniformly `BufferMapper -> ReadHandle -> typed metadata validation`,
+  with IPC import, refcount acquisition, and producer-event waits owned by
+  `BufferMapper`.
+- Migrated examples, tests, Python bindings, DLPack integration, and
+  subscriber documentation to the new typed read API.
+
 - Consolidated publisher block ownership in `GpuBufferPool`: each
   `GpuBufferBlock` now owns its process-unique `block_id`, GPU resources,
   CUDA synchronization resources, and corresponding shared `BlockMetadata`
