@@ -45,13 +45,13 @@ Subscriberから参照されることはない。Subscriberが参照するresour
 Publisher process                                      Subscriber process
 
 GpuBufferManager                                      BufferMapper
-  ├─ GpuBufferPool                                    ├─ BufferMetadataCache
-  │    ├─ GpuBufferBlock                              │    └─ BlockMetadata (per-block mapping)
-  │    │    ├─ GPU allocation                         ├─ BufferRef
-  │    │    ├─ exportable memory handle                └─ ReadHandle
-  │    │    └─ CUDA synchronization objects                 └─ imported GPU resource
-  └─ BufferMetadataManager
-       └─ per-block reservation lifecycle
+  └─ GpuBufferPool                                    ├─ BufferMetadataCache
+       └─ GpuBufferBlock[]                            │    └─ BlockMetadata (per-block mapping)
+            ├─ block_id                               ├─ BufferRef
+            ├─ GPU allocation                          └─ ReadHandle
+            ├─ exportable memory handle                     └─ imported GPU resource
+            ├─ CUDA synchronization objects
+            └─ BlockMetadata
 
 GpuBufferBlock + BlockMetadata + BufferDescriptor
                          └─ one publication/resource identity
@@ -126,12 +126,19 @@ cache の責務である。metadata cache は `publisher_pid + block_id` をkey�
 
 Publisher は `GpuBufferManager` と `GpuBufferPool` で block を管理する。
 
+`GpuBufferPool` は `GpuBufferBlock` の唯一の owner である。各 block は生成時から
+process-global な `block_id`、GPU resource、CUDA synchronization resource、対応する
+`BlockMetadata` mapping と metadata shm object の lifetime をまとめて所有する。
+`GpuBufferManager` は Publisher 向けの facade として初期化、reset、reservation の
+quarantine、および ready event・descriptor・commit の順序を調整する。Pool と metadata
+manager が同じ block 集合を並行して管理する構造は存在しない。
+
 ```text
 acquire_for_publish()
     -> GPU buffer へ producer work を enqueue
     -> prepare_publish(stream)
-       - descriptor を作成
        - producer ready event を record
+       - descriptor を作成
        - reservation を commit
     -> ROS message を作成して publish
 ```

@@ -8,8 +8,6 @@
 #include <cstdint>
 #include <optional>
 
-#include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
-#include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_pool.hpp"
 #include "ros2_cuda_ipc_core/transport/buffer_descriptor.hpp"
 
@@ -64,13 +62,13 @@ class PublishBlock {
   friend class GpuBufferManager;
 
   PublishBlock(GpuBufferManager* owner,
-               BufferMetadataManager::Reservation reservation) noexcept;
+               GpuBufferPool::BlockReservation reservation) noexcept;
   void move_from(PublishBlock&& other) noexcept;
   void quarantine(const char* step,
                   const detail::CudaDriverError* error = nullptr) noexcept;
 
   GpuBufferManager* owner_ = nullptr;
-  BufferMetadataManager::Reservation reservation_{};
+  GpuBufferPool::BlockReservation reservation_{};
 };
 
 /// Owns the GPU buffer pool and shared-memory block reservations used for
@@ -100,7 +98,7 @@ class GpuBufferManager {
   GpuBufferManager(GpuBufferManager&&) = delete;
   GpuBufferManager& operator=(GpuBufferManager&&) = delete;
 
-  /// Initialize one shared BlockMetadata object per GPU block and the GPU pool.
+  /// Initialize the GPU pool and one shared BlockMetadata object per block.
   ///
   /// @return true when both pools are initialized successfully.
   bool initialise();
@@ -108,7 +106,7 @@ class GpuBufferManager {
   /// Release pool resources and reset the manager to an uninitialized state.
   void reset() noexcept;
 
-  /// Check whether both the buffer_ref pool and buffer pool are initialized.
+  /// Check whether the block pool is initialized.
   bool is_initialised() const noexcept;
 
   /// Return the process locator carried by every block descriptor.
@@ -125,18 +123,17 @@ class GpuBufferManager {
   friend class PublishBlock;
 
   void* device_ptr(
-      const BufferMetadataManager::Reservation& reservation) const noexcept;
+      const GpuBufferPool::BlockReservation& reservation) const noexcept;
   detail::CudaResult<void> record_ready(
-      const BufferMetadataManager::Reservation& reservation,
+      const GpuBufferPool::BlockReservation& reservation,
       CUstream stream) noexcept;
   std::optional<transport::BufferDescriptor> try_build_descriptor(
-      const BufferMetadataManager::Reservation& reservation) const noexcept;
-  bool commit(const BufferMetadataManager::Reservation& reservation) noexcept;
-  bool cancel(const BufferMetadataManager::Reservation& reservation) noexcept;
+      const GpuBufferPool::BlockReservation& reservation) const noexcept;
+  bool commit(const GpuBufferPool::BlockReservation& reservation) noexcept;
+  bool cancel(const GpuBufferPool::BlockReservation& reservation) noexcept;
 
   Config config_;
   GpuBufferPool buffer_pool_;
-  BufferMetadataManager buffer_metadata_manager_;
 };
 
 }  // namespace ros2_cuda_ipc_core::publisher

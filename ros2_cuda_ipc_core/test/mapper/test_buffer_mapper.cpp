@@ -35,8 +35,7 @@ TEST_F(BufferMapperTest, StaleUidIsRejectedBeforeGpuImport) {
 TEST_F(BufferMapperTest, ImportFailureReleasesAcquiredReference) {
   const uint32_t pid = test::test_publisher_pid();
   const uint32_t block_id = test::next_test_block_id();
-  const auto name =
-      publisher::BufferMetadataManager::shm_name_for_block(pid, block_id);
+  const auto name = buffer_metadata::shm_name_for_block(pid, block_id);
   auto mapping = buffer_metadata::BufferMetadata::create(name);
   ASSERT_TRUE(mapping);
   const auto reservation =

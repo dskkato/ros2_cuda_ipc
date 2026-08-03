@@ -28,9 +28,9 @@ buffer reference を取得した Subscriber だけが `refcount` に反映され
 ```text
 Publisher process
   GpuBufferManager
-    GpuBufferPool       GPU allocation と ready event を所有
-    BufferMetadataManager        reservation と publish lifecycle を管理
-      BufferRef       process-shared metadata を操作
+    GpuBufferPool       GpuBufferBlock の唯一の owner
+      GpuBufferBlock[]  GPU allocation、ready event、metadata shm を所有
+        BufferRef       process-shared metadata を操作
     PublishBlock         1回の publish 試行を表す move-only object
 
 Subscriber process
@@ -110,8 +110,8 @@ Subscriber は `refcount != 0` だけを理由に拒否せず、uid の前後再
 ### 5.2 GPU work と ready event
 
 Publisher は取得した device pointer へ GPU work を enqueue し、同じ依存関係を持つ
-CUDA stream で `prepare_publish()` を呼ぶ。この操作は descriptor を作成し、ready event
-を記録し、Publisher reservation を commit してから descriptor を返す。commit は次の
+CUDA stream で `prepare_publish()` を呼ぶ。この操作は ready event を記録し、descriptor
+を作成し、Publisher reservation を commit してから descriptor を返す。commit は次の
 処理を行う。
 
 1. reservation の uid が現在の uid と一致することを確認する。

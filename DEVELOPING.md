@@ -17,9 +17,8 @@ who want to try the demo first.
 - `ros2_cuda_ipc_core::subscriber::BufferMapper`: maps a `BufferCore` and a consumer stream to an optional `ReadHandle`.
 - `ros2_cuda_ipc_core::subscriber::ReadHandle`: the normal pointer API. It waits for producer readiness, owns the buffer reference, and defers resource/buffer reference release until consumer completion.
 - `ros2_cuda_ipc_core::image::ImageView` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2View`: typed adapters layered on `ReadHandle`; the Python image adapter is DLPack-only and binds its stream at export.
-- `ros2_cuda_ipc_core::publisher::GpuBufferPool`: publisher-local allocation and reuse strategy for independent `GpuBufferBlock` resources.
-- `ros2_cuda_ipc_core::publisher::BufferMetadataManager`: publisher reservation, uid, and grace-period state.
-- `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher-facing buffer manager.
+- `ros2_cuda_ipc_core::publisher::GpuBufferPool`: the sole owner of publisher-local `GpuBufferBlock` resources, their metadata mappings, and reservation/reuse state.
+- `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher facade that orchestrates initialization, reset, preparation order, and quarantine.
 - `ros2_cuda_ipc_core::publisher::PublishBlock`: one move-only publish attempt with RAII cancellation.
 - `ros2_cuda_ipc_core::buffer_metadata::BlockMetadata`: shared per-block publication identity and refcount state. Subscriber buffer reference handles, import caches, completion events, and deferred queues are internal.
 
@@ -38,8 +37,8 @@ if (!descriptor) {
 publisher->publish(make_message(descriptor.value()));
 ```
 
-`prepare_publish(stream)` builds the transport descriptor, records the ready
-event, and commits the reservation. On failure, it returns no descriptor and
+`prepare_publish(stream)` records the ready event, builds the transport
+descriptor, and commits the reservation. On failure, it returns no descriptor and
 retains the reservation until `GpuBufferManager::reset()`.
 
 The public stream-taking APIs use the CUDA Driver API stream type `CUstream`.

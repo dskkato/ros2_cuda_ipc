@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
-#include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_manager.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
@@ -44,7 +44,7 @@ TEST_F(GpuBufferManagerTest, DescriptorDirectlyIdentifiesBlock) {
               static_cast<uint32_t>(::getpid()));
     EXPECT_TRUE(ids.insert(descriptor.value().block_id).second);
     EXPECT_NE(descriptor.value().uid, 0u);
-    const auto name = BufferMetadataManager::shm_name_for_block(
+    const auto name = buffer_metadata::shm_name_for_block(
         descriptor.value().publisher_pid, descriptor.value().block_id);
     EXPECT_TRUE(buffer_metadata::BufferMetadata::attach(name));
   }
@@ -59,7 +59,7 @@ TEST_F(GpuBufferManagerTest, ResetUnlinksAllBlockMetadataObjects) {
     ASSERT_TRUE(block);
     const auto descriptor = block->prepare_publish(nullptr);
     ASSERT_TRUE(descriptor);
-    names.push_back(BufferMetadataManager::shm_name_for_block(
+    names.push_back(buffer_metadata::shm_name_for_block(
         descriptor.value().publisher_pid, descriptor.value().block_id));
   }
   manager.reset();
@@ -85,6 +85,71 @@ TEST_F(GpuBufferManagerTest, DifferentPoolsUseDifferentBlockIds) {
   ASSERT_TRUE(second_descriptor);
   EXPECT_NE(first_descriptor.value().block_id,
             second_descriptor.value().block_id);
+}
+
+TEST_F(GpuBufferManagerTest, ReservationsUseRoundRobinAndExhaustThePool) {
+  GpuBufferManager manager({2, 1024, 0});
+  ASSERT_TRUE(manager.initialise());
+
+  auto first = manager.acquire_for_publish();
+  auto second = manager.acquire_for_publish();
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+  const auto first_descriptor = first->prepare_publish(nullptr);
+  ASSERT_TRUE(first_descriptor);
+  const auto second_descriptor = second->prepare_publish(nullptr);
+  ASSERT_TRUE(second_descriptor);
+
+  // The committed blocks are protected by the protocol grace period, so the
+  // pool is unavailable immediately after both publications.
+  EXPECT_FALSE(manager.acquire_for_publish());
+}
+
+TEST_F(GpuBufferManagerTest, CancelReturnsTheSameBlockToThePool) {
+  GpuBufferManager manager({2, 1024, 0});
+  ASSERT_TRUE(manager.initialise());
+
+  auto first = manager.acquire_for_publish();
+  auto second = manager.acquire_for_publish();
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+  const auto first_descriptor = first->prepare_publish(nullptr);
+  ASSERT_TRUE(first_descriptor);
+  // Keep the second reservation pending, then cancel it. The next cursor
+  // starts at the following block and wraps back to this one.
+  void* second_ptr = second->device_ptr();
+  ASSERT_NE(second_ptr, nullptr);
+  second->cancel();
+
+  // The first committed block is still in its grace period, therefore the
+  // cancelled second block is the only candidate and must be reusable.
+  auto reused = manager.acquire_for_publish();
+  ASSERT_TRUE(reused);
+  EXPECT_EQ(reused->device_ptr(), second_ptr);
+  const auto reused_descriptor = reused->prepare_publish(nullptr);
+  ASSERT_TRUE(reused_descriptor);
+}
+
+TEST_F(GpuBufferManagerTest, SubscriberReferencePreventsReuseAfterCommit) {
+  GpuBufferManager manager({1, 1024, 0});
+  ASSERT_TRUE(manager.initialise());
+  auto block = manager.acquire_for_publish();
+  ASSERT_TRUE(block);
+  const auto descriptor = block->prepare_publish(nullptr);
+  ASSERT_TRUE(descriptor);
+  const auto name = buffer_metadata::shm_name_for_block(
+      descriptor.value().publisher_pid, descriptor.value().block_id);
+  auto mapping = buffer_metadata::BufferMetadata::attach(name);
+  ASSERT_TRUE(mapping);
+  {
+    auto read_ref =
+        buffer_metadata::BufferRef::acquire(mapping, descriptor.value().uid);
+    ASSERT_TRUE(read_ref.valid());
+    EXPECT_FALSE(manager.acquire_for_publish());
+  }
+  // The block is still protected by the normal grace period, but the
+  // subscriber reference itself has now been released.
+  manager.reset();
 }
 
 }  // namespace ros2_cuda_ipc_core::publisher
