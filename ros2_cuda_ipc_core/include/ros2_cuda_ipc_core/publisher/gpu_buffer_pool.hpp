@@ -13,9 +13,6 @@
 
 namespace ros2_cuda_ipc_core::publisher {
 
-/// A single independently allocated GPU resource owned by a publisher pool.
-using GpuBufferBlock = backend::GpuBufferBlock;
-
 class GpuBufferPool {
  public:
   /// One independently allocated GPU resource managed by this local pool.

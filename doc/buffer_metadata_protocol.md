@@ -43,6 +43,9 @@ Publisher は次の順で API を使用する。
 
 ```cpp
 auto block = manager.acquire_for_publish();
+if (!block) {
+  return;
+}
 launch_gpu_work(block->device_ptr(), stream);
 auto descriptor = block->prepare_publish(stream);
 if (!descriptor) {
