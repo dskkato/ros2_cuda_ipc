@@ -392,7 +392,7 @@ bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
       return false;
     }
 
-    // Store the UUID so subscribers know which socket to contact.
+    // Store the socket path so subscribers know which socket to contact.
     slot.vmm_socket_path = socket_path;
     slot.device_ptr = reinterpret_cast<void*>(state->address);
     slot.vmm_fd_state = std::move(state);
