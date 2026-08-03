@@ -35,7 +35,7 @@ target_link_libraries(_native PRIVATE
   ros2_cuda_ipc_image::ros2_cuda_ipc_image
   dlpack::dlpack
 )
-target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_VERSION="0.4.0")
+target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_VERSION="0.5.0")
 
 if(BUILD_TESTING)
   target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT)
