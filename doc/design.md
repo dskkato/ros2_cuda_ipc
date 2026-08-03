@@ -55,7 +55,7 @@ event、deferred release queue は lifetime を実装する内部要素であり
 
 | field | 意味 |
 | --- | --- |
-| `mem_handle` | VMM allocation を配布する Unix socket の UUID payload |
+| `vmm_socket_path` | VMM allocation を配布する Unix socket のパス |
 | `event_handle` | producer の ready event を識別する CUDA IPC event handle |
 | `shm_name` | buffer reference/refcount 用 POSIX shared memory 名 |
 | `publisher_instance_id` | publisher 初期化単位の識別子 |
@@ -82,9 +82,9 @@ Subscriber は `publisher_instance_id`、`slot_id`、`generation` を検証し�
 ## Memory sharing: VMM + FD
 
 Publisher は CUDA VMM allocation を slot ごとに作り、POSIX shareable FD を Unix domain socket
-経由で配布する。`mem_handle` には socket を特定する UUID payload を格納し、Subscriber は
-その UUID から socket に接続して FD を取得し、`cuMemImportFromShareableHandle`、map、access
-設定を行う。ready event の配送は CUDA IPC event handle を使う。
+経由で配布する。`vmm_socket_path` には socket のパスを格納し、Subscriber はその socket に
+接続して FD を取得し、`cuMemImportFromShareableHandle`、map、access 設定を行う。ready event
+の配送は CUDA IPC event handle を使う。
 
 VMM resource の allocation、FD server、import 済み mapping の破棄は backend と resource
 cache の責務である。generation の更新だけで mapping を無条件に再作成せず、allocation または

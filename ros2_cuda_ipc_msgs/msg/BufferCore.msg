@@ -1,5 +1,5 @@
-# VMM+FD memory payload and CUDA IPC ready-event handle (opaque byte arrays)
-uint8[64] mem_handle
+# VMM+FD Unix socket path and CUDA IPC ready-event handle
+string vmm_socket_path
 uint8[64] event_handle
 
 # Shared memory name for buffer metadata/refcount management

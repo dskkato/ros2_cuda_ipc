@@ -14,10 +14,8 @@
 #include <optional>
 #include <string>
 
-#include "ros2_cuda_ipc_core/backend/memory_payload.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
-#include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend {
 
@@ -32,17 +30,6 @@ std::size_t align_up_size(std::size_t value, std::size_t alignment) {
     return value;
   }
   return value + alignment - remainder;
-}
-
-std::optional<std::string> parse_vmm_payload(
-    const transport::MemoryHandlePayload& payload) {
-  auto uuid = decode_uuid_payload(payload);
-  if (!uuid.has_value()) {
-    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
-                           "Received invalid VMM_FD payload");
-    return std::nullopt;
-  }
-  return uuid;
 }
 
 std::optional<int> request_fd_from_publisher(const std::string& path) {
@@ -122,15 +109,10 @@ std::optional<int> request_fd_from_publisher(const std::string& path) {
 std::optional<ImportedResources> VmmFdMemoryImporter::import(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
     const CUipcEventHandle& event_handle) const {
-  const auto meta = parse_vmm_payload(msg.mem_handle);
-  if (!meta.has_value()) {
-    return std::nullopt;
-  }
-
-  const std::string socket_path = build_socket_path(*meta);
+  const std::string& socket_path = msg.vmm_socket_path;
   if (socket_path.size() >= sizeof(sockaddr_un::sun_path)) {
     RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
-                           "UUID %s is too long for AF_UNIX path",
+                           "VMM socket path %s is too long for AF_UNIX path",
                            socket_path.c_str());
     return std::nullopt;
   }

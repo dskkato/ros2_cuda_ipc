@@ -21,7 +21,7 @@ struct BufferDescriptor {
   uint32_t generation = 0;
   int device_id = -1;
   uint64_t byte_size = 0;
-  MemoryHandlePayload memory_handle{};
+  std::string vmm_socket_path;
   EventHandlePayload ready_event_handle{};
 };
 

@@ -10,6 +10,11 @@ This document records the user-visible changes between releases of
 - Removed `BufferCore.backend` and the publisher/launch backend-selection APIs.
   Existing messages using the old wire shape are not compatible with this
   release.
+- Changed `BufferCore.vmm_socket_path` to carry the VMM Unix socket path as a
+  string, removed `MemoryHandlePayload`, and updated the internal descriptors,
+  caches, Python API, and tests accordingly. The VMM FD test's fixed 64-byte
+  payload is intentional: it exercises a raw child-process protocol without
+  using a ROS message and is not a mirror of the message field.
 - The standalone `cuda_ipc_poc` comparison programs remain available, but are
   no longer library backends.
 

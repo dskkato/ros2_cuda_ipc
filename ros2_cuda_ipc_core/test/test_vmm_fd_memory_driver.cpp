@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
@@ -92,7 +93,9 @@ TEST(VmmFdMemoryDriverTest, ImportsReadsAndReleasesInChildProcess) {
   payload.device_id = 0;
   payload.byte_size = kByteSize;
   payload.expected_value = kExpectedValue;
-  payload.memory_handle = resources->mem_handle;
+  ASSERT_LT(resources->vmm_socket_path.size(), payload.vmm_socket_path.size());
+  std::copy(resources->vmm_socket_path.begin(),
+            resources->vmm_socket_path.end(), payload.vmm_socket_path.begin());
   payload.event_handle = resources->ready_event->ipc_handle();
 
   int payload_pipe[2] = {-1, -1};

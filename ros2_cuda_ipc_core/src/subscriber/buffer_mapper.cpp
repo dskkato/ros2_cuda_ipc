@@ -54,7 +54,7 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
   IpcHandleKey key{};
   key.publisher_instance_id = instance_id;
   key.device_id = msg.device_id;
-  key.mem = msg.mem_handle;
+  key.vmm_socket_path = msg.vmm_socket_path;
   std::memcpy(key.event.data(), msg.event_handle.data(), key.event.size());
 
   auto imported = IpcHandleCache::instance().find(key);

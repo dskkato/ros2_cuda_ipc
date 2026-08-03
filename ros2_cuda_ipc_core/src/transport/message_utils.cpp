@@ -13,9 +13,6 @@ namespace {
 
 using BufferCoreMessage = ros2_cuda_ipc_msgs::msg::BufferCore;
 
-static_assert(sizeof(BufferCoreMessage::_mem_handle_type) ==
-                  sizeof(MemoryHandlePayload),
-              "BufferCore.mem_handle must match MemoryHandlePayload");
 static_assert(sizeof(CUipcEventHandle) == EventHandlePayload{}.size(),
               "CUDA IPC event handle payload size changed");
 static_assert(sizeof(BufferCoreMessage::_event_handle_type) ==
@@ -32,8 +29,7 @@ void fill_buffer_core_message(const BufferDescriptor& descriptor,
   message.slot_id = descriptor.slot_id;
   message.generation = descriptor.generation;
   message.byte_size = descriptor.byte_size;
-  std::memcpy(message.mem_handle.data(), descriptor.memory_handle.data(),
-              sizeof(message.mem_handle));
+  message.vmm_socket_path = descriptor.vmm_socket_path;
   std::memcpy(message.event_handle.data(), &descriptor.ready_event_handle,
               sizeof(message.event_handle));
 }

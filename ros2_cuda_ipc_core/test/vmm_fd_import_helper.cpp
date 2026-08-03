@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
   ros2_cuda_ipc_msgs::msg::BufferCore msg;
   msg.device_id = payload.device_id;
   msg.byte_size = payload.byte_size;
-  msg.mem_handle = payload.memory_handle;
+  msg.vmm_socket_path = payload.vmm_socket_path.data();
   msg.event_handle = payload.event_handle;
 
   CUipcEventHandle event_handle{};
