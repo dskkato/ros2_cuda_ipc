@@ -5,17 +5,9 @@
 
 #include <utility>
 
-namespace ros2_cuda_ipc_core::subscriber::detail {
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 
-std::size_t BufferMetadataCache::KeyHash::operator()(
-    const Key& key) const noexcept {
-  std::size_t hash = std::hash<std::string>{}(key.shm_name);
-  for (const uint8_t byte : key.publisher_instance_id) {
-    hash ^= static_cast<std::size_t>(byte) +
-            static_cast<std::size_t>(0x9e3779b9) + (hash << 6) + (hash >> 2);
-  }
-  return hash;
-}
+namespace ros2_cuda_ipc_core::subscriber::detail {
 
 BufferMetadataCache::BufferMetadataCache(AttachFn attach_fn)
     : attach_fn_(std::move(attach_fn)) {}
@@ -23,22 +15,27 @@ BufferMetadataCache::BufferMetadataCache(AttachFn attach_fn)
 BufferMetadataCache::~BufferMetadataCache() { clear(); }
 
 std::shared_ptr<buffer_metadata::BufferMetadata>
-BufferMetadataCache::get_or_attach(
-    const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id) const {
-  const Key key{shm_name, publisher_instance_id};
+BufferMetadataCache::get_or_attach(uint32_t publisher_pid, uint32_t block_id,
+                                   uint64_t expected_uid) const {
+  const Key key{publisher_pid, block_id};
   {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto it = mappings_.find(key);
     if (it != mappings_.end()) {
-      return it->second;
+      const auto current_uid =
+          buffer_metadata::BufferRef::current_uid(it->second);
+      if (current_uid && *current_uid == expected_uid) {
+        return it->second;
+      }
+      // The descriptor may belong to a new object after publisher restart, or
+      // it may simply be an old publication of this block. In both cases the
+      // cached mapping must not be trusted for the next attach attempt.
+      mappings_.erase(it);
     }
   }
 
-  auto candidate = attach_fn_(shm_name, publisher_instance_id);
-  if (!candidate) {
-    return nullptr;
-  }
+  auto candidate = attach_fn_(publisher_pid, block_id);
+  if (!candidate) return nullptr;
 
   std::shared_ptr<buffer_metadata::BufferMetadata> result;
   {
@@ -47,8 +44,6 @@ BufferMetadataCache::get_or_attach(
     (void)inserted;
     result = it->second;
   }
-  // If another thread won the race, the duplicate candidate is released after
-  // the mutex scope so a custom mapping deleter can safely inspect the cache.
   return result;
 }
 

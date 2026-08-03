@@ -82,10 +82,7 @@ def test_generated_rclpy_message_crosses_the_descriptor_boundary():
     message.encoding = descriptor["encoding"]
     message.core.vmm_socket_path = descriptor["core"]["vmm_socket_path"]
     message.core.event_handle = descriptor["core"]["event_handle"]
-    message.core.shm_name = descriptor["core"]["shm_name"]
-    message.core.publisher_instance_id = descriptor["core"][
-        "publisher_instance_id"
-    ]
+    message.core.publisher_pid = descriptor["core"]["publisher_pid"]
     message.core.device_id = descriptor["core"]["device_id"]
     message.core.block_id = descriptor["core"]["block_id"]
     message.core.uid = descriptor["core"]["uid"]

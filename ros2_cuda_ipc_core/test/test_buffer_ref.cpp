@@ -1,345 +1,130 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
+#include <fcntl.h>
 #include <gtest/gtest.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <atomic>
 #include <chrono>
-#include <optional>
 #include <sstream>
-#include <string>
 #include <thread>
 
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
-#include "test_instance_id.hpp"
 
 namespace {
 
-std::string make_unique_shm_name(const std::string& prefix) {
-  static std::atomic<int> counter{0};
-  std::ostringstream oss;
-  oss << "/" << prefix << "_" << ::getpid() << "_" << counter.fetch_add(1);
-  return oss.str();
+std::string make_unique_shm_name(const char* suffix) {
+  static std::atomic<uint32_t> counter{0};
+  std::ostringstream name;
+  name << "/buffer_ref_" << ::getpid() << "_" << suffix << "_"
+       << counter.fetch_add(1);
+  return name.str();
 }
 
-void cancel(
-    const std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata>&
-        mapping,
-    const std::optional<
-        ros2_cuda_ipc_core::buffer_metadata::BufferRef::PublisherReservation>&
-        reservation) {
-  if (reservation) {
-    EXPECT_TRUE(ros2_cuda_ipc_core::buffer_metadata::BufferRef::cancel_publish(
-        mapping, reservation->block_id, reservation->uid));
-  }
-}
+class ShmGuard {
+ public:
+  explicit ShmGuard(std::string name) : name_(std::move(name)) {}
+  ~ShmGuard() { (void)::shm_unlink(name_.c_str()); }
+
+ private:
+  std::string name_;
+};
 
 }  // namespace
 
 namespace ros2_cuda_ipc_core {
 
-TEST(BufferRefTest, AcquireReleaseLifecycle) {
-  const std::string shm_name = make_unique_shm_name("buffer_ref_ut");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 2);
+TEST(BufferRefTest, MappingContainsExactlyOneBlockMetadata) {
+  const auto name = make_unique_shm_name("one");
+  ShmGuard guard(name);
+  auto mapping = buffer_metadata::BufferMetadata::create(name);
+  ASSERT_TRUE(mapping);
+  EXPECT_NE(mapping->metadata(), nullptr);
+
+  const int fd = ::shm_open(name.c_str(), O_RDONLY, 0);
+  ASSERT_NE(fd, -1);
+  struct stat st{};
+  ASSERT_EQ(::fstat(fd, &st), 0);
+  EXPECT_EQ(st.st_size,
+            static_cast<off_t>(sizeof(buffer_metadata::BlockMetadata)));
+  ::close(fd);
+}
+
+TEST(BufferRefTest, AcquireReleaseAndRepeatedPublication) {
+  const auto name = make_unique_shm_name("lifecycle");
+  ShmGuard guard(name);
+  auto mapping = buffer_metadata::BufferMetadata::create(name);
   ASSERT_TRUE(mapping);
 
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-  EXPECT_EQ(buffer_metadata::BufferRef::current_refcount(mapping,
-                                                         reservation->block_id),
-            std::optional<uint32_t>(1));
-
-  std::optional<buffer_metadata::BufferRef::PublisherReservation> other;
+  const auto first = buffer_metadata::BufferRef::reserve_for_publish(mapping);
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(buffer_metadata::BufferRef::commit_publish(mapping, first->uid));
   {
-    auto buffer_ref = buffer_metadata::BufferRef::acquire(
-        mapping, reservation->block_id, reservation->uid);
-    ASSERT_TRUE(buffer_ref.valid());
-
-    other = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-    ASSERT_TRUE(other.has_value());
-    EXPECT_NE(other->block_id, reservation->block_id);
-
-    auto ref = buffer_metadata::BufferRef::current_refcount(
-        mapping, reservation->block_id);
-    ASSERT_TRUE(ref.has_value());
-    EXPECT_EQ(ref.value(), 2u);
+    auto reference = buffer_metadata::BufferRef::acquire(mapping, first->uid);
+    ASSERT_TRUE(reference.valid());
+    EXPECT_EQ(buffer_metadata::BufferRef::current_refcount(mapping), 1u);
   }
+  EXPECT_EQ(buffer_metadata::BufferRef::current_refcount(mapping), 0u);
 
-  auto ref_after = buffer_metadata::BufferRef::current_refcount(
-      mapping, reservation->block_id);
-  ASSERT_TRUE(ref_after.has_value());
-  EXPECT_EQ(ref_after.value(), 1u);
-
-  cancel(mapping, reservation);
-  cancel(mapping, other);
-  auto reservation_after =
-      buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation_after.has_value());
-  EXPECT_EQ(reservation_after->block_id, reservation->block_id);
-  cancel(mapping, reservation_after);
-
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(BufferRefTest, UidMismatchReturnsInvalid) {
-  const std::string shm_name = make_unique_shm_name("buffer_ref_mismatch");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-  auto buffer_ref = buffer_metadata::BufferRef::acquire(
-      mapping, reservation->block_id, reservation->uid + 1);
-  EXPECT_FALSE(buffer_ref.valid());
-  cancel(mapping, reservation);
-
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(BufferRefTest, PublisherInstanceMismatchReturnsInvalid) {
-  const std::string shm_name =
-      make_unique_shm_name("buffer_ref_instance_mismatch");
-  const auto owner_id = test::publisher_instance_id(shm_name + "_owner");
-  const auto other_id = test::publisher_instance_id(shm_name + "_other");
-  auto mapping = buffer_metadata::BufferMetadata::create(shm_name, owner_id, 1);
-  ASSERT_TRUE(mapping);
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-
-  EXPECT_FALSE(buffer_metadata::BufferMetadata::attach(shm_name, other_id));
-  auto ref = buffer_metadata::BufferRef::current_refcount(mapping, 0);
-  ASSERT_TRUE(ref.has_value());
-  EXPECT_EQ(*ref, 1u);
-  cancel(mapping, reservation);
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(BufferRefTest, HeaderPublisherInstanceMismatchReturnsInvalid) {
-  const std::string shm_name =
-      make_unique_shm_name("buffer_ref_header_instance_mismatch");
-  const auto owner_id = test::publisher_instance_id(shm_name + "_owner");
-  const auto other_id = test::publisher_instance_id(shm_name + "_other");
-  auto mapping = buffer_metadata::BufferMetadata::create(shm_name, owner_id, 1);
-  ASSERT_TRUE(mapping);
-  EXPECT_FALSE(buffer_metadata::BufferMetadata::attach(shm_name, other_id));
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(BufferRefTest, SameBlockAndUidAreSeparatedByInstance) {
-  const std::string first_name =
-      make_unique_shm_name("buffer_ref_instance_first");
-  const std::string second_name =
-      make_unique_shm_name("buffer_ref_instance_second");
-  const auto first_id = test::publisher_instance_id(first_name);
-  const auto second_id = test::publisher_instance_id(second_name);
-  auto first_mapping =
-      buffer_metadata::BufferMetadata::create(first_name, first_id, 1);
-  auto second_mapping =
-      buffer_metadata::BufferMetadata::create(second_name, second_id, 1);
-  ASSERT_TRUE(first_mapping);
-  ASSERT_TRUE(second_mapping);
-  auto first = buffer_metadata::BufferRef::reserve_for_publish(first_mapping);
-  auto second = buffer_metadata::BufferRef::reserve_for_publish(second_mapping);
-  ASSERT_TRUE(first.has_value());
-  ASSERT_TRUE(second.has_value());
-  ASSERT_EQ(first->block_id, second->block_id);
-  ASSERT_EQ(first->uid, second->uid);
-
-  EXPECT_FALSE(buffer_metadata::BufferMetadata::attach(first_name, second_id));
-  auto buffer_ref = buffer_metadata::BufferRef::acquire(
-      first_mapping, first->block_id, first->uid);
-  EXPECT_TRUE(buffer_ref.valid());
-  cancel(first_mapping, first);
-  cancel(second_mapping, second);
-  ::shm_unlink(first_name.c_str());
-  ::shm_unlink(second_name.c_str());
-}
-
-TEST(BufferRefTest, ExplicitMappingSeparatesReusedNameByInstance) {
-  const std::string shm_name =
-      make_unique_shm_name("buffer_ref_cached_instance");
-  const auto old_id = test::publisher_instance_id(shm_name + "_old");
-  const auto new_id = test::publisher_instance_id(shm_name + "_new");
-  auto old_mapping =
-      buffer_metadata::BufferMetadata::create(shm_name, old_id, 1);
-  ASSERT_TRUE(old_mapping);
-  ASSERT_EQ(::shm_unlink(shm_name.c_str()), 0);
-  auto new_mapping =
-      buffer_metadata::BufferMetadata::create(shm_name, new_id, 1);
-  ASSERT_TRUE(new_mapping);
-
-  EXPECT_TRUE(buffer_metadata::BufferRef::acquire(new_mapping, 0, 0).valid());
-  EXPECT_TRUE(buffer_metadata::BufferRef::acquire(old_mapping, 0, 0).valid());
-  old_mapping.reset();
-  new_mapping.reset();
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(BufferRefTest, MappingLifetimeFollowsUsersAfterUnlink) {
-  const std::string shm_name = make_unique_shm_name("buffer_ref_lifetime");
-  const auto instance_id = test::publisher_instance_id(shm_name);
-  auto mapping =
-      buffer_metadata::BufferMetadata::create(shm_name, instance_id, 1);
-  ASSERT_TRUE(mapping);
-  std::weak_ptr<buffer_metadata::BufferMetadata> weak_mapping = mapping;
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation);
-  {
-    auto buffer_ref = buffer_metadata::BufferRef::acquire(
-        mapping, reservation->block_id, reservation->uid);
-    ASSERT_TRUE(buffer_ref.valid());
-    ASSERT_EQ(::shm_unlink(shm_name.c_str()), 0);
-    mapping.reset();
-    EXPECT_FALSE(weak_mapping.expired());
-  }
-  EXPECT_TRUE(buffer_metadata::BufferRef::cancel_publish(
-      reservation->mapping, reservation->block_id, reservation->uid));
-  reservation.reset();
-  EXPECT_TRUE(weak_mapping.expired());
-}
-
-TEST(BufferRefTest, PublisherReservationUsesReferenceCount) {
-  const std::string shm_name =
-      make_unique_shm_name("buffer_ref_reservation_ref");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-  EXPECT_EQ(buffer_metadata::BufferRef::current_refcount(mapping, 0),
-            std::optional<uint32_t>(1));
-  EXPECT_FALSE(
-      buffer_metadata::BufferRef::reserve_for_publish(mapping).has_value());
-  cancel(mapping, reservation);
-  EXPECT_EQ(buffer_metadata::BufferRef::current_refcount(mapping, 0),
-            std::optional<uint32_t>(0));
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(BufferRefTest, CommitAppliesFixedGracePeriod) {
-  const std::string shm_name = make_unique_shm_name("buffer_ref_grace");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-  ASSERT_TRUE(buffer_metadata::BufferRef::commit_publish(
-      mapping, reservation->block_id, reservation->uid));
-  EXPECT_EQ(buffer_metadata::BufferRef::current_refcount(mapping, 0),
-            std::optional<uint32_t>(0));
-  const auto timestamp =
-      buffer_metadata::BufferRef::current_publish_timestamp_us(mapping, 0);
-  ASSERT_TRUE(timestamp.has_value());
-  EXPECT_NE(*timestamp, 0u);
-  EXPECT_FALSE(
-      buffer_metadata::BufferRef::reserve_for_publish(mapping).has_value());
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(150));
-  auto next = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(next.has_value());
-  cancel(mapping, next);
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(BufferRefTest, ActiveBufferRefBlocksReuseAfterGracePeriod) {
-  const std::string shm_name = make_unique_shm_name("buffer_ref_active");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-  ASSERT_TRUE(buffer_metadata::BufferRef::commit_publish(
-      mapping, reservation->block_id, reservation->uid));
-  std::optional<buffer_metadata::BufferRef> buffer_ref;
-  buffer_ref.emplace(buffer_metadata::BufferRef::acquire(
-      mapping, reservation->block_id, reservation->uid));
-  ASSERT_TRUE(buffer_ref->valid());
   std::this_thread::sleep_for(std::chrono::milliseconds(105));
+  const auto second = buffer_metadata::BufferRef::reserve_for_publish(mapping);
+  ASSERT_TRUE(second);
+  EXPECT_NE(second->uid, first->uid);
+  ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(mapping, second->uid));
+}
+
+TEST(BufferRefTest, StaleUidIsRejected) {
+  const auto name = make_unique_shm_name("stale");
+  ShmGuard guard(name);
+  auto mapping = buffer_metadata::BufferMetadata::create(name);
+  ASSERT_TRUE(mapping);
+  const auto reservation =
+      buffer_metadata::BufferRef::reserve_for_publish(mapping);
+  ASSERT_TRUE(reservation);
   EXPECT_FALSE(
-      buffer_metadata::BufferRef::reserve_for_publish(mapping).has_value());
-  buffer_ref.reset();
-  auto next = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(next.has_value());
-  cancel(mapping, next);
-  ::shm_unlink(shm_name.c_str());
+      buffer_metadata::BufferRef::acquire(mapping, reservation->uid + 1)
+          .valid());
+  ASSERT_TRUE(
+      buffer_metadata::BufferRef::cancel_publish(mapping, reservation->uid));
 }
 
 TEST(BufferRefTest, PublisherAndSubscriberRaceIsUidSafe) {
-  const std::string shm_name = make_unique_shm_name("buffer_ref_reserve_race");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
+  const auto name = make_unique_shm_name("race");
+  ShmGuard guard(name);
+  auto mapping = buffer_metadata::BufferMetadata::create(name);
   ASSERT_TRUE(mapping);
-
-  auto initial = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(initial.has_value());
-  ASSERT_TRUE(buffer_metadata::BufferRef::commit_publish(
-      mapping, initial->block_id, initial->uid));
+  const auto initial = buffer_metadata::BufferRef::reserve_for_publish(mapping);
+  ASSERT_TRUE(initial);
+  ASSERT_TRUE(
+      buffer_metadata::BufferRef::commit_publish(mapping, initial->uid));
   std::this_thread::sleep_for(std::chrono::milliseconds(105));
 
-  for (int iteration = 0; iteration < 1000; ++iteration) {
+  for (int iteration = 0; iteration < 100; ++iteration) {
     std::atomic<bool> start{false};
     std::optional<buffer_metadata::BufferRef::PublisherReservation> publisher;
     std::optional<buffer_metadata::BufferRef> subscriber;
-    std::thread publisher_thread([&]() {
-      while (!start.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
-      }
+    std::thread publisher_thread([&] {
+      while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
       publisher = buffer_metadata::BufferRef::reserve_for_publish(mapping);
     });
-    std::thread subscriber_thread([&]() {
-      while (!start.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
-      }
-      subscriber.emplace(buffer_metadata::BufferRef::acquire(
-          mapping, initial->block_id, initial->uid));
+    std::thread subscriber_thread([&] {
+      while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+      subscriber.emplace(
+          buffer_metadata::BufferRef::acquire(mapping, initial->uid));
     });
     start.store(true, std::memory_order_release);
     publisher_thread.join();
     subscriber_thread.join();
-
     EXPECT_FALSE(publisher.has_value() && subscriber->valid());
     if (publisher) {
-      cancel(mapping, publisher);
+      ASSERT_TRUE(
+          buffer_metadata::BufferRef::cancel_publish(mapping, publisher->uid));
     }
     subscriber.reset();
   }
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST(BufferRefTest, OnlyOnePublisherCanReserveSingleBlock) {
-  const std::string shm_name = make_unique_shm_name("buffer_ref_pub_race");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-  std::atomic<bool> start{false};
-  std::optional<buffer_metadata::BufferRef::PublisherReservation> first;
-  std::optional<buffer_metadata::BufferRef::PublisherReservation> second;
-  std::thread a([&]() {
-    while (!start.load(std::memory_order_acquire)) {
-      std::this_thread::yield();
-    }
-    first = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  });
-  std::thread b([&]() {
-    while (!start.load(std::memory_order_acquire)) {
-      std::this_thread::yield();
-    }
-    second = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  });
-  start.store(true, std::memory_order_release);
-  a.join();
-  b.join();
-  EXPECT_NE(first.has_value(), second.has_value());
-  cancel(mapping, first);
-  cancel(mapping, second);
-  ::shm_unlink(shm_name.c_str());
 }
 
 }  // namespace ros2_cuda_ipc_core

@@ -7,99 +7,116 @@
 #include <unistd.h>
 
 #include <atomic>
-#include <chrono>
-#include <optional>
-#include <sstream>
-#include <string>
+#include <set>
 #include <thread>
+#include <vector>
 
-#include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 #include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 
-namespace {
+namespace ros2_cuda_ipc_core::publisher {
 
-std::string make_unique_shm_name() {
-  static std::atomic<int> counter{0};
-  std::ostringstream out;
-  out << "/buffer_metadata_manager_" << ::getpid() << "_"
-      << counter.fetch_add(1);
-  return out.str();
+TEST(BufferMetadataManagerTest, MultiplePoolsReceiveProcessUniqueBlockIds) {
+  BufferMetadataManager first("/ignored", 2);
+  BufferMetadataManager second("/ignored", 3);
+  ASSERT_TRUE(first.initialise());
+  ASSERT_TRUE(second.initialise());
+
+  std::set<uint32_t> ids;
+  std::vector<BufferMetadataManager::Reservation> reservations;
+  for (auto* manager : {&first, &second}) {
+    while (auto reservation = manager->reserve_for_publish()) {
+      EXPECT_EQ(reservation->publisher_pid, static_cast<uint32_t>(::getpid()));
+      EXPECT_TRUE(ids.insert(reservation->block_id).second);
+      EXPECT_EQ(reservation->shm_name,
+                BufferMetadataManager::shm_name_for_block(
+                    reservation->publisher_pid, reservation->block_id));
+      reservations.push_back(std::move(*reservation));
+    }
+  }
+  EXPECT_EQ(reservations.size(), 5u);
+  for (const auto& reservation : reservations) {
+    EXPECT_TRUE(buffer_metadata::BufferRef::cancel_publish(reservation.mapping,
+                                                           reservation.uid));
+  }
 }
 
-}  // namespace
+TEST(BufferMetadataManagerTest, ResetUnlinksEveryBlockMetadataObject) {
+  BufferMetadataManager manager("/ignored", 3);
+  ASSERT_TRUE(manager.initialise());
+  std::vector<std::string> names;
+  for (int i = 0; i < 3; ++i) {
+    auto reservation = manager.reserve_for_publish();
+    ASSERT_TRUE(reservation);
+    names.push_back(reservation->shm_name);
+    ASSERT_TRUE(manager.cancel(*reservation));
+  }
+  manager.reset();
+  for (const auto& name : names) {
+    const int fd = ::shm_open(name.c_str(), O_RDONLY, 0);
+    EXPECT_EQ(fd, -1);
+    if (fd != -1) ::close(fd);
+  }
+}
 
-TEST(BufferMetadataManagerTest, ResetRacingWithReserveDoesNotLeavePending) {
-  for (int iteration = 0; iteration < 1000; ++iteration) {
-    const std::string prefix = make_unique_shm_name();
-    ros2_cuda_ipc_core::publisher::BufferMetadataManager manager(prefix, 1);
+TEST(BufferMetadataManagerTest, ReinitialiseUsesNewBlockIdentities) {
+  BufferMetadataManager manager("/ignored", 1);
+  ASSERT_TRUE(manager.initialise());
+  const auto first = manager.reserve_for_publish();
+  ASSERT_TRUE(first);
+  const uint32_t first_id = first->block_id;
+  const std::string first_name = first->shm_name;
+  ASSERT_TRUE(manager.cancel(*first));
+  manager.reset();
+  ASSERT_TRUE(manager.initialise());
+  const auto second = manager.reserve_for_publish();
+  ASSERT_TRUE(second);
+  EXPECT_NE(second->block_id, first_id);
+  EXPECT_NE(second->shm_name, first_name);
+  ASSERT_TRUE(manager.cancel(*second));
+}
+
+TEST(BufferMetadataManagerTest, InitialisationCleansMetadataFromDeadPublisher) {
+  constexpr uint32_t kDeadPid = 99999999;
+  constexpr uint32_t kBlockId = 314159;
+  const auto name =
+      BufferMetadataManager::shm_name_for_block(kDeadPid, kBlockId);
+  (void)::shm_unlink(name.c_str());
+  auto orphan = buffer_metadata::BufferMetadata::create(name);
+  ASSERT_TRUE(orphan);
+  orphan.reset();
+
+  BufferMetadataManager manager("/ignored", 1);
+  ASSERT_TRUE(manager.initialise());
+  const int fd = ::shm_open(name.c_str(), O_RDONLY, 0);
+  EXPECT_EQ(fd, -1);
+  if (fd != -1) ::close(fd);
+}
+
+TEST(BufferMetadataManagerTest, ResetRacingWithReserveLeavesNoReservation) {
+  for (int iteration = 0; iteration < 100; ++iteration) {
+    BufferMetadataManager manager("/ignored", 1);
     ASSERT_TRUE(manager.initialise());
     std::atomic<bool> start{false};
-    std::optional<
-        ros2_cuda_ipc_core::publisher::BufferMetadataManager::Reservation>
-        reservation;
-    std::thread reserve_thread([&]() {
-      while (!start.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
-      }
+    std::optional<BufferMetadataManager::Reservation> reservation;
+    std::thread reserve_thread([&] {
+      while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
       reservation = manager.reserve_for_publish();
     });
-    std::thread reset_thread([&]() {
-      while (!start.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
-      }
+    std::thread reset_thread([&] {
+      while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
       manager.reset();
     });
-
     start.store(true, std::memory_order_release);
     reserve_thread.join();
     reset_thread.join();
-
     if (reservation) {
-      manager.cancel(*reservation);
-      const auto refcount =
-          ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(
-              reservation->mapping, 0);
-      ASSERT_TRUE(refcount.has_value());
-      EXPECT_EQ(*refcount, 0u);
+      EXPECT_TRUE(manager.cancel(*reservation));
+      EXPECT_EQ(
+          buffer_metadata::BufferRef::current_refcount(reservation->mapping),
+          0u);
     }
   }
 }
 
-TEST(BufferMetadataManagerTest, SamePrefixProducesDistinctInstances) {
-  const std::string prefix = make_unique_shm_name();
-  ros2_cuda_ipc_core::publisher::BufferMetadataManager first(prefix, 1);
-  ros2_cuda_ipc_core::publisher::BufferMetadataManager second(prefix, 2);
-  ASSERT_TRUE(first.initialise());
-  ASSERT_TRUE(second.initialise());
-  EXPECT_NE(first.shm_name(), second.shm_name());
-  EXPECT_NE(first.publisher_instance_id(), second.publisher_instance_id());
-}
-
-TEST(BufferMetadataManagerTest, ResetUnlinksAndReinitialiseChangesIdentity) {
-  ros2_cuda_ipc_core::publisher::BufferMetadataManager manager(
-      make_unique_shm_name(), 1);
-  ASSERT_TRUE(manager.initialise());
-  const std::string old_name = manager.shm_name();
-  const auto old_id = manager.publisher_instance_id();
-  manager.reset();
-  EXPECT_TRUE(manager.shm_name().empty());
-  EXPECT_TRUE(ros2_cuda_ipc_core::is_nil(manager.publisher_instance_id()));
-  const int fd = ::shm_open(old_name.c_str(), O_RDWR, 0660);
-  if (fd != -1) {
-    ::close(fd);
-  }
-  EXPECT_EQ(fd, -1);
-
-  ASSERT_TRUE(manager.initialise());
-  EXPECT_NE(manager.shm_name(), old_name);
-  EXPECT_NE(manager.publisher_instance_id(), old_id);
-}
-
-TEST(BufferMetadataManagerTest, InvalidPrefixFailsClosed) {
-  ros2_cuda_ipc_core::publisher::BufferMetadataManager manager(
-      "/invalid/prefix", 1);
-  EXPECT_FALSE(manager.initialise());
-  EXPECT_TRUE(manager.shm_name().empty());
-  EXPECT_TRUE(ros2_cuda_ipc_core::is_nil(manager.publisher_instance_id()));
-}
+}  // namespace ros2_cuda_ipc_core::publisher

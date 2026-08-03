@@ -23,8 +23,7 @@ static_assert(sizeof(BufferCoreMessage::_event_handle_type) ==
 
 void fill_buffer_core_message(const BufferDescriptor& descriptor,
                               ros2_cuda_ipc_msgs::msg::BufferCore& message) {
-  message.shm_name = descriptor.buffer_metadata_shm_name;
-  message.publisher_instance_id = descriptor.publisher_instance_id;
+  message.publisher_pid = descriptor.publisher_pid;
   message.device_id = static_cast<uint32_t>(descriptor.device_id);
   message.block_id = descriptor.block_id;
   message.uid = descriptor.uid;

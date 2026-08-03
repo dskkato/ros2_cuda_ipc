@@ -3,45 +3,85 @@
 
 #include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 
+#include <dirent.h>
 #include <limits.h>
 #include <rcutils/logging_macros.h>
+#include <signal.h>
 #include <sys/mman.h>
-#include <uuid/uuid.h>
+#include <unistd.h>
 
-#include <algorithm>
+#include <atomic>
+#include <cerrno>
+#include <cstdio>
 #include <limits>
-#include <string>
+#include <sstream>
 #include <utility>
 
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 namespace {
-bool valid_prefix(const std::string& prefix) {
-  return prefix.size() > 1 && prefix.front() == '/' &&
-         prefix.find('/', 1) == std::string::npos;
+
+std::atomic<uint32_t> next_process_block_id{0};
+
+std::optional<uint32_t> allocate_process_block_id() {
+  uint32_t current = next_process_block_id.load(std::memory_order_relaxed);
+  while (current != std::numeric_limits<uint32_t>::max()) {
+    if (next_process_block_id.compare_exchange_weak(
+            current, current + 1, std::memory_order_relaxed,
+            std::memory_order_relaxed)) {
+      return current;
+    }
+  }
+  return std::nullopt;
 }
 
-std::pair<PublisherInstanceId, std::string> make_instance_identity(
-    const std::string& prefix) {
-  uuid_t uuid;
-  uuid_generate(uuid);
-  PublisherInstanceId id{};
-  std::copy(std::begin(uuid), std::end(uuid), id.begin());
-  char text[37]{};
-  uuid_unparse_lower(uuid, text);
-  return {id, prefix + "_" + text};
+void cleanup_orphaned_metadata_objects() noexcept {
+  DIR* directory = ::opendir("/dev/shm");
+  if (directory == nullptr) return;
+  while (const dirent* entry = ::readdir(directory)) {
+    uint32_t pid = 0;
+    uint32_t block_id = 0;
+    char suffix = '\0';
+    if (std::sscanf(entry->d_name, "ros2_cuda_ipc_%u_%u%c", &pid, &block_id,
+                    &suffix) != 2 ||
+        pid == 0) {
+      continue;
+    }
+    if (::kill(static_cast<pid_t>(pid), 0) == 0 || errno != ESRCH) {
+      continue;
+    }
+    const std::string shm_name = "/" + std::string(entry->d_name);
+    if (::shm_unlink(shm_name.c_str()) != 0 && errno != ENOENT) {
+      RCUTILS_LOG_WARN_NAMED(
+          "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
+          "Failed to clean orphaned block metadata name=%s errno=%d",
+          shm_name.c_str(), errno);
+    }
+  }
+  ::closedir(directory);
 }
+
 }  // namespace
 
-BufferMetadataManager::BufferMetadataManager(std::string shm_name_prefix,
+BufferMetadataManager::BufferMetadataManager(std::string ignored_legacy_prefix,
                                              std::size_t block_count)
-    : shm_name_prefix_(std::move(shm_name_prefix)), block_count_(block_count) {}
+    : ignored_legacy_prefix_(std::move(ignored_legacy_prefix)),
+      block_count_(block_count),
+      publisher_pid_(static_cast<uint32_t>(::getpid())) {}
 
 BufferMetadataManager::~BufferMetadataManager() { reset(); }
 
+std::string BufferMetadataManager::shm_name_for_block(uint32_t publisher_pid,
+                                                      uint32_t block_id) {
+  std::ostringstream name;
+  name << "/ros2_cuda_ipc_" << publisher_pid << "_" << block_id;
+  return name.str();
+}
+
 bool BufferMetadataManager::initialise() {
   reset();
+  cleanup_orphaned_metadata_objects();
   if (block_count_ == 0 ||
       block_count_ > std::numeric_limits<uint32_t>::max()) {
     RCUTILS_LOG_ERROR_NAMED(
@@ -49,56 +89,79 @@ bool BufferMetadataManager::initialise() {
         "Invalid block_count: %zu", block_count_);
     return false;
   }
-  if (!valid_prefix(shm_name_prefix_)) {
-    RCUTILS_LOG_ERROR_NAMED(
-        "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Invalid shared-memory name prefix: %s", shm_name_prefix_.c_str());
-    return false;
+
+  std::vector<Entry> entries;
+  entries.reserve(block_count_);
+  for (std::size_t index = 0; index < block_count_; ++index) {
+    const auto block_id = allocate_process_block_id();
+    if (!block_id) {
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
+          "Process-local block_id space exhausted");
+      for (const auto& entry : entries) {
+        (void)::shm_unlink(entry.shm_name.c_str());
+      }
+      return false;
+    }
+    std::string shm_name = shm_name_for_block(publisher_pid_, *block_id);
+    if (shm_name.size() > NAME_MAX) {
+      RCUTILS_LOG_ERROR_NAMED(
+          "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
+          "Generated shared-memory name is too long");
+      for (const auto& entry : entries) {
+        (void)::shm_unlink(entry.shm_name.c_str());
+      }
+      return false;
+    }
+    auto mapping = buffer_metadata::BufferMetadata::create(shm_name);
+    if (!mapping && errno == EEXIST) {
+      // Within one process block_id is never reused. Therefore an existing
+      // name with our pid and newly allocated block_id can only be an object
+      // left by a previous process that received the same PID.
+      RCUTILS_LOG_WARN_NAMED(
+          "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
+          "Replacing stale block metadata after PID reuse name=%s",
+          shm_name.c_str());
+      if (::shm_unlink(shm_name.c_str()) == 0) {
+        mapping = buffer_metadata::BufferMetadata::create(shm_name);
+      }
+    }
+    if (!mapping) {
+      for (const auto& entry : entries) {
+        (void)::shm_unlink(entry.shm_name.c_str());
+      }
+      return false;
+    }
+    entries.push_back(
+        Entry{*block_id, std::move(shm_name), std::move(mapping)});
   }
-  auto [instance_id, instance_name] = make_instance_identity(shm_name_prefix_);
-  if (instance_name.size() > NAME_MAX) {
-    RCUTILS_LOG_ERROR_NAMED(
-        "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Generated shared-memory name is too long");
-    return false;
-  }
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      instance_name, instance_id, static_cast<uint32_t>(block_count_));
-  if (!mapping) {
-    return false;
-  }
+
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    shm_name_ = std::move(instance_name);
-    publisher_instance_id_ = instance_id;
-    mapping_ = std::move(mapping);
+    entries_ = std::move(entries);
+    next_entry_ = 0;
     initialised_ = true;
   }
   return true;
 }
 
 void BufferMetadataManager::reset() noexcept {
-  std::string owned_name;
-  std::shared_ptr<buffer_metadata::BufferMetadata> owned_mapping;
+  std::vector<Entry> entries;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (initialised_) {
-      owned_name = std::move(shm_name_);
-      owned_mapping = std::move(mapping_);
-    }
-    shm_name_.clear();
-    publisher_instance_id_ = {};
-    mapping_.reset();
+    entries.swap(entries_);
+    next_entry_ = 0;
     initialised_ = false;
   }
-  if (!owned_name.empty() && ::shm_unlink(owned_name.c_str()) != 0) {
-    RCUTILS_LOG_WARN_NAMED(
-        "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Failed to unlink buffer metadata shared memory name=%s",
-        owned_name.c_str());
+  for (const auto& entry : entries) {
+    if (::shm_unlink(entry.shm_name.c_str()) != 0) {
+      RCUTILS_LOG_WARN_NAMED(
+          "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
+          "Failed to unlink block metadata shared memory name=%s",
+          entry.shm_name.c_str());
+    }
   }
-  // Keep the mapping alive until after unlink. Reservations may still own it.
-  owned_mapping.reset();
+  entries.clear();
 }
 
 bool BufferMetadataManager::is_initialised() const noexcept {
@@ -106,96 +169,63 @@ bool BufferMetadataManager::is_initialised() const noexcept {
   return initialised_;
 }
 
+std::shared_ptr<buffer_metadata::BufferMetadata>
+BufferMetadataManager::metadata_for_pool_index(std::size_t pool_index) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!initialised_ || pool_index >= entries_.size()) return nullptr;
+  return entries_[pool_index].mapping;
+}
+
+std::optional<uint32_t> BufferMetadataManager::block_id_for_pool_index(
+    std::size_t pool_index) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!initialised_ || pool_index >= entries_.size()) return std::nullopt;
+  return entries_[pool_index].block_id;
+}
+
 std::optional<BufferMetadataManager::Reservation>
 BufferMetadataManager::reserve_for_publish() {
-  std::string shm_name;
-  PublisherInstanceId instance_id{};
-  std::shared_ptr<buffer_metadata::BufferMetadata> mapping;
+  Entry entry;
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!initialised_) {
-      return std::nullopt;
+    if (!initialised_ || entries_.empty()) return std::nullopt;
+    for (std::size_t offset = 0; offset < entries_.size(); ++offset) {
+      const std::size_t index = (next_entry_ + offset) % entries_.size();
+      auto& candidate = entries_[index];
+      auto reservation =
+          buffer_metadata::BufferRef::reserve_for_publish(candidate.mapping);
+      if (!reservation) continue;
+      next_entry_ = (index + 1) % entries_.size();
+      return Reservation{reservation->mapping, candidate.block_id,
+                         reservation->uid,     publisher_pid_,
+                         candidate.shm_name,   index};
     }
-    shm_name = shm_name_;
-    instance_id = publisher_instance_id_;
-    mapping = mapping_;
-  }
-  const auto reservation =
-      buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  if (!reservation) {
-    return std::nullopt;
-  }
-  if (reservation->block_id >= block_count_) {
-    RCUTILS_LOG_ERROR_NAMED(
-        "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Buffer metadata shared-memory capacity changed unexpectedly: "
-        "block=%u configured_count=%zu",
-        reservation->block_id, block_count_);
-    const bool rolled_back = buffer_metadata::BufferRef::cancel_publish(
-        reservation->mapping, reservation->block_id, reservation->uid);
-    if (!rolled_back) {
-      RCUTILS_LOG_ERROR_NAMED(
-          "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-          "Failed to roll back out-of-range reservation block=%u uid=%u",
-          reservation->block_id, reservation->uid);
-    }
-    return std::nullopt;
-  }
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (initialised_ && shm_name_ == shm_name &&
-        publisher_instance_id_ == instance_id) {
-      return Reservation{reservation->mapping, reservation->block_id,
-                         reservation->uid, shm_name, instance_id};
-    }
-  }
-
-  const bool rolled_back = buffer_metadata::BufferRef::cancel_publish(
-      reservation->mapping, reservation->block_id, reservation->uid);
-  if (!rolled_back) {
-    RCUTILS_LOG_ERROR_NAMED(
-        "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Failed to roll back reservation block=%u uid=%u",
-        reservation->block_id, reservation->uid);
   }
   return std::nullopt;
 }
 
 bool BufferMetadataManager::commit(const Reservation& reservation) noexcept {
   const bool committed = buffer_metadata::BufferRef::commit_publish(
-      reservation.mapping, reservation.block_id, reservation.uid);
+      reservation.mapping, reservation.uid);
   if (!committed) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Failed to commit reservation block=%u uid=%u", reservation.block_id,
-        reservation.uid);
+        "Failed to commit block reservation block=%u uid=%llu",
+        reservation.block_id, static_cast<unsigned long long>(reservation.uid));
   }
   return committed;
 }
 
 bool BufferMetadataManager::cancel(const Reservation& reservation) noexcept {
-  if (reservation.block_id >= block_count_) {
-    return false;
-  }
   const bool cancelled = buffer_metadata::BufferRef::cancel_publish(
-      reservation.mapping, reservation.block_id, reservation.uid);
+      reservation.mapping, reservation.uid);
   if (!cancelled) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Failed to cancel reservation block=%u uid=%u", reservation.block_id,
-        reservation.uid);
+        "Failed to cancel block reservation block=%u uid=%llu",
+        reservation.block_id, static_cast<unsigned long long>(reservation.uid));
   }
   return cancelled;
-}
-
-std::string BufferMetadataManager::shm_name() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return shm_name_;
-}
-
-PublisherInstanceId BufferMetadataManager::publisher_instance_id() const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return publisher_instance_id_;
 }
 
 }  // namespace ros2_cuda_ipc_core::publisher

@@ -36,9 +36,6 @@ bool GpuBufferPool::initialise(uint64_t byte_size, int device_index) {
   device_index_ = device_index;
   blocks_.clear();
   blocks_.resize(block_count_);
-  for (std::size_t i = 0; i < blocks_.size(); ++i) {
-    blocks_[i].index = static_cast<uint32_t>(i);
-  }
   if (!allocate_blocks()) {
     destroy_blocks();
     return false;
@@ -55,14 +52,14 @@ bool GpuBufferPool::matches(uint64_t byte_size,
          device_index_ == device_index;
 }
 
-void* GpuBufferPool::device_ptr(uint32_t block_id) const noexcept {
-  const auto* block = resources(block_id);
+void* GpuBufferPool::device_ptr(uint32_t pool_index) const noexcept {
+  const auto* block = resources(pool_index);
   return block ? block->device_ptr : nullptr;
 }
 
-detail::CudaResult<void> GpuBufferPool::record_ready(uint32_t block_id,
+detail::CudaResult<void> GpuBufferPool::record_ready(uint32_t pool_index,
                                                      CUstream stream) noexcept {
-  const auto* block = resources(block_id);
+  const auto* block = resources(pool_index);
   if (!initialised_ || block == nullptr || !block->ready_event) {
     return detail::CudaResult<void>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
@@ -71,11 +68,20 @@ detail::CudaResult<void> GpuBufferPool::record_ready(uint32_t block_id,
 }
 
 const GpuBufferPool::GpuBufferBlock* GpuBufferPool::resources(
-    uint32_t block_id) const noexcept {
-  if (block_id >= blocks_.size()) {
+    uint32_t pool_index) const noexcept {
+  if (pool_index >= blocks_.size()) {
     return nullptr;
   }
-  return &blocks_[block_id];
+  return &blocks_[pool_index];
+}
+
+bool GpuBufferPool::set_shared_metadata(
+    uint32_t pool_index, uint32_t block_id,
+    std::shared_ptr<buffer_metadata::BufferMetadata> metadata) noexcept {
+  if (pool_index >= blocks_.size() || !metadata) return false;
+  blocks_[pool_index].block_id = block_id;
+  blocks_[pool_index].shared_metadata = std::move(metadata);
+  return true;
 }
 
 bool GpuBufferPool::allocate_blocks() {
@@ -114,6 +120,8 @@ bool GpuBufferPool::allocate_blocks() {
 void GpuBufferPool::destroy_blocks() noexcept {
   for (auto& block : blocks_) {
     block.ready_event.reset();
+    block.shared_metadata.reset();
+    block.block_id = 0;
   }
   std::optional<detail::CudaContextGuard> guard;
   if (context_) {

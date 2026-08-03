@@ -8,43 +8,40 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <uuid/uuid.h>
 
-#include <atomic>
 #include <cerrno>
-#include <cstdint>
+#include <cstring>
 #include <limits>
 #include <new>
 
 namespace ros2_cuda_ipc_core::buffer_metadata {
 namespace {
 
-constexpr uint32_t kShmMagic = 0x4C534531;  // 'LSE1'
-constexpr uint32_t kLayoutVersion = 5;
+constexpr std::size_t kMetadataSize = sizeof(BlockMetadata);
 
-struct ShmHeader {
-  uint32_t magic;
-  uint32_t layout_version;
-  uint32_t capacity;
-  uint32_t consumer_count;
-  PublisherInstanceId publisher_instance_id;
-};
-
-bool valid_layout(const struct stat& st, const ShmHeader& header,
-                  std::size_t* expected_size) {
-  if (st.st_size < static_cast<off_t>(sizeof(ShmHeader)) ||
-      header.capacity == 0 ||
-      header.capacity >
-          (std::numeric_limits<std::size_t>::max() - sizeof(ShmHeader)) /
-              sizeof(BlockMetadata)) {
-    return false;
-  }
-  *expected_size =
-      sizeof(ShmHeader) +
-      static_cast<std::size_t>(header.capacity) * sizeof(BlockMetadata);
-  return *expected_size <= static_cast<std::size_t>(st.st_size);
+uint64_t initial_uid() {
+  uuid_t uuid;
+  uuid_generate_random(uuid);
+  uint64_t value = 0;
+  std::memcpy(&value, uuid, sizeof(value));
+  // A nonzero random base distinguishes a recreated block even when a PID is
+  // reused. Zero is retained as the invalid/unpublished sentinel only.
+  return value == 0 || value == std::numeric_limits<uint64_t>::max() ? 1
+                                                                     : value;
 }
 
 }  // namespace
+
+std::shared_ptr<BufferMetadata> BufferMetadata::make_mapping(
+    const std::string& shm_name, void* addr, std::size_t mapped_size) {
+  auto mapping = std::shared_ptr<BufferMetadata>(new BufferMetadata);
+  mapping->shm_name_ = shm_name;
+  mapping->mapped_size_ = mapped_size;
+  mapping->addr_ = addr;
+  mapping->metadata_ = static_cast<BlockMetadata*>(addr);
+  return mapping;
+}
 
 BufferMetadata::~BufferMetadata() {
   if (addr_ != nullptr && mapped_size_ != 0) {
@@ -53,18 +50,7 @@ BufferMetadata::~BufferMetadata() {
 }
 
 std::shared_ptr<BufferMetadata> BufferMetadata::create(
-    const std::string& shm_name, const PublisherInstanceId& instance_id,
-    uint32_t capacity) {
-  if (capacity == 0 || is_nil(instance_id)) {
-    return nullptr;
-  }
-  if (capacity > (std::numeric_limits<std::size_t>::max() - sizeof(ShmHeader)) /
-                     sizeof(BlockMetadata)) {
-    return nullptr;
-  }
-  const std::size_t size =
-      sizeof(ShmHeader) +
-      static_cast<std::size_t>(capacity) * sizeof(BlockMetadata);
+    const std::string& shm_name) {
   const int fd = shm_open(shm_name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0660);
   if (fd < 0) {
     RCUTILS_LOG_ERROR_NAMED(
@@ -73,7 +59,7 @@ std::shared_ptr<BufferMetadata> BufferMetadata::create(
         shm_name.c_str(), errno);
     return nullptr;
   }
-  if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
+  if (ftruncate(fd, static_cast<off_t>(kMetadataSize)) != 0) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.buffer_metadata",
         "buffer_metadata:create ftruncate failed name=%s errno=%d",
@@ -82,7 +68,8 @@ std::shared_ptr<BufferMetadata> BufferMetadata::create(
     shm_unlink(shm_name.c_str());
     return nullptr;
   }
-  void* addr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  void* addr =
+      mmap(nullptr, kMetadataSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   if (addr == MAP_FAILED) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.buffer_metadata",
@@ -93,36 +80,13 @@ std::shared_ptr<BufferMetadata> BufferMetadata::create(
     return nullptr;
   }
   close(fd);
-
-  auto* header = static_cast<ShmHeader*>(addr);
-  header->magic = kShmMagic;
-  header->layout_version = kLayoutVersion;
-  header->capacity = capacity;
-  header->consumer_count = 0;
-  header->publisher_instance_id = instance_id;
-  auto* block_storage = static_cast<std::byte*>(addr) + sizeof(ShmHeader);
-  for (uint32_t i = 0; i < capacity; ++i) {
-    ::new (static_cast<void*>(block_storage + i * sizeof(BlockMetadata)))
-        BlockMetadata{};
-  }
-  auto* blocks = reinterpret_cast<BlockMetadata*>(block_storage);
-
-  auto mapping = std::shared_ptr<BufferMetadata>(new BufferMetadata);
-  mapping->shm_name_ = shm_name;
-  mapping->publisher_instance_id_ = instance_id;
-  mapping->capacity_ = capacity;
-  mapping->mapped_size_ = size;
-  mapping->addr_ = addr;
-  mapping->blocks_ = blocks;
-  return mapping;
+  auto* metadata = ::new (addr) BlockMetadata{};
+  metadata->uid.store(initial_uid(), std::memory_order_relaxed);
+  return BufferMetadata::make_mapping(shm_name, addr, kMetadataSize);
 }
 
 std::shared_ptr<BufferMetadata> BufferMetadata::attach(
-    const std::string& shm_name,
-    const PublisherInstanceId& expected_instance_id) {
-  if (is_nil(expected_instance_id)) {
-    return nullptr;
-  }
+    const std::string& shm_name) {
   const int fd = shm_open(shm_name.c_str(), O_RDWR, 0660);
   if (fd < 0) {
     RCUTILS_LOG_WARN_NAMED(
@@ -132,61 +96,25 @@ std::shared_ptr<BufferMetadata> BufferMetadata::attach(
     return nullptr;
   }
   struct stat st{};
-  if (fstat(fd, &st) != 0) {
+  if (fstat(fd, &st) != 0 || st.st_size != static_cast<off_t>(kMetadataSize)) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.buffer_metadata",
-        "buffer_metadata:attach fstat failed name=%s errno=%d",
-        shm_name.c_str(), errno);
-    close(fd);
-    return nullptr;
-  }
-  if (st.st_size < static_cast<off_t>(sizeof(ShmHeader))) {
-    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.buffer_metadata",
-                           "buffer_metadata:attach segment too small name=%s",
-                           shm_name.c_str());
+        "buffer_metadata:attach invalid object size name=%s size=%lld",
+        shm_name.c_str(), static_cast<long long>(st.st_size));
     close(fd);
     return nullptr;
   }
   void* addr =
-      mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+      mmap(nullptr, kMetadataSize, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  close(fd);
   if (addr == MAP_FAILED) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.buffer_metadata",
         "buffer_metadata:attach mmap failed name=%s errno=%d", shm_name.c_str(),
         errno);
-    close(fd);
     return nullptr;
   }
-  close(fd);
-
-  auto* header = static_cast<ShmHeader*>(addr);
-  std::size_t expected_size = 0;
-  if (header->magic != kShmMagic || header->layout_version != kLayoutVersion ||
-      header->publisher_instance_id != expected_instance_id) {
-    RCUTILS_LOG_WARN_NAMED(
-        "ros2_cuda_ipc_core.buffer_metadata",
-        "buffer_metadata:attach header or publisher instance mismatch name=%s "
-        "magic=%u ver=%u",
-        shm_name.c_str(), header->magic, header->layout_version);
-    munmap(addr, st.st_size);
-    return nullptr;
-  }
-  if (!valid_layout(st, *header, &expected_size)) {
-    RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.buffer_metadata",
-                           "buffer_metadata:attach invalid layout name=%s",
-                           shm_name.c_str());
-    munmap(addr, st.st_size);
-    return nullptr;
-  }
-
-  auto mapping = std::shared_ptr<BufferMetadata>(new BufferMetadata);
-  mapping->shm_name_ = shm_name;
-  mapping->publisher_instance_id_ = header->publisher_instance_id;
-  mapping->capacity_ = header->capacity;
-  mapping->mapped_size_ = static_cast<std::size_t>(st.st_size);
-  mapping->addr_ = addr;
-  mapping->blocks_ = reinterpret_cast<BlockMetadata*>(header + 1);
-  return mapping;
+  return BufferMetadata::make_mapping(shm_name, addr, kMetadataSize);
 }
 
 }  // namespace ros2_cuda_ipc_core::buffer_metadata

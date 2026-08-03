@@ -80,7 +80,8 @@ class GpuBufferManager {
  public:
   /// Configuration for a GPU buffer manager.
   struct Config {
-    /// Prefix used to create a publisher-instance-specific shared-memory name.
+    /// Retained for source compatibility; block metadata names are derived
+    /// exclusively from publisher_pid and process-unique block_id.
     std::string shm_name_prefix;
 
     /// Number of reusable GPU buffer blocks.
@@ -104,7 +105,7 @@ class GpuBufferManager {
   GpuBufferManager(GpuBufferManager&&) = delete;
   GpuBufferManager& operator=(GpuBufferManager&&) = delete;
 
-  /// Initialize the shared-memory buffer_ref pool and GPU buffer pool.
+  /// Initialize one shared BlockMetadata object per GPU block and the GPU pool.
   ///
   /// @return true when both pools are initialized successfully.
   bool initialise();
@@ -115,11 +116,8 @@ class GpuBufferManager {
   /// Check whether both the buffer_ref pool and buffer pool are initialized.
   bool is_initialised() const noexcept;
 
-  /// Return the current instance-specific shared-memory name.
-  std::string shm_name() const;
-
-  /// Return the current publisher instance identity.
-  PublisherInstanceId publisher_instance_id() const;
+  /// Return the process locator carried by every block descriptor.
+  uint32_t publisher_pid() const noexcept;
 
   /// Reserve a block for a new publish attempt.
   /// @return A publish block when a reservation is available; std::nullopt

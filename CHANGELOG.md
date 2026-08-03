@@ -5,6 +5,16 @@ This document records the user-visible changes between releases of
 
 ## Unreleased
 
+- Split shared metadata from pool-wide storage into one POSIX shared-memory
+  `BlockMetadata` object per GPU block, named by the process-unique
+  `publisher_pid + block_id` locator.
+- Replaced pool/name-based wire identity with `publisher_pid`, `block_id`, and
+  `uint64 uid`; subscribers now derive metadata names, validate UID before and
+  after refcount acquisition, and invalidate stale metadata mappings before
+  reattaching.
+- Added process-unique block IDs, PID-reuse-aware UID initialization, orphaned
+  shared-memory cleanup, and expanded multi-block, multi-pool, restart, stale
+  descriptor, cache, and cleanup coverage.
 - Removed the CUDA IPC memory-sharing backend. The core library now uses CUDA
   VMM plus POSIX file descriptors exclusively.
 - Removed `BufferCore.backend` and the publisher/launch backend-selection APIs.

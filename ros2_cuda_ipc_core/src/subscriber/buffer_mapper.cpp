@@ -30,21 +30,21 @@ CUipcEventHandle to_cuda_event_handle(
 std::unique_ptr<detail::MappedPublication> map_descriptor(
     const std::shared_ptr<detail::BufferMetadataCache>& mapping_cache,
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
-  const PublisherInstanceId instance_id = msg.publisher_instance_id;
-  if (is_nil(instance_id)) {
+  if (msg.publisher_pid == 0) {
     RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_mapper",
-                           "BufferCore publisher_instance_id is nil");
+                           "BufferCore publisher_pid is zero");
     return nullptr;
   }
 
-  auto mapping = mapping_cache->get_or_attach(msg.shm_name, instance_id);
-  auto buffer_ref =
-      buffer_metadata::BufferRef::acquire(mapping, msg.block_id, msg.uid);
+  auto mapping =
+      mapping_cache->get_or_attach(msg.publisher_pid, msg.block_id, msg.uid);
+  auto buffer_ref = buffer_metadata::BufferRef::acquire(mapping, msg.uid);
   if (!buffer_ref.valid()) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to acquire buffer reference shm=%s block=%u uid=%u",
-        msg.shm_name.c_str(), msg.block_id, msg.uid);
+        "Failed to acquire buffer reference pid=%u block=%u uid=%llu",
+        msg.publisher_pid, msg.block_id,
+        static_cast<unsigned long long>(msg.uid));
     return nullptr;
   }
   auto buffer_ref_ptr =
@@ -52,7 +52,8 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
 
   const CUipcEventHandle event_handle = to_cuda_event_handle(msg);
   IpcHandleKey key{};
-  key.publisher_instance_id = instance_id;
+  key.publisher_pid = msg.publisher_pid;
+  key.block_id = msg.block_id;
   key.device_id = msg.device_id;
   key.vmm_socket_path = msg.vmm_socket_path;
   std::memcpy(key.event.data(), msg.event_handle.data(), key.event.size());
@@ -64,8 +65,9 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
     if (!opened.has_value()) {
       RCUTILS_LOG_WARN_NAMED(
           "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-          "Failed to import GPU resource shm=%s block=%u uid=%u",
-          msg.shm_name.c_str(), msg.block_id, msg.uid);
+          "Failed to import GPU resource pid=%u block=%u uid=%llu",
+          msg.publisher_pid, msg.block_id,
+          static_cast<unsigned long long>(msg.uid));
       return nullptr;
     }
     imported = IpcHandleCache::instance().insert_or_discard_duplicate(
@@ -78,8 +80,9 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
   if (!publication) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to create mapped publication for shm=%s block=%u uid=%u",
-        msg.shm_name.c_str(), msg.block_id, msg.uid);
+        "Failed to create mapped publication for pid=%u block=%u uid=%llu",
+        msg.publisher_pid, msg.block_id,
+        static_cast<unsigned long long>(msg.uid));
   }
   return publication;
 }
@@ -110,8 +113,9 @@ std::optional<ReadHandle> BufferMapper::map(
   if (!read) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to bind mapped publication for shm=%s block=%u uid=%u",
-        msg.shm_name.c_str(), msg.block_id, msg.uid);
+        "Failed to bind mapped publication for pid=%u block=%u uid=%llu",
+        msg.publisher_pid, msg.block_id,
+        static_cast<unsigned long long>(msg.uid));
   }
   return read;
 }

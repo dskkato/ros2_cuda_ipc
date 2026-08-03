@@ -12,6 +12,6 @@ graceful shutdownを保証するには、publish停止、queue drain、active bu
 
 ## Crash後のorphan SHM
 
-Publisherがdestructorを通らず終了するとUUID付きSHM objectが残り得る。再起動後は別の
-`publisher_instance_id`とSHM名を使うため、新instanceとの状態混同は発生しない。
-一方、orphanを列挙・検証・期限付きで削除するtoolまたは運用手順は今後追加する必要がある。
+Publisherがdestructorを通らず終了するとblock metadata SHM objectが残り得る。初期化時には
+`/dev/shm`を走査し、owner PIDが存在しない `/ros2_cuda_ipc_<pid>_<block_id>` をcleanupする。
+PID再利用時のstale descriptorは新しいrandomized UID baseとuid検証で拒否する。

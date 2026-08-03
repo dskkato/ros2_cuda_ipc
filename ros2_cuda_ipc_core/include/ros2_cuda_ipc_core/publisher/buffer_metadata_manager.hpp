@@ -8,26 +8,26 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
-#include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
 
 namespace ros2_cuda_ipc_core::publisher {
 
+/// Owns one shared BlockMetadata mapping for every local GPU block.
 class BufferMetadataManager {
  public:
   struct Reservation {
     std::shared_ptr<buffer_metadata::BufferMetadata> mapping;
     uint32_t block_id = 0;
-    uint32_t uid = 0;
-    std::string shm_name;
-    PublisherInstanceId publisher_instance_id{};
+    uint64_t uid = 0;
+    uint32_t publisher_pid = 0;
+    std::string shm_name;  // Publisher-local diagnostic/cleanup handle.
+    std::size_t pool_index = 0;
   };
 
-  /// Owns the publisher-local POSIX mapping containing BlockMetadata[].
-  /// It is not part of the transport wire protocol.
-  BufferMetadataManager(std::string shm_name_prefix, std::size_t block_count);
-
+  explicit BufferMetadataManager(std::string ignored_legacy_prefix,
+                                 std::size_t block_count);
   ~BufferMetadataManager();
 
   bool initialise();
@@ -37,16 +37,26 @@ class BufferMetadataManager {
   bool commit(const Reservation& reservation) noexcept;
   bool cancel(const Reservation& reservation) noexcept;
 
-  std::string shm_name() const;
-  PublisherInstanceId publisher_instance_id() const;
+  uint32_t publisher_pid() const noexcept { return publisher_pid_; }
+  std::shared_ptr<buffer_metadata::BufferMetadata> metadata_for_pool_index(
+      std::size_t pool_index) const;
+  std::optional<uint32_t> block_id_for_pool_index(std::size_t pool_index) const;
+  static std::string shm_name_for_block(uint32_t publisher_pid,
+                                        uint32_t block_id);
 
  private:
-  std::string shm_name_prefix_;
-  std::string shm_name_;
-  PublisherInstanceId publisher_instance_id_{};
+  struct Entry {
+    uint32_t block_id = 0;
+    std::string shm_name;
+    std::shared_ptr<buffer_metadata::BufferMetadata> mapping;
+  };
+
+  std::string ignored_legacy_prefix_;
   std::size_t block_count_;
+  uint32_t publisher_pid_ = 0;
   mutable std::mutex mutex_;
-  std::shared_ptr<buffer_metadata::BufferMetadata> mapping_;
+  std::vector<Entry> entries_;
+  std::size_t next_entry_ = 0;
   bool initialised_ = false;
 };
 

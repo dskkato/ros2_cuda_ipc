@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
 #include "ros2_cuda_ipc_core/detail/interprocess_event.hpp"
 
 namespace ros2_cuda_ipc_core::backend {
@@ -33,7 +34,10 @@ struct GpuBufferBlock {
   GpuBufferBlock(GpuBufferBlock&&) noexcept;
   GpuBufferBlock& operator=(GpuBufferBlock&&) noexcept;
 
-  uint32_t index = 0;
+  /// Process-unique identity used by IPC. It is not the pool vector index.
+  uint32_t block_id = 0;
+  /// The one shared metadata object owned by this GPU block.
+  std::shared_ptr<buffer_metadata::BufferMetadata> shared_metadata;
   void* device_ptr = nullptr;
   std::unique_ptr<detail::InterprocessEvent> ready_event;
   std::string vmm_socket_path;
