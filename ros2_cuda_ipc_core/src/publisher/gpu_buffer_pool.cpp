@@ -21,6 +21,43 @@ namespace {
 
 std::atomic<uint32_t> next_process_block_id{0};
 
+/// Lock the pool mutex without allowing a failed lock operation to escape a
+/// noexcept resource API. std::lock_guard would call std::terminate() if
+/// mutex::lock() reported a system error.
+class PoolMutexLock {
+ public:
+  explicit PoolMutexLock(std::mutex& mutex) noexcept : mutex_(mutex) {
+    try {
+      mutex_.lock();
+      locked_ = true;
+    } catch (...) {
+      locked_ = false;
+    }
+  }
+
+  ~PoolMutexLock() noexcept {
+    if (!locked_) return;
+    try {
+      mutex_.unlock();
+    } catch (...) {
+    }
+  }
+
+  PoolMutexLock(const PoolMutexLock&) = delete;
+  PoolMutexLock& operator=(const PoolMutexLock&) = delete;
+
+  bool locked() const noexcept { return locked_; }
+
+ private:
+  std::mutex& mutex_;
+  bool locked_ = false;
+};
+
+void log_mutex_lock_failure(const char* operation) noexcept {
+  RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.publisher.gpu_buffer_pool",
+                          "Failed to lock pool mutex during %s", operation);
+}
+
 std::optional<uint32_t> allocate_process_block_id() {
   uint32_t current = next_process_block_id.load(std::memory_order_relaxed);
   while (current != std::numeric_limits<uint32_t>::max()) {
@@ -150,7 +187,11 @@ bool GpuBufferPool::matches(uint64_t byte_size,
 
 std::optional<GpuBufferPool::BlockReservation>
 GpuBufferPool::reserve_for_publish() {
-  std::lock_guard<std::mutex> lock(mutex_);
+  PoolMutexLock lock(mutex_);
+  if (!lock.locked()) {
+    log_mutex_lock_failure("reservation");
+    return std::nullopt;
+  }
   if (!initialised_ || blocks_.empty()) return std::nullopt;
   for (std::size_t offset = 0; offset < blocks_.size(); ++offset) {
     const std::size_t index = (next_block_ + offset) % blocks_.size();
@@ -168,14 +209,23 @@ GpuBufferPool::reserve_for_publish() {
 }
 
 void* GpuBufferPool::device_ptr(uint32_t pool_index) const noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
+  PoolMutexLock lock(mutex_);
+  if (!lock.locked()) {
+    log_mutex_lock_failure("device pointer lookup");
+    return nullptr;
+  }
   const auto* block = resources(pool_index);
   return block ? block->device_ptr : nullptr;
 }
 
 detail::CudaResult<void> GpuBufferPool::record_ready(uint32_t pool_index,
                                                      CUstream stream) noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
+  PoolMutexLock lock(mutex_);
+  if (!lock.locked()) {
+    log_mutex_lock_failure("ready event recording");
+    return detail::CudaResult<void>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+  }
   const auto* block = resources(pool_index);
   if (!initialised_ || block == nullptr || !block->ready_event) {
     return detail::CudaResult<void>::failure(
@@ -186,7 +236,11 @@ detail::CudaResult<void> GpuBufferPool::record_ready(uint32_t pool_index,
 
 void* GpuBufferPool::device_ptr(
     const BlockReservation& reservation) const noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
+  PoolMutexLock lock(mutex_);
+  if (!lock.locked()) {
+    log_mutex_lock_failure("reserved device pointer lookup");
+    return nullptr;
+  }
   const auto* block =
       owns(reservation) ? resources(reservation.pool_index) : nullptr;
   return block ? block->device_ptr : nullptr;
@@ -194,7 +248,12 @@ void* GpuBufferPool::device_ptr(
 
 detail::CudaResult<void> GpuBufferPool::record_ready(
     const BlockReservation& reservation, CUstream stream) noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
+  PoolMutexLock lock(mutex_);
+  if (!lock.locked()) {
+    log_mutex_lock_failure("reserved ready event recording");
+    return detail::CudaResult<void>::failure(
+        detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
+  }
   const auto* block =
       owns(reservation) ? resources(reservation.pool_index) : nullptr;
   if (block == nullptr || !block->ready_event) {
@@ -206,26 +265,39 @@ detail::CudaResult<void> GpuBufferPool::record_ready(
 
 std::optional<transport::BufferDescriptor> GpuBufferPool::try_build_descriptor(
     const BlockReservation& reservation) const noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
-  const auto* block =
-      owns(reservation) ? resources(reservation.pool_index) : nullptr;
-  if (block == nullptr || !block->ready_event) return std::nullopt;
-  transport::BufferDescriptor result;
-  result.publisher_pid = reservation.publisher_pid;
-  result.block_id = block->block_id;
-  result.uid = reservation.uid;
-  result.device_id = device_index_;
-  result.byte_size = byte_size_;
-  result.vmm_socket_path = block->vmm_socket_path;
-  result.ready_event_handle = block->ready_event->ipc_handle();
-  return result;
+  PoolMutexLock lock(mutex_);
+  if (!lock.locked()) {
+    log_mutex_lock_failure("descriptor construction");
+    return std::nullopt;
+  }
+  try {
+    const auto* block =
+        owns(reservation) ? resources(reservation.pool_index) : nullptr;
+    if (block == nullptr || !block->ready_event) return std::nullopt;
+    transport::BufferDescriptor result;
+    result.publisher_pid = reservation.publisher_pid;
+    result.block_id = block->block_id;
+    result.uid = reservation.uid;
+    result.device_id = device_index_;
+    result.byte_size = byte_size_;
+    result.vmm_socket_path = block->vmm_socket_path;
+    result.ready_event_handle = block->ready_event->ipc_handle();
+    return result;
+  } catch (...) {
+    RCUTILS_LOG_ERROR_NAMED(
+        "ros2_cuda_ipc_core.publisher.gpu_buffer_pool",
+        "Failed to construct a descriptor for a reserved block");
+    return std::nullopt;
+  }
 }
 
 bool GpuBufferPool::commit(const BlockReservation& reservation) noexcept {
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!owns(reservation)) return false;
+  PoolMutexLock lock(mutex_);
+  if (!lock.locked()) {
+    log_mutex_lock_failure("reservation commit");
+    return false;
   }
+  if (!owns(reservation)) return false;
   return buffer_metadata::BufferRef::commit_publish(reservation.mapping,
                                                     reservation.uid);
 }
@@ -287,7 +359,11 @@ bool GpuBufferPool::allocate_blocks() {
 }
 
 void GpuBufferPool::destroy_blocks() noexcept {
-  std::lock_guard<std::mutex> lock(mutex_);
+  PoolMutexLock lock(mutex_);
+  if (!lock.locked()) {
+    log_mutex_lock_failure("block destruction");
+    return;
+  }
   for (auto& block : blocks_) block.ready_event.reset();
 
   std::optional<detail::CudaContextGuard> guard;
