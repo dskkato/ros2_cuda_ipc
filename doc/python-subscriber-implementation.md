@@ -11,8 +11,8 @@ binding経由で既存のC++ mapperへ渡す。
 ```text
 rclpy message
     -> Python/C++ descriptor boundary
-    -> C++ BufferMapper / typed adapter
-    -> Python ReadHandle / ImageView
+    -> C++ BufferMapper -> ReadHandle -> typed adapter
+    -> Python ReadHandle / ImageReadHandle
     -> DLPack framework object
 ```
 
@@ -48,8 +48,8 @@ Python Publisher、任意のROS messageの自動変換、PointCloud2、CPU fallb
 ## Ownership model
 
 `BufferMapper`が返す`ReadHandle`は、imported resourceとbuffer referenceを
-Python objectが保持する。DLPackのtyped adapterはmap時にはstreamへbindせず、
-最初の`__dlpack__(stream)`でexport固有のread stateへownershipを移す。
+Python objectが保持する。`ImageReadHandle.from_message()`は既存のstream-bound
+`ReadHandle`にmetadataを検証してtyped accessorを追加する。
 
 ```text
 Python ReadHandle
@@ -86,12 +86,13 @@ handle固有のresource参照とbuffer referenceを解放する。
 
 ## DLPack adapter
 
-`ImageView`はPython DLPack producer protocolを実装する。
+`ImageReadHandle`はPython DLPack producer protocolを実装する。
 
 ```python
 import torch
 
-image = mapper.map(message)
+read = buffer_mapper.map(message.core, consumer_stream)
+image = ImageReadHandle.from_message(message, read)
 tensor = torch.from_dlpack(image)
 
 with torch.cuda.stream(consumer_stream):
@@ -99,7 +100,7 @@ with torch.cuda.stream(consumer_stream):
 consumer_stream.synchronize()
 ```
 
-CuPyでは同じ`ImageView`から`cupy.from_dlpack(image)`を呼ぶ。どちらもpayloadを
+CuPyでは同じ`ImageReadHandle`から`cupy.from_dlpack(image)`を呼ぶ。どちらもpayloadを
 copyせず、shape、dtype、device、non-contiguous strideをframework objectへ渡す。
 `torch.from_dlpack(image)`と`cupy.from_dlpack(image)`は
 current framework versionsで利用できるlegacy DLPack capsuleを既定値として受け取り、

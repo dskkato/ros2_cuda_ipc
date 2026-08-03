@@ -7,7 +7,7 @@ who want to try the demo first.
 ## Packages
 
 - `ros2_cuda_ipc_msgs`: message definitions for GPU-backed buffers.
-- `ros2_cuda_ipc_core`: CUDA memory sharing, buffer reference handling, and modality-specific Views.
+- `ros2_cuda_ipc_core`: CUDA memory sharing, buffer reference handling, and typed read handles.
 - `examples/multi_process_image_fanout`: primary multi-process sample.
 - `utils/gpu_image_transport`: utility bridge from `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: CUDA IPC and VMM-FD environment checks.
@@ -16,7 +16,7 @@ who want to try the demo first.
 
 - `ros2_cuda_ipc_core::subscriber::BufferMapper`: maps a `BufferCore` and a consumer stream to an optional `ReadHandle`.
 - `ros2_cuda_ipc_core::subscriber::ReadHandle`: the normal pointer API. It waits for producer readiness, owns the buffer reference, and defers resource/buffer reference release until consumer completion.
-- `ros2_cuda_ipc_core::image::ImageView` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2View`: typed adapters layered on `ReadHandle`; the Python image adapter is DLPack-only and binds its stream at export.
+- `ros2_cuda_ipc_core::image::ImageReadHandle` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2ReadHandle`: typed metadata adapters that own a `ReadHandle`.
 - `ros2_cuda_ipc_core::publisher::GpuBufferPool`: the sole owner of publisher-local `GpuBufferBlock` resources, their metadata mappings, and reservation/reuse state.
 - `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher facade that orchestrates initialization, reset, preparation order, and quarantine.
 - `ros2_cuda_ipc_core::publisher::PublishBlock`: one move-only publish attempt with RAII cancellation.

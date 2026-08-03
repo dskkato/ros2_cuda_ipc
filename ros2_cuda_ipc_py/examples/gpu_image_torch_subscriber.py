@@ -9,7 +9,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from ros2_cuda_ipc_msgs.msg import GpuImage
 
-from ros2_cuda_ipc_py import ImageMapper, MappingError
+from ros2_cuda_ipc_py import BufferMapper, ImageReadHandle, MappingError
 
 try:
     import torch
@@ -21,7 +21,7 @@ except ImportError as exc:
 class GpuImageTorchSubscriber(Node):
     def __init__(self, topic):
         super().__init__("gpu_image_torch_subscriber")
-        self._mapper = ImageMapper()
+        self._buffer_mapper = BufferMapper()
         self._subscription = self.create_subscription(
             GpuImage,
             topic,
@@ -31,7 +31,11 @@ class GpuImageTorchSubscriber(Node):
 
     def _on_image(self, message):
         try:
-            image = self._mapper.map(message)
+            stream = torch.cuda.current_stream(
+                device=int(message.core.device_id)
+            )
+            read = self._buffer_mapper.map(message.core, stream.cuda_stream)
+            image = ImageReadHandle.from_message(message, read)
             tensor = torch.from_dlpack(image)
             consumer_stream = torch.cuda.current_stream(device=image.device_id)
             with torch.cuda.stream(consumer_stream):

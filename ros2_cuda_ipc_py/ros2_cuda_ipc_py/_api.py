@@ -102,8 +102,8 @@ class ReadHandle:
         self.close()
 
 
-class ImageView:
-    """BufferRef-backed image metadata and framework-neutral zero-copy exports."""
+class ImageReadHandle:
+    """A validated image projection that owns one :class:`ReadHandle`."""
 
     def __init__(self, native_view):
         self._native = native_view
@@ -111,6 +111,18 @@ class ImageView:
     @classmethod
     def _from_native(cls, native_view):
         return cls(native_view)
+
+    @classmethod
+    def from_message(cls, message, read):
+        """Attach image metadata to an already stream-bound read lease."""
+
+        try:
+            native_view = _native.ImageReadHandle.from_message(
+                gpu_image_descriptor(message), read._native
+            )
+        except RuntimeError as exc:
+            raise MappingError(str(exc)) from exc
+        return cls._from_native(native_view)
 
     @property
     def valid(self):
@@ -148,7 +160,9 @@ class ImageView:
         """Return the DLPack CUDA device tuple ``(device_type, device_id)``."""
 
         if not self.valid:
-            raise MappingError("cannot export an invalid ImageView through DLPack")
+            raise MappingError(
+                "cannot export an invalid ImageReadHandle through DLPack"
+            )
         return self._native._dlpack_device()
 
     def __dlpack__(
@@ -210,17 +224,3 @@ class BufferMapper:
         except RuntimeError as exc:
             raise MappingError(str(exc)) from exc
         return ReadHandle._from_native(native_view)
-
-
-class ImageMapper:
-    """Reusable mapper for ``GpuImage`` messages or descriptors."""
-
-    def __init__(self):
-        self._native = _native.ImageMapper()
-
-    def map(self, message):
-        try:
-            native_view = self._native.map(gpu_image_descriptor(message))
-        except RuntimeError as exc:
-            raise MappingError(str(exc)) from exc
-        return ImageView._from_native(native_view)

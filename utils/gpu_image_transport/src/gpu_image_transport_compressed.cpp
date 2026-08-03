@@ -47,7 +47,7 @@ class GpuImageTransportCompressedNode : public GpuImageTransportNodeBase {
   }
 
  private:
-  void publish_frame(const ros2_cuda_ipc_core::image::ImageView& view,
+  void publish_frame(const ros2_cuda_ipc_core::image::ImageReadHandle& view,
                      std::uint64_t available_bytes) override {
     const std::uint32_t height = view.rows();
     const std::uint64_t step_bytes = view.strideH();

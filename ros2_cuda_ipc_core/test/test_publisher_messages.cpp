@@ -5,10 +5,10 @@
 
 #include <cstring>
 
-#include "ros2_cuda_ipc_core/image/image_view.hpp"
+#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_core/image/message_utils.hpp"
 #include "ros2_cuda_ipc_core/pointcloud2/message_utils.hpp"
-#include "ros2_cuda_ipc_core/pointcloud2/pointcloud2_view.hpp"
+#include "ros2_cuda_ipc_core/pointcloud2/pointcloud2_read_handle.hpp"
 #include "ros2_cuda_ipc_core/transport/buffer_descriptor.hpp"
 #include "ros2_cuda_ipc_core/transport/message_utils.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
@@ -52,7 +52,7 @@ TEST(PublisherMessagesTest,
      ConstructsGpuImageFromDescriptorAndApplicationMetadata) {
   const auto descriptor = make_descriptor();
   ros2_cuda_ipc_msgs::msg::GpuImage message;
-  ros2_cuda_ipc_core::image::ImageView metadata;
+  ros2_cuda_ipc_core::image::ImageReadHandle metadata;
 
   metadata.header.frame_id = "camera";
   metadata.dtype = ros2_cuda_ipc_core::image::DType::U8;
@@ -73,7 +73,7 @@ TEST(PublisherMessagesTest,
      ConstructsGpuPointCloud2FromDescriptorAndApplicationMetadata) {
   const auto descriptor = make_descriptor();
   ros2_cuda_ipc_msgs::msg::GpuPointCloud2 message;
-  ros2_cuda_ipc_core::pointcloud2::PointCloud2View metadata;
+  ros2_cuda_ipc_core::pointcloud2::PointCloud2ReadHandle metadata;
 
   metadata.header.frame_id = "lidar";
   metadata.height = 1;
@@ -81,7 +81,7 @@ TEST(PublisherMessagesTest,
   metadata.point_step = 12;
   metadata.row_step = 120;
   metadata.is_dense = true;
-  ros2_cuda_ipc_core::pointcloud2::PointCloud2View::Field field;
+  ros2_cuda_ipc_core::pointcloud2::PointCloud2ReadHandle::Field field;
   field.name = "x";
   field.datatype = sensor_msgs::msg::PointField::FLOAT32;
   field.count = 1;

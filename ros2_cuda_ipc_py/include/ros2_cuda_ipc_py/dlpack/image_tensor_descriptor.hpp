@@ -10,13 +10,13 @@
 #include <limits>
 #include <stdexcept>
 
-#include "ros2_cuda_ipc_core/detail/image_view_dlpack.hpp"
-#include "ros2_cuda_ipc_core/image/image_view.hpp"
+#include "ros2_cuda_ipc_core/detail/image_read_handle_dlpack.hpp"
+#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
 
 namespace ros2_cuda_ipc_py::dlpack {
 
 // A value object containing the DLPack representation projected from one
-// mapped ImageView. It deliberately does not retain the source ImageView;
+// mapped ImageReadHandle. It deliberately does not retain the source handle;
 // ownership belongs to DlpackExportContext.
 struct ImageTensorDescriptor {
   void* data = nullptr;
@@ -53,28 +53,32 @@ inline DLDataType tensor_dl_dtype(ros2_cuda_ipc_core::image::DType dtype) {
 }
 
 inline ImageTensorDescriptor project_to_tensor(
-    const ros2_cuda_ipc_core::image::ImageView& image) {
+    const ros2_cuda_ipc_core::image::ImageReadHandle& image) {
   if (!image.valid()) {
-    throw std::invalid_argument("cannot export an invalid ImageView");
+    throw std::invalid_argument("cannot export an invalid ImageReadHandle");
   }
   if (!image.sanity_check()) {
     throw std::invalid_argument(
-        "ImageView shape/strides exceed the mapped allocation");
+        "ImageReadHandle shape/strides exceed the mapped allocation");
   }
 
   ImageTensorDescriptor result;
   result.data =
-      ros2_cuda_ipc_core::image::detail::DLPackImageView::device_ptr(image);
+      ros2_cuda_ipc_core::image::detail::DLPackImageReadHandle::device_ptr(
+          image);
   result.device_id =
-      ros2_cuda_ipc_core::image::detail::DLPackImageView::device_id(image);
+      ros2_cuda_ipc_core::image::detail::DLPackImageReadHandle::device_id(
+          image);
   result.allocation_size =
-      ros2_cuda_ipc_core::image::detail::DLPackImageView::byte_size(image);
+      ros2_cuda_ipc_core::image::detail::DLPackImageReadHandle::byte_size(
+          image);
   result.rank = 3;
   result.dl_dtype = tensor_dl_dtype(image.dtype);
 
   const uint64_t element_size = image.elem_size_bytes();
   if (element_size == 0) {
-    throw std::invalid_argument("ImageView dtype has zero-sized elements");
+    throw std::invalid_argument(
+        "ImageReadHandle dtype has zero-sized elements");
   }
 
   unsigned __int128 last_byte = 0;
@@ -82,22 +86,24 @@ inline ImageTensorDescriptor project_to_tensor(
     const uint64_t dimension = image.shape[index];
     const uint64_t byte_stride = image.strides[index];
     if (dimension == 0) {
-      throw std::invalid_argument("ImageView dimensions must be positive");
+      throw std::invalid_argument(
+          "ImageReadHandle dimensions must be positive");
     }
     if (byte_stride % element_size != 0) {
       throw std::invalid_argument(
-          "ImageView byte strides must be divisible by the dtype size");
+          "ImageReadHandle byte strides must be divisible by the dtype size");
     }
     if (dimension > 1 && byte_stride < element_size) {
       throw std::invalid_argument(
-          "ImageView strides overlap elements for a non-singleton dimension");
+          "ImageReadHandle strides overlap elements for a non-singleton "
+          "dimension");
     }
 
     const uint64_t element_stride = byte_stride / element_size;
     if (element_stride >
         static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
       throw std::invalid_argument(
-          "ImageView element stride exceeds the DLPack int64 range");
+          "ImageReadHandle element stride exceeds the DLPack int64 range");
     }
     result.shape[index] = static_cast<int64_t>(dimension);
     result.element_strides[index] = static_cast<int64_t>(element_stride);
@@ -108,7 +114,7 @@ inline ImageTensorDescriptor project_to_tensor(
   if (last_byte > std::numeric_limits<uint64_t>::max() ||
       last_byte > result.allocation_size) {
     throw std::invalid_argument(
-        "ImageView shape/strides exceed the mapped allocation");
+        "ImageReadHandle shape/strides exceed the mapped allocation");
   }
 
   const auto base = reinterpret_cast<uintptr_t>(result.data);
@@ -117,7 +123,7 @@ inline ImageTensorDescriptor project_to_tensor(
       result.byte_offset > std::numeric_limits<uintptr_t>::max() - base ||
       last_byte >
           std::numeric_limits<uintptr_t>::max() - base - result.byte_offset) {
-    throw std::invalid_argument("ImageView pointer arithmetic overflows");
+    throw std::invalid_argument("ImageReadHandle pointer arithmetic overflows");
   }
 
   return result;

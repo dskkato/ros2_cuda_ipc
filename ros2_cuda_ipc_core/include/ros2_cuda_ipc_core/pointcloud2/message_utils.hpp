@@ -5,7 +5,7 @@
 
 #include <utility>
 
-#include "ros2_cuda_ipc_core/pointcloud2/pointcloud2_view.hpp"
+#include "ros2_cuda_ipc_core/pointcloud2/pointcloud2_read_handle.hpp"
 #include "ros2_cuda_ipc_core/transport/message_utils.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_point_cloud2.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
@@ -16,7 +16,7 @@ namespace ros2_cuda_ipc_core::pointcloud2 {
 // metadata. Buffer ownership and transport handles remain in BufferDescriptor.
 inline void fill_gpu_pointcloud2_message(
     const transport::BufferDescriptor& descriptor,
-    const PointCloud2View& metadata,
+    const PointCloud2ReadHandle& metadata,
     ros2_cuda_ipc_msgs::msg::GpuPointCloud2& message) {
   transport::fill_buffer_core_message(descriptor, message.core);
   message.header = metadata.header;

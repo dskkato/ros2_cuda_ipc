@@ -8,8 +8,7 @@ from ros2_cuda_ipc_msgs.msg import GpuImage
 from ros2_cuda_ipc_py import _native
 from ros2_cuda_ipc_py import (
     BufferMapper,
-    ImageMapper,
-    ImageView,
+    ImageReadHandle,
     MappingError,
 )
 from ros2_cuda_ipc_py._descriptor import gpu_image_descriptor
@@ -19,9 +18,15 @@ def _fixture():
     return _native._make_test_image()
 
 
+def _map_image(descriptor, stream=1):
+    core = descriptor["core"] if isinstance(descriptor, dict) else descriptor.core
+    read = BufferMapper().map(core, stream)
+    return ImageReadHandle.from_message(descriptor, read)
+
+
 def test_extension_imports_and_native_mapper_preserves_metadata():
     native_view, probe, descriptor = _fixture()
-    view = ImageMapper().map(descriptor)
+    view = _map_image(descriptor)
 
     assert native_view.valid
     assert view.valid
@@ -41,7 +46,7 @@ def test_extension_imports_and_native_mapper_preserves_metadata():
 
 def test_views_expose_storage_and_buffer_metadata_without_debug_helpers():
     native_view, probe, descriptor = _fixture()
-    image = ImageMapper().map(descriptor)
+    image = _map_image(descriptor)
     buffer = BufferMapper().map(descriptor["core"], 1)
     core = descriptor["core"]
 
@@ -93,7 +98,7 @@ def test_generated_rclpy_message_crosses_the_descriptor_boundary():
         converted["core"]["vmm_socket_path"]
         == descriptor["core"]["vmm_socket_path"]
     )
-    mapped = ImageMapper().map(message)
+    mapped = _map_image(message)
     assert mapped.shape == (2, 3, 4)
     assert mapped.frame_id == "test_frame"
     mapped.close()
@@ -108,7 +113,7 @@ def test_invalid_metadata_is_a_python_value_error():
     invalid["shape"] = [2, 3]
 
     with pytest.raises(ValueError, match="shape"):
-        ImageMapper().map(invalid)
+        _map_image(invalid)
 
 
 def test_dlpack_rejects_stride_not_representable_in_elements():
@@ -118,7 +123,7 @@ def test_dlpack_rejects_stride_not_representable_in_elements():
     malformed["dtype"] = 1  # uint16
     malformed["shape"] = [1, 1, 1]
     malformed["strides"] = [1, 1, 1]
-    image = ImageMapper().map(malformed)
+    image = _map_image(malformed)
     with pytest.raises(BufferError, match="divisible"):
         image.__dlpack__(stream=1)
     assert probe.refcount() == 1
@@ -136,7 +141,7 @@ def test_view_exceeding_allocation_bounds_is_rejected():
     invalid["shape"] = [2, 3, 4]
     invalid["strides"] = [24, 8, 2]
     with pytest.raises(ValueError, match="exceed"):
-        ImageMapper().map(invalid)
+        _map_image(invalid)
 
 
 def test_stale_uid_is_reported_as_mapping_error():
@@ -145,7 +150,7 @@ def test_stale_uid_is_reported_as_mapping_error():
     stale["core"]["uid"] += 1
 
     with pytest.raises(MappingError, match="C\\+\\+ mapper"):
-        ImageMapper().map(stale)
+        _map_image(stale)
 
 
 def test_dlpack_device_and_stream_protocol_arguments():
@@ -168,7 +173,7 @@ def test_dlpack_device_and_stream_protocol_arguments():
             return "capsule"
 
     native = SpyNative()
-    image = ImageView._from_native(native)
+    image = ImageReadHandle._from_native(native)
     assert image.__dlpack_device__() == (2, 3)
     with pytest.raises(ValueError, match="stream=-1"):
         image.__dlpack__(stream=-1, max_version=(1, 0))
@@ -203,7 +208,7 @@ def test_dlpack_device_copy_and_keyword_only_arguments():
             self.valid = False
 
     native = SpyNative()
-    image = ImageView._from_native(native)
+    image = ImageReadHandle._from_native(native)
 
     assert image.__dlpack__() == "capsule"
 
@@ -219,7 +224,7 @@ def test_dlpack_device_copy_and_keyword_only_arguments():
 
 def test_unconsumed_dlpack_capsule_releases_buffer_ref():
     native_view, probe, _descriptor = _fixture()
-    image = ImageView._from_native(native_view)
+    image = ImageReadHandle._from_native(native_view)
     del native_view
 
     capsule = image.__dlpack__(stream=1)
@@ -231,7 +236,7 @@ def test_unconsumed_dlpack_capsule_releases_buffer_ref():
 
 def test_dlpack_mapping_is_consumed_but_metadata_remains_available():
     native_view, probe, _descriptor = _fixture()
-    image = ImageView._from_native(native_view)
+    image = ImageReadHandle._from_native(native_view)
     del native_view
 
     capsule = image.__dlpack__(stream=1)
@@ -250,7 +255,7 @@ def test_dlpack_mapping_is_consumed_but_metadata_remains_available():
 
 def test_dlpack_versioned_capsule_has_standard_name():
     native_view, probe, _descriptor = _fixture()
-    image = ImageView._from_native(native_view)
+    image = ImageReadHandle._from_native(native_view)
     del native_view
     capsule = image.__dlpack__(stream=1, max_version=(1, 0))
     assert "dltensor_versioned" in repr(capsule)
@@ -268,7 +273,7 @@ def test_torch_from_dlpack_is_zero_copy_and_retains_buffer_ref():
         pytest.skip("CUDA device is not available")
 
     native_view, probe, _descriptor = _fixture()
-    image = ImageView._from_native(native_view)
+    image = ImageReadHandle._from_native(native_view)
     del native_view
     tensor = torch.from_dlpack(image)
     assert tensor.is_cuda
@@ -294,7 +299,7 @@ def test_torch_dlpack_capsule_cannot_be_consumed_twice():
         pytest.skip("CUDA device is not available")
 
     native_view, probe, _descriptor = _fixture()
-    image = ImageView._from_native(native_view)
+    image = ImageReadHandle._from_native(native_view)
     del native_view
     capsule = image.__dlpack__()
     tensor = torch.from_dlpack(capsule)
@@ -317,7 +322,7 @@ def test_cupy_from_dlpack_is_zero_copy_and_retains_buffer_ref_when_available():
         pytest.skip(f"CUDA runtime is unavailable: {exc}")
 
     native_view, probe, _descriptor = _fixture()
-    image = ImageView._from_native(native_view)
+    image = ImageReadHandle._from_native(native_view)
     del native_view
     array = cp.from_dlpack(image)
     assert array.shape == image.shape

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -14,7 +15,8 @@
 #include "multi_process_image_fanout/status_format.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/image/image_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
+#include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "std_msgs/msg/string.hpp"
 
@@ -25,7 +27,7 @@ constexpr uint32_t kChannels = 4;
 constexpr uint64_t kBytesPerPixel = 4;
 
 bool is_supported_rgba8_layout(
-    const ros2_cuda_ipc_core::image::ImageView& view) noexcept {
+    const ros2_cuda_ipc_core::image::ImageReadHandle& view) noexcept {
   const uint64_t row_bytes =
       static_cast<uint64_t>(view.cols()) * kBytesPerPixel;
   return view.strideC() == 1 && view.strideW() == kBytesPerPixel &&
@@ -68,14 +70,17 @@ class InferenceLikeNode : public rclcpp::Node {
           if (!ensure_cuda_state(static_cast<int>(message.core.device_id))) {
             return;
           }
+          auto read = buffer_mapper_.map(message.core, stream_);
           auto view =
-              ros2_cuda_ipc_core::image::map_image_view(message, stream_);
-          if (!view.valid()) {
+              read ? ros2_cuda_ipc_core::image::ImageReadHandle::from_message(
+                         message, std::move(*read))
+                   : std::nullopt;
+          if (!view) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                  "Skipping GPU image mapping failure");
             return;
           }
-          on_image(view);
+          on_image(*view);
         },
         sub_options);
 
@@ -87,14 +92,14 @@ class InferenceLikeNode : public rclcpp::Node {
   ~InferenceLikeNode() override { cleanup_cuda_state(); }
 
  private:
-  void on_image(const ros2_cuda_ipc_core::image::ImageView& view) {
+  void on_image(const ros2_cuda_ipc_core::image::ImageReadHandle& view) {
     NvtxScopedRange callback_range("InferenceLikeNode::on_image");
 
     ++received_;
 
     // Validate the shared GPU view and keep the full image and normalized
     // tensor on the device.
-    if (!view.core.valid()) {
+    if (!view.read.valid()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "Skipping invalid GPU image");
       return;
@@ -156,7 +161,7 @@ class InferenceLikeNode : public rclcpp::Node {
       NvtxScopedRange gray_range(
           "InferenceLikeNode::rgba_to_normalized_gray_kernel");
       err = launch_rgba_to_normalized_gray_kernel(
-          static_cast<const uint8_t*>(view.core.data()), device_gray_,
+          static_cast<const uint8_t*>(view.read.data()), device_gray_,
           static_cast<int>(view.cols()), static_cast<int>(view.rows()),
           view.strideH(), stream_);
     }
@@ -244,9 +249,9 @@ class InferenceLikeNode : public rclcpp::Node {
     }
   }
 
-  // Select the ImageView device and create the one non-blocking stream used for
-  // event waits, preprocessing, and stats kernels. Device-local stat storage is
-  // recreated when the source device changes.
+  // Select the ImageReadHandle device and create the one non-blocking stream
+  // used for event waits, preprocessing, and stats kernels. Device-local stat
+  // storage is recreated when the source device changes.
   bool ensure_cuda_state(int device_id) {
     if (stream_ != nullptr && current_device_id_ == device_id) {
       return true;
@@ -286,7 +291,7 @@ class InferenceLikeNode : public rclcpp::Node {
 
   // Lazily allocate or resize the internal normalized gray tensor when input
   // dimensions change. The tensor remains GPU-only.
-  bool ensure_buffers(const ros2_cuda_ipc_core::image::ImageView& view) {
+  bool ensure_buffers(const ros2_cuda_ipc_core::image::ImageReadHandle& view) {
     const std::size_t required_count = static_cast<std::size_t>(view.rows()) *
                                        static_cast<std::size_t>(view.cols());
     if (required_count == 0) {
@@ -383,6 +388,7 @@ class InferenceLikeNode : public rclcpp::Node {
   float* device_gray_ = nullptr;
   InferenceStats* device_stats_ = nullptr;
   int current_device_id_ = -1;
+  ros2_cuda_ipc_core::subscriber::BufferMapper buffer_mapper_;
   std::size_t gray_element_count_ = 0;
   std::string input_topic_name_;
   std::string status_topic_name_;

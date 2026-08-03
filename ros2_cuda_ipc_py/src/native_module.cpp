@@ -16,8 +16,8 @@
 #include <string>
 #include <utility>
 
-#include "ros2_cuda_ipc_core/detail/image_view_dlpack.hpp"
-#include "ros2_cuda_ipc_core/image/image_view_mapper.hpp"
+#include "ros2_cuda_ipc_core/detail/image_read_handle_dlpack.hpp"
+#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_py/dlpack/image_tensor_descriptor.hpp"
 
@@ -221,7 +221,7 @@ void validate_image_descriptor(
 // releases the managed tensor.
 struct DlpackExportContext {
   dlpack::ImageTensorDescriptor tensor;
-  std::unique_ptr<ros2_cuda_ipc_core::image::ImageView> owner;
+  std::unique_ptr<ros2_cuda_ipc_core::image::ImageReadHandle> owner;
 };
 
 void legacy_dlpack_deleter(DLManagedTensor* managed) noexcept {
@@ -306,7 +306,7 @@ void populate_dlpack_tensor(ManagedTensor& managed,
 
 py::capsule prepare_legacy_dlpack_capsule(
     const dlpack::ImageTensorDescriptor& tensor,
-    std::unique_ptr<ros2_cuda_ipc_core::image::ImageView>& owner,
+    std::unique_ptr<ros2_cuda_ipc_core::image::ImageReadHandle>& owner,
     DlpackExportContext*& prepared_context) {
   auto context = std::make_unique<DlpackExportContext>();
   context->tensor = tensor;
@@ -337,7 +337,7 @@ py::capsule prepare_legacy_dlpack_capsule(
 
 py::capsule prepare_versioned_dlpack_capsule(
     const dlpack::ImageTensorDescriptor& tensor,
-    std::unique_ptr<ros2_cuda_ipc_core::image::ImageView>& owner,
+    std::unique_ptr<ros2_cuda_ipc_core::image::ImageReadHandle>& owner,
     DlpackExportContext*& prepared_context) {
   auto context = std::make_unique<DlpackExportContext>();
   context->tensor = tensor;
@@ -384,21 +384,25 @@ class PyReadHandle {
 
   void close() noexcept { view_ = {}; }
 
+  ros2_cuda_ipc_core::subscriber::ReadHandle release() noexcept {
+    return std::move(view_);
+  }
+
  private:
   ros2_cuda_ipc_core::subscriber::ReadHandle view_;
 };
 
-class PyImageView {
+class PyImageReadHandle {
  public:
-  explicit PyImageView(ros2_cuda_ipc_core::image::ImageView view)
-      : view_(std::make_unique<ros2_cuda_ipc_core::image::ImageView>(
+  explicit PyImageReadHandle(ros2_cuda_ipc_core::image::ImageReadHandle view)
+      : view_(std::make_unique<ros2_cuda_ipc_core::image::ImageReadHandle>(
             std::move(view))),
         valid_(view_->valid()),
         byte_size_(
-            ros2_cuda_ipc_core::image::detail::DLPackImageView::byte_size(
+            ros2_cuda_ipc_core::image::detail::DLPackImageReadHandle::byte_size(
                 *view_)),
         device_id_(
-            ros2_cuda_ipc_core::image::detail::DLPackImageView::device_id(
+            ros2_cuda_ipc_core::image::detail::DLPackImageReadHandle::device_id(
                 *view_)),
         shape_(view_->shape),
         strides_(view_->strides),
@@ -406,12 +410,26 @@ class PyImageView {
         encoding_(view_->encoding),
         frame_id_(view_->header.frame_id) {}
 
+  static PyImageReadHandle from_message(const py::dict& descriptor,
+                                        PyReadHandle& read) {
+    const auto message = gpu_image_from_descriptor(descriptor);
+    validate_image_descriptor(message);
+    auto typed = ros2_cuda_ipc_core::image::ImageReadHandle::from_message(
+        message, read.release());
+    if (!typed) {
+      throw MappingError(
+          "GpuImage metadata was rejected after BufferMapper mapping");
+    }
+    return PyImageReadHandle(std::move(*typed));
+  }
+
   bool valid() const noexcept { return valid_; }
   uint64_t byte_size() const noexcept { return byte_size_; }
   int device_id() const noexcept { return device_id_; }
   py::tuple dlpack_device() const {
     if (!valid_) {
-      throw MappingError("cannot export an invalid ImageView through DLPack");
+      throw MappingError(
+          "cannot export an invalid ImageReadHandle through DLPack");
     }
     return py::make_tuple(static_cast<int32_t>(kDLCUDA), device_id_);
   }
@@ -450,10 +468,11 @@ class PyImageView {
   py::capsule dlpack(std::uintptr_t stream_ptr, bool synchronize,
                      bool versioned) {
     if (!valid_) {
-      throw MappingError("cannot export an invalid ImageView through DLPack");
+      throw MappingError(
+          "cannot export an invalid ImageReadHandle through DLPack");
     }
     if (consumed_) {
-      throw MappingError("ImageView has already been consumed by DLPack");
+      throw MappingError("ImageReadHandle has already been consumed by DLPack");
     }
     if (!synchronize || stream_ptr == 0) {
       throw py::value_error(
@@ -488,30 +507,6 @@ class PyImageView {
       throw;
     }
 
-    // The capsule and its managed state are already allocated.  Binding is
-    // the last fallible step before publication; on failure the capsule
-    // destructor drops an empty context after its publication owner is moved
-    // back to this mapped object.
-    try {
-      bool bound = false;
-      if (prepared_context != nullptr && prepared_context->owner) {
-        py::gil_scoped_release release;
-        bound = ros2_cuda_ipc_core::image::detail::DLPackImageView::bind(
-            *prepared_context->owner, reinterpret_cast<CUstream>(stream_ptr));
-      }
-      if (!bound) {
-        if (prepared_context != nullptr) {
-          view_ = std::move(prepared_context->owner);
-        }
-        throw std::runtime_error("CUDA ready-event wait failed");
-      }
-    } catch (...) {
-      if (prepared_context != nullptr && prepared_context->owner) {
-        view_ = std::move(prepared_context->owner);
-      }
-      throw;
-    }
-
     consumed_ = true;
     return capsule;
   }
@@ -519,14 +514,15 @@ class PyImageView {
   void close() {
     if (consumed_) {
       throw MappingError(
-          "cannot close an ImageView after DLPack ownership was transferred");
+          "cannot close an ImageReadHandle after DLPack ownership was "
+          "transferred");
     }
     view_.reset();
     valid_ = false;
   }
 
  private:
-  std::unique_ptr<ros2_cuda_ipc_core::image::ImageView> view_;
+  std::unique_ptr<ros2_cuda_ipc_core::image::ImageReadHandle> view_;
   bool valid_ = false;
   bool consumed_ = false;
   uint64_t byte_size_ = 0;
@@ -560,36 +556,6 @@ class PyBufferMapper {
 
  private:
   ros2_cuda_ipc_core::subscriber::BufferMapper mapper_;
-};
-
-class PyImageMapper {
- public:
-  PyImageView map(const py::dict& descriptor) const {
-    const auto message = gpu_image_from_descriptor(descriptor);
-    validate_image_descriptor(message);
-
-    ros2_cuda_ipc_core::image::ImageView view;
-    {
-      py::gil_scoped_release release;
-      view = mapper_.map_for_dlpack(message);
-    }
-    if (!view.valid()) {
-      throw MappingError(
-          "GpuImage was rejected by the C++ mapper (buffer reference, "
-          "uid, "
-          "VMM-FD import failure)");
-    }
-    // Keep the C++ implementation's complete bounds check as the final
-    // authority after the native core view has been attached.
-    if (!view.sanity_check()) {
-      throw py::value_error(
-          "GpuImage shape/strides exceed BufferCore.byte_size");
-    }
-    return PyImageView(std::move(view));
-  }
-
- private:
-  ros2_cuda_ipc_core::image::ImageViewMapper mapper_;
 };
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
@@ -679,10 +645,15 @@ py::tuple make_test_image() {
   (void)ros2_cuda_ipc_core::subscriber::IpcHandleCache::instance()
       .insert_or_discard_duplicate(key, std::move(imported));
 
-  ros2_cuda_ipc_core::image::ImageViewMapper mapper;
-  auto view = mapper.map_for_dlpack(message);
-  if (!view.valid() || !view.sanity_check()) {
-    throw std::runtime_error("test ImageViewMapper fixture failed");
+  ros2_cuda_ipc_core::subscriber::BufferMapper mapper;
+  auto read = mapper.map(message.core, CU_STREAM_LEGACY);
+  if (!read) {
+    throw std::runtime_error("test BufferMapper fixture failed");
+  }
+  auto view = ros2_cuda_ipc_core::image::ImageReadHandle::from_message(
+      message, std::move(*read));
+  if (!view) {
+    throw std::runtime_error("test ImageReadHandle fixture failed");
   }
   if (!ros2_cuda_ipc_core::buffer_metadata::BufferRef::commit_publish(
           mapping, reservation->uid)) {
@@ -715,7 +686,7 @@ py::tuple make_test_image() {
   descriptor["encoding"] = message.encoding;
 
   auto probe = std::make_shared<TestBufferRefProbe>(mapping, shm_name);
-  return py::make_tuple(PyImageView(std::move(view)), probe, descriptor);
+  return py::make_tuple(PyImageReadHandle(std::move(*view)), probe, descriptor);
 }
 
 #endif  // ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
@@ -739,28 +710,26 @@ PYBIND11_MODULE(_native, module) {
       .def_property_readonly("device_id", &PyReadHandle::device_id)
       .def("close", &PyReadHandle::close);
 
-  py::class_<PyImageView>(module, "ImageView")
-      .def_property_readonly("valid", &PyImageView::valid)
-      .def_property_readonly("byte_size", &PyImageView::byte_size)
-      .def_property_readonly("device_id", &PyImageView::device_id)
-      .def_property_readonly("shape", &PyImageView::shape)
-      .def_property_readonly("strides", &PyImageView::strides)
-      .def_property_readonly("dtype", &PyImageView::dtype)
-      .def_property_readonly("encoding", &PyImageView::encoding)
-      .def_property_readonly("frame_id", &PyImageView::frame_id)
-      .def("_dlpack_device", &PyImageView::dlpack_device)
-      .def("_dlpack", &PyImageView::dlpack, py::arg("stream_ptr"),
+  py::class_<PyImageReadHandle>(module, "ImageReadHandle")
+      .def_property_readonly("valid", &PyImageReadHandle::valid)
+      .def_property_readonly("byte_size", &PyImageReadHandle::byte_size)
+      .def_property_readonly("device_id", &PyImageReadHandle::device_id)
+      .def_property_readonly("shape", &PyImageReadHandle::shape)
+      .def_property_readonly("strides", &PyImageReadHandle::strides)
+      .def_property_readonly("dtype", &PyImageReadHandle::dtype)
+      .def_property_readonly("encoding", &PyImageReadHandle::encoding)
+      .def_property_readonly("frame_id", &PyImageReadHandle::frame_id)
+      .def_static("from_message", &PyImageReadHandle::from_message,
+                  py::arg("message"), py::arg("read"))
+      .def("_dlpack_device", &PyImageReadHandle::dlpack_device)
+      .def("_dlpack", &PyImageReadHandle::dlpack, py::arg("stream_ptr"),
            py::arg("synchronize"), py::arg("versioned"))
-      .def("close", &PyImageView::close);
+      .def("close", &PyImageReadHandle::close);
 
   py::class_<PyBufferMapper>(module, "BufferMapper")
       .def(py::init<>())
       .def("map", &PyBufferMapper::map, py::arg("descriptor"),
            py::arg("stream_ptr"));
-
-  py::class_<PyImageMapper>(module, "ImageMapper")
-      .def(py::init<>())
-      .def("map", &PyImageMapper::map, py::arg("descriptor"));
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
   py::class_<TestBufferRefProbe, std::shared_ptr<TestBufferRefProbe>>(

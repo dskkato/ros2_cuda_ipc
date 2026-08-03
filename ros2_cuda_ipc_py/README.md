@@ -57,12 +57,13 @@ covered by this procedure.
 
 ```python
 import cupy as cp
-from ros2_cuda_ipc_py import ImageMapper
+from ros2_cuda_ipc_py import BufferMapper, ImageReadHandle
 
-mapper = ImageMapper()  # keep one mapper for the subscriber's lifetime
+buffer_mapper = BufferMapper()  # keep one mapper for the subscriber's lifetime
 
 def callback(msg):
-    image = mapper.map(msg)
+    read = buffer_mapper.map(msg.core, cp.cuda.get_current_stream().ptr)
+    image = ImageReadHandle.from_message(msg, read)
     array = cp.from_dlpack(image)
     # array is a zero-copy view of the imported allocation.
     consume(array)
@@ -73,7 +74,7 @@ def callback(msg):
 preserves the message's `(rows, cols, channels)` shape, byte strides, and dtype,
 and the returned array keeps the native image buffer reference alive until it is released.
 
-`ImageView` is a typed DLPack projection. It exposes projection metadata such
+`ImageReadHandle` is a typed DLPack projection. It exposes projection metadata such
 as `byte_size`, `device_id`, `shape`, `strides`, `dtype`, `encoding`, and
 `frame_id`, but it never exposes an unbound raw device pointer. The regular
 raw-pointer path is `BufferMapper.map(message, stream)`, which returns a
@@ -83,12 +84,16 @@ Framework-neutral DLPack consumers use the standard producer protocol:
 
 ```python
 import torch
-from ros2_cuda_ipc_py import ImageMapper
+from ros2_cuda_ipc_py import BufferMapper, ImageReadHandle
 
-mapper = ImageMapper()
+buffer_mapper = BufferMapper()
 
 def callback(message):
-    image = mapper.map(message)
+    consumer_stream = torch.cuda.current_stream(
+        device=int(message.core.device_id)
+    )
+    read = buffer_mapper.map(message.core, consumer_stream.cuda_stream)
+    image = ImageReadHandle.from_message(message, read)
     tensor = torch.from_dlpack(image)
 
     consumer_stream = torch.cuda.current_stream(device=image.device_id)

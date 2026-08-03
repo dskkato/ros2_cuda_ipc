@@ -9,7 +9,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from ros2_cuda_ipc_msgs.msg import GpuImage
 
-from ros2_cuda_ipc_py import ImageMapper, MappingError
+from ros2_cuda_ipc_py import BufferMapper, ImageReadHandle, MappingError
 
 try:
     import cupy as cp
@@ -20,7 +20,7 @@ except ImportError as exc:
 class GpuImageSubscriber(Node):
     def __init__(self, topic):
         super().__init__("gpu_image_cupy_subscriber")
-        self._mapper = ImageMapper()
+        self._buffer_mapper = BufferMapper()
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
         self._subscription = self.create_subscription(
             GpuImage, topic, self._on_image, qos
@@ -28,7 +28,9 @@ class GpuImageSubscriber(Node):
 
     def _on_image(self, message):
         try:
-            image = self._mapper.map(message)
+            stream = cp.cuda.get_current_stream().ptr
+            read = self._buffer_mapper.map(message.core, stream)
+            image = ImageReadHandle.from_message(message, read)
             array = cp.from_dlpack(image)
 
             # CuPy passes its current stream to the DLPack producer. The
