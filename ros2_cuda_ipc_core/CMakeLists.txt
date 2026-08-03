@@ -39,7 +39,6 @@ add_library(${PROJECT_NAME}
   src/subscriber/read_handle.cpp
   src/subscriber/buffer_metadata_cache.cpp
   src/image/image_read_handle.cpp
-  src/image/image_read_handle_dlpack.cpp
   src/pointcloud2/pointcloud2_read_handle.cpp
   src/subscriber/ipc_handle_cache.cpp
   src/buffer_metadata/buffer_metadata.cpp

@@ -16,7 +16,6 @@
 #include <string>
 #include <utility>
 
-#include "ros2_cuda_ipc_core/detail/image_read_handle_dlpack.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
 #include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
@@ -305,71 +304,6 @@ void populate_dlpack_tensor(ManagedTensor& managed,
   tensor.byte_offset = context.tensor.byte_offset;
 }
 
-py::capsule prepare_legacy_dlpack_capsule(
-    const dlpack::ImageTensorDescriptor& tensor,
-    std::unique_ptr<ros2_cuda_ipc_core::subscriber::ReadHandle>& owner,
-    DlpackExportContext*& prepared_context) {
-  auto context = std::make_unique<DlpackExportContext>();
-  context->tensor = tensor;
-  context->owner = std::move(owner);
-  try {
-    auto managed = std::make_unique<DLManagedTensor>();
-    managed->manager_ctx = context.get();
-    managed->deleter = &legacy_dlpack_deleter;
-    populate_dlpack_tensor(*managed, *context);
-    auto* managed_ptr = managed.release();
-    try {
-      py::capsule capsule(managed_ptr, kDLPackName, &dlpack_capsule_destructor);
-      prepared_context = context.release();
-      return capsule;
-    } catch (...) {
-      owner = std::move(context->owner);
-      managed_ptr->manager_ctx = nullptr;
-      delete managed_ptr;
-      throw;
-    }
-  } catch (...) {
-    if (!owner) {
-      owner = std::move(context->owner);
-    }
-    throw;
-  }
-}
-
-py::capsule prepare_versioned_dlpack_capsule(
-    const dlpack::ImageTensorDescriptor& tensor,
-    std::unique_ptr<ros2_cuda_ipc_core::subscriber::ReadHandle>& owner,
-    DlpackExportContext*& prepared_context) {
-  auto context = std::make_unique<DlpackExportContext>();
-  context->tensor = tensor;
-  context->owner = std::move(owner);
-  try {
-    auto managed = std::make_unique<DLManagedTensorVersioned>();
-    managed->version = {1, 0};
-    managed->manager_ctx = context.get();
-    managed->deleter = &versioned_dlpack_deleter;
-    managed->flags = 0;
-    populate_dlpack_tensor(*managed, *context);
-    auto* managed_ptr = managed.release();
-    try {
-      py::capsule capsule(managed_ptr, kVersionedDLPackName,
-                          &dlpack_capsule_destructor);
-      prepared_context = context.release();
-      return capsule;
-    } catch (...) {
-      owner = std::move(context->owner);
-      managed_ptr->manager_ctx = nullptr;
-      delete managed_ptr;
-      throw;
-    }
-  } catch (...) {
-    if (!owner) {
-      owner = std::move(context->owner);
-    }
-    throw;
-  }
-}
-
 class PyReadHandle {
  public:
   explicit PyReadHandle(ros2_cuda_ipc_core::subscriber::ReadHandle view)
@@ -399,12 +333,8 @@ class PyImageReadHandle {
       : view_(std::make_unique<ros2_cuda_ipc_core::image::ImageReadHandle>(
             std::move(view))),
         valid_(view_->valid()),
-        byte_size_(
-            ros2_cuda_ipc_core::image::detail::DLPackImageReadHandle::byte_size(
-                *view_)),
-        device_id_(
-            ros2_cuda_ipc_core::image::detail::DLPackImageReadHandle::device_id(
-                *view_)),
+        byte_size_(view_->read.byte_size()),
+        device_id_(view_->read.device_id()),
         shape_(view_->shape),
         strides_(view_->strides),
         dtype_(view_->dtype),
@@ -427,14 +357,6 @@ class PyImageReadHandle {
   bool valid() const noexcept { return valid_; }
   uint64_t byte_size() const noexcept { return byte_size_; }
   int device_id() const noexcept { return device_id_; }
-  py::tuple dlpack_device() const {
-    if (!valid_) {
-      throw MappingError(
-          "cannot export an invalid ImageReadHandle through DLPack");
-    }
-    return py::make_tuple(static_cast<int32_t>(kDLCUDA), device_id_);
-  }
-
   static std::string dtype_name(ros2_cuda_ipc_core::image::DType dtype) {
     switch (dtype) {
       case ros2_cuda_ipc_core::image::DType::U8:
@@ -467,62 +389,7 @@ class PyImageReadHandle {
   const std::string& encoding() const noexcept { return encoding_; }
   const std::string& frame_id() const noexcept { return frame_id_; }
 
-  py::capsule dlpack(std::uintptr_t stream_ptr, bool synchronize,
-                     bool versioned) {
-    if (!valid_) {
-      throw MappingError(
-          "cannot export an invalid ImageReadHandle through DLPack");
-    }
-    if (consumed_) {
-      throw MappingError("ImageReadHandle has already been consumed by DLPack");
-    }
-    if (!synchronize || stream_ptr == 0) {
-      throw py::value_error(
-          "DLPack export requires a consumer CUDA stream; stream=-1 is not "
-          "supported");
-    }
-
-    // Validate the framework-independent layout before touching the consumer
-    // stream. Invalid metadata must not enqueue a synchronization side effect.
-    dlpack::ImageTensorDescriptor tensor;
-    try {
-      tensor = dlpack::project_to_tensor(*view_);
-    } catch (const std::invalid_argument& error) {
-      // The DLPack Python protocol uses BufferError for layouts that cannot
-      // be represented safely as a dense strided tensor.
-      throw py::buffer_error(error.what());
-    }
-
-    auto pending = std::move(view_);
-    auto pending_read =
-        std::make_unique<ros2_cuda_ipc_core::subscriber::ReadHandle>(
-            std::move(pending->read));
-    DlpackExportContext* prepared_context = nullptr;
-    py::capsule capsule;
-    try {
-      if (versioned) {
-        capsule = prepare_versioned_dlpack_capsule(tensor, pending_read,
-                                                   prepared_context);
-      } else {
-        capsule = prepare_legacy_dlpack_capsule(tensor, pending_read,
-                                                prepared_context);
-      }
-    } catch (...) {
-      pending->read = std::move(*pending_read);
-      view_ = std::move(pending);
-      throw;
-    }
-
-    consumed_ = true;
-    return capsule;
-  }
-
   void close() {
-    if (consumed_) {
-      throw MappingError(
-          "cannot close an ImageReadHandle after DLPack ownership was "
-          "transferred");
-    }
     view_.reset();
     valid_ = false;
   }
@@ -530,7 +397,6 @@ class PyImageReadHandle {
  private:
   std::unique_ptr<ros2_cuda_ipc_core::image::ImageReadHandle> view_;
   bool valid_ = false;
-  bool consumed_ = false;
   uint64_t byte_size_ = 0;
   int device_id_ = -1;
   std::array<uint32_t, 3> shape_{};
@@ -622,6 +488,11 @@ class PyDLPackImage {
         std::make_unique<ros2_cuda_ipc_core::subscriber::ReadHandle>(
             std::move(*read));
 
+    // make_bound committed the publication. If PyCapsule creation fails, the
+    // producer cannot be retried and must remain in the safe Closed state.
+    publication_.reset();
+    state_ = State::Closed;
+
     // No fallible allocation follows the ownership commit. PyCapsule_New is
     // the only remaining fallible operation; its failure destroys read safely.
     if (versioned) {
@@ -639,7 +510,6 @@ class PyDLPackImage {
       }
       (void)capsule_context.release();
       state_ = State::Consumed;
-      publication_.reset();
       return result;
     }
     legacy->manager_ctx = capsule_context.get();
@@ -655,7 +525,6 @@ class PyDLPackImage {
     }
     (void)capsule_context.release();
     state_ = State::Consumed;
-    publication_.reset();
     return result;
   }
 
@@ -893,9 +762,6 @@ PYBIND11_MODULE(_native, module) {
       .def_property_readonly("frame_id", &PyImageReadHandle::frame_id)
       .def_static("from_message", &PyImageReadHandle::from_message,
                   py::arg("message"), py::arg("read"))
-      .def("_dlpack_device", &PyImageReadHandle::dlpack_device)
-      .def("_dlpack", &PyImageReadHandle::dlpack, py::arg("stream_ptr"),
-           py::arg("synchronize"), py::arg("versioned"))
       .def("close", &PyImageReadHandle::close);
 
   py::class_<PyBufferMapper>(module, "BufferMapper")
