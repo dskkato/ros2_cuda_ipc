@@ -73,7 +73,7 @@ class InferenceLikeNode : public rclcpp::Node {
           auto view = reader_.read(message, stream_);
           if (!view) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                                 "Skipping GPU image mapping failure");
+                                 "Skipping GPU image read failure");
             return;
           }
           on_image(*view);

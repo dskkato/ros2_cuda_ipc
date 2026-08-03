@@ -32,7 +32,7 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
         auto view = reader_.read(message, stream_);
         if (!view) {
           RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                               "Failed to map received GPU image");
+                               "Failed to read received GPU image");
           return;
         }
         on_image(*view);
