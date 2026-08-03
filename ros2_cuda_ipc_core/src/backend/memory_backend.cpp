@@ -21,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-#include "ros2_cuda_ipc_core/backend/memory_payload.hpp"
+#include "ros2_cuda_ipc_core/backend/socket_path.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_util.hpp"
 #include "ros2_cuda_ipc_core/detail/posix_error.hpp"
 
@@ -392,15 +392,8 @@ bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
       return false;
     }
 
-    // Store UUID bytes into the ROS message payload so subscribers know which
-    // socket to contact.
-    if (!encode_uuid_payload(state->uuid, slot.mem_handle)) {
-      RCUTILS_LOG_ERROR_NAMED("ros2_cuda_ipc_core.backend.vmm_fd",
-                              "Failed to encode UUID payload for slot %u",
-                              slot.index);
-      destroy_vmm_fd_memory(slots);
-      return false;
-    }
+    // Store the socket path so subscribers know which socket to contact.
+    slot.vmm_socket_path = socket_path;
     slot.device_ptr = reinterpret_cast<void*>(state->address);
     slot.vmm_fd_state = std::move(state);
   }
@@ -411,7 +404,7 @@ void destroy_vmm_fd_memory(std::vector<SlotResources>& slots) noexcept {
   for (auto& slot : slots) {
     slot.device_ptr = nullptr;
     slot.vmm_fd_state.reset();
-    slot.mem_handle.fill(0);
+    slot.vmm_socket_path.clear();
   }
 }
 

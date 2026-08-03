@@ -17,7 +17,7 @@ std::size_t IpcHandleKeyHash::operator()(
   for (uint8_t byte : key.publisher_instance_id) {
     hash = hash * PRIME + byte;
   }
-  for (uint8_t byte : key.mem) {
+  for (const unsigned char byte : key.vmm_socket_path) {
     hash = hash * PRIME + byte;
   }
   for (uint8_t byte : key.event) {

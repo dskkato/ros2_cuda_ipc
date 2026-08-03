@@ -17,14 +17,14 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseInstanceDevicePayloadAndEvent) {
   subscriber::IpcHandleKey lhs{};
   lhs.publisher_instance_id = test::publisher_instance_id("lhs");
   lhs.device_id = 2;
-  lhs.mem[0] = 3;
+  lhs.vmm_socket_path = "path-3";
   lhs.event[0] = 5;
 
   subscriber::IpcHandleKey same = lhs;
   subscriber::IpcHandleKey different_device = lhs;
   different_device.device_id = 3;
   subscriber::IpcHandleKey different_mem = lhs;
-  different_mem.mem[1] = 7;
+  different_mem.vmm_socket_path = "path-7";
   subscriber::IpcHandleKey different_event = lhs;
   different_event.event[1] = 9;
   subscriber::IpcHandleKey different_instance = lhs;
@@ -45,7 +45,7 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseInstanceDevicePayloadAndEvent) {
 TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {
   subscriber::IpcHandleCache cache([](const backend::ImportedResources&) {});
   subscriber::IpcHandleKey key{};
-  key.mem[0] = 11;
+  key.vmm_socket_path = "path-11";
   key.event[0] = 13;
 
   backend::ImportedResources first;
@@ -81,7 +81,7 @@ TEST(IpcHandleCacheTest, DuplicateInsertInvokesReleaseHook) {
       });
   cache_ptr = &cache;
   subscriber::IpcHandleKey key{};
-  key.mem[0] = 17;
+  key.vmm_socket_path = "path-17";
   key.event[0] = 19;
 
   backend::ImportedResources first;
@@ -177,7 +177,7 @@ TEST(IpcHandleCacheTest, CacheHitReusesTheSameEntry) {
         released.fetch_add(1);
       });
   subscriber::IpcHandleKey key{};
-  key.mem[0] = 41;
+  key.vmm_socket_path = "path-41";
   key.event[0] = 43;
 
   int import_count = 0;
@@ -241,7 +241,7 @@ TEST(IpcHandleCacheTest, DuplicateInsertionsAreThreadSafeAndReleaseLosers) {
         released.fetch_add(1);
       });
   subscriber::IpcHandleKey key{};
-  key.mem[0] = 51;
+  key.vmm_socket_path = "path-51";
   key.event[0] = 53;
 
   std::vector<subscriber::IpcHandleCache::Entry> entries(kThreadCount);

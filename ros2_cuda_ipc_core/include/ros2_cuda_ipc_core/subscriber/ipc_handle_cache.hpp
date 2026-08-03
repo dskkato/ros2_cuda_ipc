@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
@@ -20,13 +21,13 @@ namespace ros2_cuda_ipc_core::subscriber {
 struct IpcHandleKey {
   PublisherInstanceId publisher_instance_id{};
   uint32_t device_id = 0;
-  transport::MemoryHandlePayload mem{};
+  std::string vmm_socket_path;
   transport::EventHandlePayload event{};
 
   bool operator==(const IpcHandleKey& other) const noexcept {
     return publisher_instance_id == other.publisher_instance_id &&
-           device_id == other.device_id && mem == other.mem &&
-           event == other.event;
+           device_id == other.device_id &&
+           vmm_socket_path == other.vmm_socket_path && event == other.event;
   }
 };
 

@@ -7,10 +7,10 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "ros2_cuda_ipc_core/detail/interprocess_event.hpp"
-#include "ros2_cuda_ipc_core/transport/memory_types.hpp"
 
 namespace ros2_cuda_ipc_core::backend {
 
@@ -36,7 +36,7 @@ struct SlotResources {
   uint32_t index = 0;
   void* device_ptr = nullptr;
   std::unique_ptr<detail::InterprocessEvent> ready_event;
-  transport::MemoryHandlePayload mem_handle{};
+  std::string vmm_socket_path;
   std::unique_ptr<VmmFdSlotState> vmm_fd_state;
 };
 

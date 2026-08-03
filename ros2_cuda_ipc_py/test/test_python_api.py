@@ -80,7 +80,7 @@ def test_generated_rclpy_message_crosses_the_descriptor_boundary():
     message.shape = descriptor["shape"]
     message.strides = descriptor["strides"]
     message.encoding = descriptor["encoding"]
-    message.core.mem_handle = descriptor["core"]["mem_handle"]
+    message.core.vmm_socket_path = descriptor["core"]["vmm_socket_path"]
     message.core.event_handle = descriptor["core"]["event_handle"]
     message.core.shm_name = descriptor["core"]["shm_name"]
     message.core.publisher_instance_id = descriptor["core"][
@@ -92,7 +92,10 @@ def test_generated_rclpy_message_crosses_the_descriptor_boundary():
     message.core.byte_size = descriptor["core"]["byte_size"]
 
     converted = gpu_image_descriptor(message)
-    assert len(converted["core"]["mem_handle"]) == 64
+    assert (
+        converted["core"]["vmm_socket_path"]
+        == descriptor["core"]["vmm_socket_path"]
+    )
     mapped = ImageMapper().map(message)
     assert mapped.shape == (2, 3, 4)
     assert mapped.frame_id == "test_frame"

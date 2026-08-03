@@ -192,7 +192,7 @@ GpuBufferManager::try_build_descriptor(
   result.generation = reservation.generation;
   result.device_id = config_.device_index;
   result.byte_size = config_.byte_size;
-  result.memory_handle = resources->mem_handle;
+  result.vmm_socket_path = resources->vmm_socket_path;
   result.ready_event_handle = resources->ready_event->ipc_handle();
   return result;
 }

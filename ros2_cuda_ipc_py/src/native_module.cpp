@@ -135,8 +135,8 @@ std::array<T, N> fixed_sequence(py::handle value, const std::string& path) {
 ros2_cuda_ipc_msgs::msg::BufferCore buffer_core_from_descriptor(
     const py::dict& descriptor) {
   ros2_cuda_ipc_msgs::msg::BufferCore message;
-  message.mem_handle = fixed_sequence<uint8_t, 64>(
-      required(descriptor, "mem_handle"), "mem_handle");
+  message.vmm_socket_path =
+      string_value(required(descriptor, "vmm_socket_path"), "vmm_socket_path");
   message.event_handle = fixed_sequence<uint8_t, 64>(
       required(descriptor, "event_handle"), "event_handle");
   message.shm_name = string_value(required(descriptor, "shm_name"), "shm_name");
@@ -678,10 +678,10 @@ py::tuple make_test_image() {
   message.shape = {2, 3, 4};
   message.strides = {12, 4, 1};
   message.encoding = "rgba8";
-  message.core.mem_handle.fill(0);
   message.core.event_handle.fill(0);
-  message.core.mem_handle[0] = 17;
   message.core.event_handle[0] = 18;
+  message.core.vmm_socket_path =
+      "/tmp/ros2_cuda_ipc_test_socket_12345678901234567890.sock";
   message.core.shm_name = shm_name;
   message.core.publisher_instance_id = instance_id;
   message.core.device_id = 0;
@@ -692,7 +692,7 @@ py::tuple make_test_image() {
   ros2_cuda_ipc_core::subscriber::IpcHandleKey key{};
   key.publisher_instance_id = instance_id;
   key.device_id = message.core.device_id;
-  key.mem = message.core.mem_handle;
+  key.vmm_socket_path = message.core.vmm_socket_path;
   key.event = message.core.event_handle;
   ros2_cuda_ipc_core::backend::ImportedResources imported;
   imported.dev_ptr = reinterpret_cast<void*>(static_cast<uintptr_t>(0x100000));
@@ -715,7 +715,7 @@ py::tuple make_test_image() {
   }
 
   py::dict core;
-  core["mem_handle"] = bytes_to_list(message.core.mem_handle);
+  core["vmm_socket_path"] = message.core.vmm_socket_path;
   core["event_handle"] = bytes_to_list(message.core.event_handle);
   core["shm_name"] = message.core.shm_name;
   core["publisher_instance_id"] =

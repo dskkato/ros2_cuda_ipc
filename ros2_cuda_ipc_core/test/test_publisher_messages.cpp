@@ -25,8 +25,8 @@ ros2_cuda_ipc_core::transport::BufferDescriptor make_descriptor() {
   descriptor.generation = 11;
   descriptor.device_id = 2;
   descriptor.byte_size = 120;
-  std::memset(descriptor.memory_handle.data(), 0x12,
-              descriptor.memory_handle.size());
+  descriptor.vmm_socket_path =
+      "/tmp/cuda_memory_pool_12345678-1234-5678-1234-567812345678.sock";
   std::memset(&descriptor.ready_event_handle, 0x34,
               sizeof(descriptor.ready_event_handle));
   return descriptor;
@@ -45,7 +45,8 @@ TEST(PublisherMessagesTest,
   EXPECT_EQ(message.generation, descriptor.generation);
   EXPECT_EQ(message.device_id, 2u);
   EXPECT_EQ(message.byte_size, descriptor.byte_size);
-  EXPECT_EQ(message.mem_handle[0], 0x12);
+  EXPECT_EQ(message.vmm_socket_path,
+            "/tmp/cuda_memory_pool_12345678-1234-5678-1234-567812345678.sock");
   EXPECT_EQ(message.event_handle[0], 0x34);
 }
 

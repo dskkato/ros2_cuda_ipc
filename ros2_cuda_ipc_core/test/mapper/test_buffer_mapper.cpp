@@ -6,7 +6,6 @@
 
 #include <cstring>
 
-#include "ros2_cuda_ipc_core/backend/memory_payload.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "test_mapper_utils.hpp"
 
@@ -77,7 +76,7 @@ TEST_F(BufferMapperTest, InvalidVmmPayloadReturnsEmptyOptional) {
   msg.device_id = 0;
   msg.generation = reservation->generation;
   msg.byte_size = 64;
-  msg.mem_handle.fill(0);
+  msg.vmm_socket_path.clear();
   msg.event_handle.fill(0);
 
   subscriber::BufferMapper mapper;
@@ -109,8 +108,8 @@ TEST_F(BufferMapperTest, MissingVmmSocketReturnsEmptyAndReleasesBufferRef) {
   msg.generation = reservation->generation;
   msg.byte_size = 64;
   msg.event_handle.fill(0);
-  ASSERT_TRUE(backend::encode_uuid_payload(
-      "12345678-1234-5678-1234-567812345678", msg.mem_handle));
+  msg.vmm_socket_path =
+      "/tmp/cuda_memory_pool_12345678-1234-5678-1234-567812345678.sock";
 
   subscriber::BufferMapper mapper;
   EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));

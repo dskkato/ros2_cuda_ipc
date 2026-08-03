@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <iomanip>
 #include <sstream>
 #include <string>
 
@@ -49,7 +50,7 @@ inline subscriber::IpcHandleKey make_key(
   subscriber::IpcHandleKey key{};
   key.publisher_instance_id = msg.publisher_instance_id;
   key.device_id = msg.device_id;
-  key.mem = msg.mem_handle;
+  key.vmm_socket_path = msg.vmm_socket_path;
   std::memcpy(key.event.data(), msg.event_handle.data(),
               msg.event_handle.size());
   return key;
@@ -65,9 +66,12 @@ inline ros2_cuda_ipc_msgs::msg::BufferCore make_cached_buffer_core_message(
   msg.slot_id = slot_id;
   msg.generation = generation;
   msg.byte_size = 64;
-  msg.mem_handle.fill(0);
+  std::ostringstream vmm_socket_path;
+  vmm_socket_path << "/tmp/ros2_cuda_ipc_test_socket_" << std::hex
+                  << std::setfill('0') << std::setw(4)
+                  << static_cast<unsigned int>(key_seed) << ".sock";
+  msg.vmm_socket_path = vmm_socket_path.str();
   msg.event_handle.fill(0);
-  msg.mem_handle[0] = key_seed;
   msg.event_handle[0] = static_cast<uint8_t>(key_seed + 1);
   return msg;
 }

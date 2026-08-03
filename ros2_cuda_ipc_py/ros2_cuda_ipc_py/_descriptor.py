@@ -42,7 +42,7 @@ def buffer_core_descriptor(message):
     if isinstance(message, Mapping):
         return dict(message)
     return {
-        "mem_handle": _sequence(_field(message, "mem_handle")),
+        "vmm_socket_path": _field(message, "vmm_socket_path"),
         "event_handle": _sequence(_field(message, "event_handle")),
         "shm_name": _field(message, "shm_name"),
         "publisher_instance_id": _sequence(
