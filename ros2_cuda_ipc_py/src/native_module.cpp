@@ -139,15 +139,13 @@ ros2_cuda_ipc_msgs::msg::BufferCore buffer_core_from_descriptor(
       string_value(required(descriptor, "vmm_socket_path"), "vmm_socket_path");
   message.event_handle = fixed_sequence<uint8_t, 64>(
       required(descriptor, "event_handle"), "event_handle");
-  message.shm_name = string_value(required(descriptor, "shm_name"), "shm_name");
-  message.publisher_instance_id = fixed_sequence<uint8_t, 16>(
-      required(descriptor, "publisher_instance_id"), "publisher_instance_id");
+  message.publisher_pid = unsigned_integer<uint32_t>(
+      required(descriptor, "publisher_pid"), "publisher_pid");
+  message.block_id =
+      unsigned_integer<uint32_t>(required(descriptor, "block_id"), "block_id");
+  message.uid = unsigned_integer<uint64_t>(required(descriptor, "uid"), "uid");
   message.device_id = unsigned_integer<uint32_t>(
       required(descriptor, "device_id"), "device_id");
-  message.slot_id =
-      unsigned_integer<uint32_t>(required(descriptor, "slot_id"), "slot_id");
-  message.generation = unsigned_integer<uint32_t>(
-      required(descriptor, "generation"), "generation");
   message.byte_size = unsigned_integer<uint64_t>(
       required(descriptor, "byte_size"), "byte_size");
   return message;
@@ -553,8 +551,7 @@ class PyBufferMapper {
     }
     if (!view) {
       throw MappingError(
-          "BufferCore was rejected by the C++ mapper (buffer reference, "
-          "generation, "
+          "BufferCore was rejected by the C++ mapper (buffer reference, UID, "
           "VMM-FD import failure)");
     }
     return PyReadHandle(std::move(*view));
@@ -577,8 +574,7 @@ class PyImageMapper {
     }
     if (!view.valid()) {
       throw MappingError(
-          "GpuImage was rejected by the C++ mapper (buffer reference, "
-          "generation, "
+          "GpuImage was rejected by the C++ mapper (buffer reference, UID, "
           "VMM-FD import failure)");
     }
     // Keep the C++ implementation's complete bounds check as the final
@@ -596,52 +592,24 @@ class PyImageMapper {
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
 
-ros2_cuda_ipc_core::PublisherInstanceId test_instance_id(
-    const std::string& seed) {
-  ros2_cuda_ipc_core::PublisherInstanceId id{};
-  uint32_t state = 2166136261u;
-  for (const uint8_t byte : seed) {
-    state = (state ^ byte) * 16777619u;
-  }
-  for (auto& byte : id) {
-    state = state * 1664525u + 1013904223u;
-    byte = static_cast<uint8_t>(state >> 24);
-  }
-  if (ros2_cuda_ipc_core::is_nil(id)) {
-    id.back() = 1;
-  }
-  return id;
-}
-
 class TestBufferRefProbe {
  public:
-  TestBufferRefProbe(
+  explicit TestBufferRefProbe(
       std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata>
-          mapping,
-      uint32_t slot_id, std::string shm_name)
-      : mapping_(std::move(mapping)),
-        slot_id_(slot_id),
-        shm_name_(std::move(shm_name)) {}
+          mapping)
+      : mapping_(std::move(mapping)) {}
 
-  ~TestBufferRefProbe() {
-    if (!shm_name_.empty()) {
-      (void)::shm_unlink(shm_name_.c_str());
-    }
-  }
+  ~TestBufferRefProbe() = default;
 
   uint32_t refcount() const {
     const auto value =
         ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(
-            mapping_, slot_id_);
+            mapping_);
     return value.value_or(0);
   }
 
-  const std::string& shm_name() const noexcept { return shm_name_; }
-
  private:
   std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata> mapping_;
-  uint32_t slot_id_;
-  std::string shm_name_;
 };
 
 template <typename Array>
@@ -655,13 +623,14 @@ py::list bytes_to_list(const Array& bytes) {
 
 py::tuple make_test_image() {
   static std::atomic<uint64_t> counter{0};
-  std::ostringstream name;
-  name << "/ros2_cuda_ipc_py_test_" << static_cast<long long>(::getpid()) << "_"
-       << counter.fetch_add(1);
-  const std::string shm_name = name.str();
-  const auto instance_id = test_instance_id(shm_name);
-  auto mapping = ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(
-      shm_name, instance_id, 1);
+  const uint32_t block_id =
+      800000 + static_cast<uint32_t>(counter.fetch_add(1));
+  const uint32_t publisher_pid = static_cast<uint32_t>(::getpid());
+  const std::string shm_name =
+      ros2_cuda_ipc_core::buffer_metadata::block_metadata_shm_name(
+          publisher_pid, block_id);
+  auto mapping =
+      ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(shm_name, 1);
   if (!mapping) {
     throw std::runtime_error("test BufferMetadata::create failed");
   }
@@ -682,15 +651,15 @@ py::tuple make_test_image() {
   message.core.event_handle[0] = 18;
   message.core.vmm_socket_path =
       "/tmp/ros2_cuda_ipc_test_socket_12345678901234567890.sock";
-  message.core.shm_name = shm_name;
-  message.core.publisher_instance_id = instance_id;
+  message.core.publisher_pid = publisher_pid;
+  message.core.block_id = block_id;
+  message.core.uid = reservation->uid;
   message.core.device_id = 0;
-  message.core.slot_id = reservation->slot_id;
-  message.core.generation = reservation->generation;
   message.core.byte_size = 24;
 
   ros2_cuda_ipc_core::subscriber::IpcHandleKey key{};
-  key.publisher_instance_id = instance_id;
+  key.publisher_pid = publisher_pid;
+  key.block_id = block_id;
   key.device_id = message.core.device_id;
   key.vmm_socket_path = message.core.vmm_socket_path;
   key.event = message.core.event_handle;
@@ -701,28 +670,26 @@ py::tuple make_test_image() {
   (void)ros2_cuda_ipc_core::subscriber::IpcHandleCache::instance()
       .insert_or_discard_duplicate(key, std::move(imported));
 
+  if (!ros2_cuda_ipc_core::buffer_metadata::BufferRef::commit_publish(
+          mapping, reservation->uid)) {
+    (void)ros2_cuda_ipc_core::buffer_metadata::BufferRef::cancel_publish(
+        mapping, reservation->uid);
+    (void)::shm_unlink(shm_name.c_str());
+    throw std::runtime_error("test BufferRef::commit_publish failed");
+  }
+
   ros2_cuda_ipc_core::image::ImageViewMapper mapper;
   auto view = mapper.map_for_dlpack(message);
   if (!view.valid() || !view.sanity_check()) {
     throw std::runtime_error("test ImageViewMapper fixture failed");
   }
-  if (!ros2_cuda_ipc_core::buffer_metadata::BufferRef::commit_publish(
-          mapping, reservation->slot_id, reservation->generation)) {
-    (void)ros2_cuda_ipc_core::buffer_metadata::BufferRef::cancel_publish(
-        mapping, reservation->slot_id, reservation->generation);
-    (void)::shm_unlink(shm_name.c_str());
-    throw std::runtime_error("test BufferRef::commit_publish failed");
-  }
-
   py::dict core;
   core["vmm_socket_path"] = message.core.vmm_socket_path;
   core["event_handle"] = bytes_to_list(message.core.event_handle);
-  core["shm_name"] = message.core.shm_name;
-  core["publisher_instance_id"] =
-      bytes_to_list(message.core.publisher_instance_id);
+  core["publisher_pid"] = message.core.publisher_pid;
+  core["block_id"] = message.core.block_id;
+  core["uid"] = message.core.uid;
   core["device_id"] = message.core.device_id;
-  core["slot_id"] = message.core.slot_id;
-  core["generation"] = message.core.generation;
   core["byte_size"] = message.core.byte_size;
   py::dict stamp;
   stamp["sec"] = 0;
@@ -738,8 +705,7 @@ py::tuple make_test_image() {
   descriptor["core"] = core;
   descriptor["encoding"] = message.encoding;
 
-  auto probe = std::make_shared<TestBufferRefProbe>(
-      mapping, reservation->slot_id, shm_name);
+  auto probe = std::make_shared<TestBufferRefProbe>(mapping);
   return py::make_tuple(PyImageView(std::move(view)), probe, descriptor);
 }
 
@@ -790,8 +756,7 @@ PYBIND11_MODULE(_native, module) {
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
   py::class_<TestBufferRefProbe, std::shared_ptr<TestBufferRefProbe>>(
       module, "_TestBufferRefProbe")
-      .def("refcount", &TestBufferRefProbe::refcount)
-      .def_property_readonly("shm_name", &TestBufferRefProbe::shm_name);
+      .def("refcount", &TestBufferRefProbe::refcount);
   module.def("_make_test_image", &make_test_image);
 #endif
 }

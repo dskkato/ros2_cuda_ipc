@@ -14,8 +14,12 @@ std::size_t IpcHandleKeyHash::operator()(
   for (unsigned int shift = 0; shift < sizeof(key.device_id) * 8; shift += 8) {
     hash = hash * PRIME + ((key.device_id >> shift) & 0xffU);
   }
-  for (uint8_t byte : key.publisher_instance_id) {
-    hash = hash * PRIME + byte;
+  for (unsigned int shift = 0; shift < sizeof(key.publisher_pid) * 8;
+       shift += 8) {
+    hash = hash * PRIME + ((key.publisher_pid >> shift) & 0xffU);
+  }
+  for (unsigned int shift = 0; shift < sizeof(key.block_id) * 8; shift += 8) {
+    hash = hash * PRIME + ((key.block_id >> shift) & 0xffU);
   }
   for (const unsigned char byte : key.vmm_socket_path) {
     hash = hash * PRIME + byte;

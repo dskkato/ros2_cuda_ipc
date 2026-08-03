@@ -5,6 +5,23 @@ This document records the user-visible changes between releases of
 
 ## Unreleased
 
+- Replaced pool-wide shared metadata with one POSIX shared `BlockMetadata`
+  object per GPU block. The object is named from `publisher_pid` and
+  `block_id`, and contains only the block UID, reference count, and publication
+  timestamp.
+- Changed the wire descriptor to identify blocks with `publisher_pid`,
+  `block_id`, and `uid`, while retaining only the CUDA resource information
+  needed for import and synchronization. Pool identity, slot identity, and
+  explicit shared-memory names are no longer part of the protocol.
+- Removed the pool metadata header/array, metadata capacity APIs, publisher
+  instance identity, `BufferMetadataManager`, and the legacy metadata lookup
+  paths. This is an intentional breaking protocol and API change.
+- Updated subscriber metadata and imported-resource caches to use block
+  identity, invalidate stale mappings on UID mismatch, and reattach before
+  retrying. Normal publisher shutdown now unlinks every block metadata object.
+- Added per-block metadata, stale-UID, cache reattach, and cleanup coverage;
+  updated Python bindings, examples, and ownership documentation.
+
 - Removed the CUDA IPC memory-sharing backend. The core library now uses CUDA
   VMM plus POSIX file descriptors exclusively.
 - Removed `BufferCore.backend` and the publisher/launch backend-selection APIs.

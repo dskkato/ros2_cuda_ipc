@@ -52,10 +52,6 @@ def test_views_expose_storage_and_buffer_metadata_without_debug_helpers():
     assert buffer.device_ptr != 0
     assert not hasattr(image, "device_ptr")
     assert not hasattr(image._native, "device_ptr")
-    assert not hasattr(image, "slot_id")
-    assert not hasattr(image, "generation")
-    assert not hasattr(image._native, "slot_id")
-    assert not hasattr(image._native, "generation")
     assert image.dtype == "uint8"
     assert not hasattr(image, "dtype_code")
     assert not hasattr(image._native, "dtype_code")
@@ -82,13 +78,10 @@ def test_generated_rclpy_message_crosses_the_descriptor_boundary():
     message.encoding = descriptor["encoding"]
     message.core.vmm_socket_path = descriptor["core"]["vmm_socket_path"]
     message.core.event_handle = descriptor["core"]["event_handle"]
-    message.core.shm_name = descriptor["core"]["shm_name"]
-    message.core.publisher_instance_id = descriptor["core"][
-        "publisher_instance_id"
-    ]
+    message.core.publisher_pid = descriptor["core"]["publisher_pid"]
+    message.core.block_id = descriptor["core"]["block_id"]
+    message.core.uid = descriptor["core"]["uid"]
     message.core.device_id = descriptor["core"]["device_id"]
-    message.core.slot_id = descriptor["core"]["slot_id"]
-    message.core.generation = descriptor["core"]["generation"]
     message.core.byte_size = descriptor["core"]["byte_size"]
 
     converted = gpu_image_descriptor(message)
@@ -142,10 +135,10 @@ def test_view_exceeding_allocation_bounds_is_rejected():
         ImageMapper().map(invalid)
 
 
-def test_stale_generation_is_reported_as_mapping_error():
+def test_stale_uid_is_reported_as_mapping_error():
     _native_view, _probe, descriptor = _fixture()
     stale = copy.deepcopy(descriptor)
-    stale["core"]["generation"] += 1
+    stale["core"]["uid"] += 1
 
     with pytest.raises(MappingError, match="C\\+\\+ mapper"):
         ImageMapper().map(stale)

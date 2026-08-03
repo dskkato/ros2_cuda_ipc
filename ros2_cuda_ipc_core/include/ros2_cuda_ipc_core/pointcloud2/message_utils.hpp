@@ -13,9 +13,9 @@
 namespace ros2_cuda_ipc_core::pointcloud2 {
 
 // Build the point-cloud-specific part of a wire message from publisher
-// metadata. Buffer ownership and transport handles remain in BufferDescriptor.
+// metadata. Buffer ownership and transport handles remain in BlockDescriptor.
 inline void fill_gpu_pointcloud2_message(
-    const transport::BufferDescriptor& descriptor,
+    const transport::BlockDescriptor& descriptor,
     const PointCloud2View& metadata,
     ros2_cuda_ipc_msgs::msg::GpuPointCloud2& message) {
   transport::fill_buffer_core_message(descriptor, message.core);

@@ -7,11 +7,12 @@
 
 #include <utility>
 
+#include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
+
 namespace ros2_cuda_ipc_core::publisher {
 
-PublishSlot::PublishSlot(
-    GpuBufferManager* owner,
-    BufferMetadataManager::Reservation reservation) noexcept
+PublishSlot::PublishSlot(GpuBufferManager* owner,
+                         Reservation reservation) noexcept
     : owner_(owner), reservation_(std::move(reservation)) {}
 
 PublishSlot::PublishSlot(PublishSlot&& other) noexcept {
@@ -34,162 +35,123 @@ void PublishSlot::move_from(PublishSlot&& other) noexcept {
   other.owner_ = nullptr;
 }
 
-bool PublishSlot::valid() const noexcept { return owner_ != nullptr; }
-
 void* PublishSlot::device_ptr() const noexcept {
-  return valid() ? owner_->device_ptr(reservation_) : nullptr;
+  return owner_ ? owner_->device_ptr(reservation_) : nullptr;
 }
 
-detail::CudaResult<transport::BufferDescriptor> PublishSlot::prepare_publish(
+detail::CudaResult<transport::BlockDescriptor> PublishSlot::prepare_publish(
     CUstream stream) noexcept {
-  if (owner_ == nullptr) {
-    return detail::CudaResult<transport::BufferDescriptor>::failure(
+  if (!owner_) {
+    return detail::CudaResult<transport::BlockDescriptor>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
-
   auto descriptor = owner_->try_build_descriptor(reservation_);
   if (!descriptor) {
     quarantine("descriptor creation");
-    return detail::CudaResult<transport::BufferDescriptor>::failure(
+    return detail::CudaResult<transport::BlockDescriptor>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
-
   auto ready_result = owner_->record_ready(reservation_, stream);
   if (!ready_result) {
     quarantine("ready event recording", &ready_result.error());
-    return detail::CudaResult<transport::BufferDescriptor>::failure(
+    return detail::CudaResult<transport::BlockDescriptor>::failure(
         ready_result.error());
   }
-
   if (!owner_->commit(reservation_)) {
     quarantine("reservation commit");
-    return detail::CudaResult<transport::BufferDescriptor>::failure(
+    return detail::CudaResult<transport::BlockDescriptor>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
   owner_ = nullptr;
-  return detail::CudaResult<transport::BufferDescriptor>::success(
+  return detail::CudaResult<transport::BlockDescriptor>::success(
       std::move(*descriptor));
 }
 
 void PublishSlot::quarantine(const char* step,
                              const detail::CudaDriverError* error) noexcept {
   owner_ = nullptr;
-  if (error != nullptr) {
-    RCUTILS_LOG_ERROR_NAMED(
-        "ros2_cuda_ipc_core.publisher.gpu_buffer_manager",
-        "Failed to safely release or publish slot %u generation %u "
-        "publisher=%s during %s. The slot will not be reused until "
-        "GpuBufferManager is reset. CUDA error: %s",
-        reservation_.slot_id, reservation_.generation,
-        reservation_.shm_name.c_str(), step, error->to_string().c_str());
-    return;
-  }
   RCUTILS_LOG_ERROR_NAMED(
       "ros2_cuda_ipc_core.publisher.gpu_buffer_manager",
-      "Failed to safely release or publish slot %u generation %u "
-      "publisher=%s during %s. The slot will not be reused until "
-      "GpuBufferManager is reset.",
-      reservation_.slot_id, reservation_.generation,
-      reservation_.shm_name.c_str(), step);
+      "Block %u uid %llu cannot be safely released during %s%s",
+      reservation_.block_id, static_cast<unsigned long long>(reservation_.uid),
+      step, error ? error->to_string().c_str() : "");
 }
 
 void PublishSlot::cancel() noexcept {
-  if (owner_ != nullptr) {
-    if (owner_->cancel(reservation_)) {
-      owner_ = nullptr;
-    } else {
-      quarantine("reservation cancellation");
-    }
-  }
+  if (owner_ && owner_->cancel(reservation_))
+    owner_ = nullptr;
+  else if (owner_)
+    quarantine("reservation cancellation");
 }
 
 GpuBufferManager::GpuBufferManager(Config config)
-    : config_(std::move(config)),
-      buffer_pool_(config_.slot_count),
-      buffer_metadata_manager_(config_.shm_name_prefix, config_.slot_count) {}
+    : config_(std::move(config)), buffer_pool_(config_.block_count) {}
 
 GpuBufferManager::~GpuBufferManager() { reset(); }
 
 bool GpuBufferManager::initialise() {
   reset();
-  if (!buffer_metadata_manager_.initialise()) {
-    return false;
-  }
-  if (!buffer_pool_.initialise(config_.byte_size, config_.device_index)) {
-    buffer_metadata_manager_.reset();
-    return false;
-  }
-  return true;
+  return buffer_pool_.initialise(config_.byte_size, config_.device_index);
 }
 
-void GpuBufferManager::reset() noexcept {
-  buffer_pool_.reset();
-  buffer_metadata_manager_.reset();
-}
+void GpuBufferManager::reset() noexcept { buffer_pool_.reset(); }
 
 bool GpuBufferManager::is_initialised() const noexcept {
-  return buffer_pool_.is_initialised() &&
-         buffer_metadata_manager_.is_initialised();
-}
-
-std::string GpuBufferManager::shm_name() const {
-  return buffer_metadata_manager_.shm_name();
-}
-
-PublisherInstanceId GpuBufferManager::publisher_instance_id() const {
-  return buffer_metadata_manager_.publisher_instance_id();
+  return buffer_pool_.is_initialised();
 }
 
 std::optional<PublishSlot> GpuBufferManager::acquire_for_publish() {
-  if (!is_initialised()) {
-    return std::nullopt;
+  if (!is_initialised() || buffer_pool_.size() == 0) return std::nullopt;
+  const std::size_t count = buffer_pool_.size();
+  const uint32_t start =
+      next_block_index_.fetch_add(1, std::memory_order_relaxed);
+  for (std::size_t offset = 0; offset < count; ++offset) {
+    const uint32_t index = static_cast<uint32_t>((start + offset) % count);
+    auto* block = buffer_pool_.block(index);
+    if (!block) continue;
+    auto reservation =
+        buffer_metadata::BufferRef::reserve_for_publish(block->metadata);
+    if (!reservation) continue;
+    return PublishSlot(
+        this, PublishSlot::Reservation{reservation->mapping, index,
+                                       block->publisher_pid, block->block_id,
+                                       reservation->uid});
   }
-  auto reservation = buffer_metadata_manager_.reserve_for_publish();
-  if (!reservation) {
-    return std::nullopt;
-  }
-  return PublishSlot(this, *reservation);
+  return std::nullopt;
 }
 
 void* GpuBufferManager::device_ptr(
-    const BufferMetadataManager::Reservation& reservation) const noexcept {
-  if (reservation.shm_name != buffer_metadata_manager_.shm_name() ||
-      reservation.publisher_instance_id !=
-          buffer_metadata_manager_.publisher_instance_id()) {
+    const PublishSlot::Reservation& reservation) const noexcept {
+  const auto* block = buffer_pool_.block(reservation.block_index);
+  if (!block || block->publisher_pid != reservation.publisher_pid ||
+      block->block_id != reservation.block_id ||
+      block->metadata.get() != reservation.mapping.get())
     return nullptr;
-  }
-  return buffer_pool_.device_ptr(reservation.slot_id);
+  return buffer_pool_.device_ptr(reservation.block_index);
 }
 
 detail::CudaResult<void> GpuBufferManager::record_ready(
-    const BufferMetadataManager::Reservation& reservation,
-    CUstream stream) noexcept {
-  if (reservation.shm_name != buffer_metadata_manager_.shm_name() ||
-      reservation.publisher_instance_id !=
-          buffer_metadata_manager_.publisher_instance_id()) {
+    const PublishSlot::Reservation& reservation, CUstream stream) noexcept {
+  if (device_ptr(reservation) == nullptr) {
     return detail::CudaResult<void>::failure(
         detail::CudaDriverError(CUDA_ERROR_INVALID_HANDLE));
   }
-  return buffer_pool_.record_ready(reservation.slot_id, stream);
+  return buffer_pool_.record_ready(reservation.block_index, stream);
 }
 
-std::optional<transport::BufferDescriptor>
+std::optional<transport::BlockDescriptor>
 GpuBufferManager::try_build_descriptor(
-    const BufferMetadataManager::Reservation& reservation) const noexcept {
-  const auto* resources = buffer_pool_.resources(reservation.slot_id);
-  if (resources == nullptr || !resources->ready_event) {
+    const PublishSlot::Reservation& reservation) const noexcept {
+  const auto* block = buffer_pool_.block(reservation.block_index);
+  const auto* resources = buffer_pool_.resources(reservation.block_index);
+  if (!block || !resources ||
+      block->metadata.get() != reservation.mapping.get() ||
+      !resources->ready_event)
     return std::nullopt;
-  }
-  if (reservation.shm_name != buffer_metadata_manager_.shm_name() ||
-      reservation.publisher_instance_id !=
-          buffer_metadata_manager_.publisher_instance_id()) {
-    return std::nullopt;
-  }
-  transport::BufferDescriptor result;
-  result.buffer_metadata_shm_name = reservation.shm_name;
-  result.publisher_instance_id = reservation.publisher_instance_id;
-  result.slot_id = reservation.slot_id;
-  result.generation = reservation.generation;
+  transport::BlockDescriptor result;
+  result.publisher_pid = reservation.publisher_pid;
+  result.block_id = reservation.block_id;
+  result.uid = reservation.uid;
   result.device_id = config_.device_index;
   result.byte_size = config_.byte_size;
   result.vmm_socket_path = resources->vmm_socket_path;
@@ -198,13 +160,15 @@ GpuBufferManager::try_build_descriptor(
 }
 
 bool GpuBufferManager::commit(
-    const BufferMetadataManager::Reservation& reservation) noexcept {
-  return buffer_metadata_manager_.commit(reservation);
+    const PublishSlot::Reservation& reservation) noexcept {
+  return buffer_metadata::BufferRef::commit_publish(reservation.mapping,
+                                                    reservation.uid);
 }
 
 bool GpuBufferManager::cancel(
-    const BufferMetadataManager::Reservation& reservation) noexcept {
-  return buffer_metadata_manager_.cancel(reservation);
+    const PublishSlot::Reservation& reservation) noexcept {
+  return buffer_metadata::BufferRef::cancel_publish(reservation.mapping,
+                                                    reservation.uid);
 }
 
 }  // namespace ros2_cuda_ipc_core::publisher

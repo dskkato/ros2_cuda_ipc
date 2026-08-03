@@ -26,10 +26,7 @@ def generate_launch_description() -> LaunchDescription:
         DeclareLaunchArgument("height", default_value="1080"),
         DeclareLaunchArgument("device_index", default_value="0"),
         DeclareLaunchArgument("frame_id", default_value="fanout_camera_frame"),
-        DeclareLaunchArgument("slot_count", default_value="4"),
-        DeclareLaunchArgument(
-            "shm_name_prefix", default_value="/ros2_cuda_ipc_fanout"
-        ),
+        DeclareLaunchArgument("block_count", default_value="4"),
         DeclareLaunchArgument("preview_copy_every_n", default_value="1"),
         DeclareLaunchArgument("log_every_n", default_value="30"),
         DeclareLaunchArgument("encoder_downscale", default_value="2"),
@@ -65,7 +62,7 @@ def launch_setup(context) -> List[Node]:
     height_value = as_int("height")
 
     publish_rate = as_float("publish_rate_hz")
-    slot_count = as_int("slot_count")
+    block_count = as_int("block_count")
     device_index = as_int("device_index")
     image_topic = value("image_topic")
     preview_topic = value("preview_topic")
@@ -97,8 +94,7 @@ def launch_setup(context) -> List[Node]:
                 "width": width_value,
                 "height": height_value,
                 "frame_id": value("frame_id"),
-                "slot_count": slot_count,
-                "shm_name_prefix": value("shm_name_prefix"),
+                "block_count": block_count,
                 "device_index": device_index,
             }
         ],

@@ -17,9 +17,9 @@ who want to try the demo first.
 - `ros2_cuda_ipc_core::subscriber::BufferMapper`: maps a `BufferCore` and a consumer stream to an optional `ReadHandle`.
 - `ros2_cuda_ipc_core::subscriber::ReadHandle`: the normal pointer API. It waits for producer readiness, owns the buffer reference, and defers resource/buffer reference release until consumer completion.
 - `ros2_cuda_ipc_core::image::ImageView` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2View`: typed adapters layered on `ReadHandle`; the Python image adapter is DLPack-only and binds its stream at export.
-- `ros2_cuda_ipc_core::publisher::BufferMetadataManager`: publisher reservation, generation, and grace-period state. Subscriber buffer reference handles, import caches, completion events, and deferred queues are internal.
+- `ros2_cuda_ipc_core::publisher::GpuBufferPool` owns `GpuBufferBlock` objects; each block owns one GPU allocation and one shared `BlockMetadata`. Subscriber buffer reference handles, import caches, completion events, and deferred queues are internal.
 - `ros2_cuda_ipc_core::publisher::GpuBufferPool`: publisher-side GPU resource ownership.
-- `ros2_cuda_ipc_core::publisher::BufferMetadataManager`: publisher reservation, generation, and grace-period state.
+- `BlockDescriptor` carries `(publisher_pid, block_id, uid)` plus CUDA resource information. Shared-memory names are derived locally and do not cross the wire.
 - `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher-facing buffer manager.
 - `ros2_cuda_ipc_core::publisher::PublishSlot`: one move-only publish attempt with RAII cancellation.
 

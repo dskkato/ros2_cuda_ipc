@@ -21,13 +21,12 @@ static_assert(sizeof(BufferCoreMessage::_event_handle_type) ==
 
 }  // namespace
 
-void fill_buffer_core_message(const BufferDescriptor& descriptor,
+void fill_buffer_core_message(const BlockDescriptor& descriptor,
                               ros2_cuda_ipc_msgs::msg::BufferCore& message) {
-  message.shm_name = descriptor.buffer_metadata_shm_name;
-  message.publisher_instance_id = descriptor.publisher_instance_id;
+  message.publisher_pid = descriptor.publisher_pid;
+  message.block_id = descriptor.block_id;
+  message.uid = descriptor.uid;
   message.device_id = static_cast<uint32_t>(descriptor.device_id);
-  message.slot_id = descriptor.slot_id;
-  message.generation = descriptor.generation;
   message.byte_size = descriptor.byte_size;
   message.vmm_socket_path = descriptor.vmm_socket_path;
   std::memcpy(message.event_handle.data(), &descriptor.ready_event_handle,

@@ -29,8 +29,8 @@ Python側は次を担当する。
 
 C++ coreは次を担当する。
 
-- messageの検証とgenerationの確認
-- shared-memory slotのbuffer reference取得
+- messageの検証とUIDの確認
+- Block単位shared-memoryのbuffer reference取得
 - CUDA memory/eventのimportとcache
 - `ReadHandle`からのdevice pointer、ready wait、metadataの提供
 - completion event後のresource/buffer reference cleanup
@@ -56,10 +56,10 @@ Python ReadHandle
     -> native ReadHandle
         -> imported resource
         -> buffer reference
-            -> shared-memory slot reference
+            -> shared BlockMetadata reference
 ```
 
-slotは、completion event後にdeferred queueがhandle固有のbuffer referenceを解放するまで
+Blockは、completion event後にdeferred queueがhandle固有のbuffer referenceを解放するまで
 publisherから再利用されない。通常のPython `ReadHandle`の`close()`は、そのread
 stateを解放する。DLPack export後のtyped adapterは`close()`できない。
 
@@ -77,7 +77,7 @@ framework object
     -> retained native read state
         -> imported resource
         -> buffer reference
-            -> shared-memory slot
+        -> shared BlockMetadata
 ```
 
 これはmemoryの所有権であり、CUDA kernelの完了通知ではない。capsule deleterは
@@ -113,7 +113,7 @@ framework tensor / array
         -> manager context / retained native read state
             -> imported CUDA resource
             -> buffer reference
-                -> shared-memory slot reference
+                -> shared BlockMetadata reference
 ```
 
 capsuleがconsumerに渡された後はmanaged-tensor deleterがretained native read stateを
@@ -169,7 +169,7 @@ CPU fallback、PointCloud2は対象外である。
 ## エラーと実行モデル
 
 - descriptorの型・field・layout不正はPythonの入力エラーとして扱う
-- stale generation、buffer reference取得失敗、CUDA import失敗はmapping failureとして扱う
+- stale UID、buffer reference取得失敗、CUDA import失敗はmapping failureとして扱う
 - ready-event waitのCUDA failureはmapping failureと分けて扱う
 - Python messageの読み取りにはGILが必要だが、C++ mapperの重い処理はGILを解放できる
 - Python wrapperのdestructorからPython APIを呼び出さない

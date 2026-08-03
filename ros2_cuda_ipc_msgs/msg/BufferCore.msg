@@ -2,16 +2,13 @@
 string vmm_socket_path
 uint8[64] event_handle
 
-# Shared memory name for buffer metadata/refcount management
-string shm_name
+# Direct identity of the GPU block and its current publication
+uint32 publisher_pid
+uint32 block_id
+uint64 uid
 
-# Identity of the publisher initialisation that owns this buffer
-uint8[16] publisher_instance_id
-
-# Identification of the GPU buffer slot
+# CUDA resource description for this publication
 uint32 device_id
-uint32 slot_id
-uint32 generation
 
 # Total bytes in the GPU buffer
 uint64 byte_size

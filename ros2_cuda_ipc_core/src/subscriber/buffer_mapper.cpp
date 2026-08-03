@@ -30,29 +30,39 @@ CUipcEventHandle to_cuda_event_handle(
 std::unique_ptr<detail::MappedPublication> map_descriptor(
     const std::shared_ptr<detail::BufferMetadataCache>& mapping_cache,
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
-  const PublisherInstanceId instance_id = msg.publisher_instance_id;
-  if (is_nil(instance_id)) {
+  if (msg.publisher_pid == 0 || msg.block_id == 0 || msg.uid == 0) {
     RCUTILS_LOG_WARN_NAMED("ros2_cuda_ipc_core.subscriber.buffer_mapper",
-                           "BufferCore publisher_instance_id is nil");
+                           "BufferCore contains an invalid block identity "
+                           "pid=%u block=%u uid=%llu",
+                           msg.publisher_pid, msg.block_id,
+                           static_cast<unsigned long long>(msg.uid));
     return nullptr;
   }
-
-  auto mapping = mapping_cache->get_or_attach(msg.shm_name, instance_id);
-  auto buffer_ref =
-      buffer_metadata::BufferRef::acquire(mapping, msg.slot_id, msg.generation);
-  if (!buffer_ref.valid()) {
+  auto mapping = mapping_cache->get_or_attach(msg.publisher_pid, msg.block_id);
+  std::optional<buffer_metadata::BufferRef> buffer_ref;
+  buffer_ref.emplace(buffer_metadata::BufferRef::acquire(mapping, msg.uid));
+  if (!buffer_ref->valid()) {
+    // A cached mapping may outlive an unlink/recreate cycle. Drop exactly this
+    // block's entry and attach once more before rejecting the descriptor.
+    mapping_cache->invalidate(msg.publisher_pid, msg.block_id);
+    mapping = mapping_cache->get_or_attach(msg.publisher_pid, msg.block_id);
+    buffer_ref.emplace(buffer_metadata::BufferRef::acquire(mapping, msg.uid));
+  }
+  if (!buffer_ref->valid()) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to acquire buffer reference shm=%s slot=%u gen=%u",
-        msg.shm_name.c_str(), msg.slot_id, msg.generation);
+        "Failed to acquire block reference pid=%u block=%u uid=%llu",
+        msg.publisher_pid, msg.block_id,
+        static_cast<unsigned long long>(msg.uid));
     return nullptr;
   }
   auto buffer_ref_ptr =
-      std::make_unique<buffer_metadata::BufferRef>(std::move(buffer_ref));
+      std::make_unique<buffer_metadata::BufferRef>(std::move(*buffer_ref));
 
   const CUipcEventHandle event_handle = to_cuda_event_handle(msg);
   IpcHandleKey key{};
-  key.publisher_instance_id = instance_id;
+  key.publisher_pid = msg.publisher_pid;
+  key.block_id = msg.block_id;
   key.device_id = msg.device_id;
   key.vmm_socket_path = msg.vmm_socket_path;
   std::memcpy(key.event.data(), msg.event_handle.data(), key.event.size());
@@ -64,8 +74,9 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
     if (!opened.has_value()) {
       RCUTILS_LOG_WARN_NAMED(
           "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-          "Failed to import GPU resource shm=%s slot=%u gen=%u",
-          msg.shm_name.c_str(), msg.slot_id, msg.generation);
+          "Failed to import GPU resource pid=%u block=%u uid=%llu",
+          msg.publisher_pid, msg.block_id,
+          static_cast<unsigned long long>(msg.uid));
       return nullptr;
     }
     imported = IpcHandleCache::instance().insert_or_discard_duplicate(
@@ -78,8 +89,9 @@ std::unique_ptr<detail::MappedPublication> map_descriptor(
   if (!publication) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to create mapped publication for shm=%s slot=%u gen=%u",
-        msg.shm_name.c_str(), msg.slot_id, msg.generation);
+        "Failed to create mapped publication for pid=%u block=%u uid=%llu",
+        msg.publisher_pid, msg.block_id,
+        static_cast<unsigned long long>(msg.uid));
   }
   return publication;
 }
@@ -110,8 +122,9 @@ std::optional<ReadHandle> BufferMapper::map(
   if (!read) {
     RCUTILS_LOG_WARN_NAMED(
         "ros2_cuda_ipc_core.subscriber.buffer_mapper",
-        "Failed to bind mapped publication for shm=%s slot=%u gen=%u",
-        msg.shm_name.c_str(), msg.slot_id, msg.generation);
+        "Failed to bind mapped publication for pid=%u block=%u uid=%llu",
+        msg.publisher_pid, msg.block_id,
+        static_cast<unsigned long long>(msg.uid));
   }
   return read;
 }

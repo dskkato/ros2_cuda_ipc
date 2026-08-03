@@ -43,7 +43,6 @@ add_library(${PROJECT_NAME}
   src/subscriber/ipc_handle_cache.cpp
   src/buffer_metadata/buffer_metadata.cpp
   src/buffer_metadata/buffer_ref.cpp
-  src/publisher/buffer_metadata_manager.cpp
   src/subscriber/buffer_mapper.cpp
   src/image/image_view_mapper.cpp
   src/pointcloud2/pointcloud2_view_mapper.cpp
@@ -82,34 +81,10 @@ install(DIRECTORY include/
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_buffer_ref test/test_buffer_ref.cpp)
-  target_link_libraries(test_buffer_ref ${PROJECT_NAME})
-  ament_add_gtest(test_ipc_handle_cache test/test_ipc_handle_cache.cpp)
-  target_link_libraries(test_ipc_handle_cache ${PROJECT_NAME})
-  ament_add_gtest(test_buffer_metadata_cache test/test_buffer_metadata_cache.cpp)
-  target_link_libraries(test_buffer_metadata_cache ${PROJECT_NAME})
-  # mapper tests
-  ament_add_gtest(test_buffer_mapper test/mapper/test_buffer_mapper.cpp)
-  target_include_directories(test_buffer_mapper PRIVATE test)
-  target_link_libraries(test_buffer_mapper ${PROJECT_NAME})
-  ament_add_gtest(test_image_view_mapper test/mapper/test_image_view_mapper.cpp)
-  target_include_directories(test_image_view_mapper PRIVATE test)
-  target_link_libraries(test_image_view_mapper ${PROJECT_NAME})
-  ament_add_gtest(test_pointcloud2_view_mapper
-                  test/mapper/test_pointcloud2_view_mapper.cpp)
-  target_include_directories(test_pointcloud2_view_mapper PRIVATE test)
-  target_link_libraries(test_pointcloud2_view_mapper ${PROJECT_NAME})
-  ament_add_gtest(test_publisher_messages test/test_publisher_messages.cpp)
-  target_link_libraries(test_publisher_messages ${PROJECT_NAME})
-  ament_add_gtest(test_gpu_buffer_manager
-                  test/test_gpu_buffer_manager.cpp)
-  target_link_libraries(test_gpu_buffer_manager ${PROJECT_NAME} CUDA::cudart)
+  ament_add_gtest(test_block_metadata test/test_block_metadata.cpp)
+  target_link_libraries(test_block_metadata ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_pool test/test_gpu_buffer_pool.cpp)
   target_link_libraries(test_gpu_buffer_pool ${PROJECT_NAME} CUDA::cudart)
-  ament_add_gtest(test_read_handle test/test_read_handle.cpp)
-  target_link_libraries(test_read_handle ${PROJECT_NAME} CUDA::cudart)
-  ament_add_gtest(test_buffer_metadata_manager test/test_buffer_metadata_manager.cpp)
-  target_link_libraries(test_buffer_metadata_manager ${PROJECT_NAME})
   ament_add_gtest(test_cuda_driver_context test/test_cuda_driver_context.cpp)
   target_link_libraries(test_cuda_driver_context ${PROJECT_NAME} CUDA::cudart)
   add_executable(vmm_fd_import_helper test/vmm_fd_import_helper.cpp)

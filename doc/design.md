@@ -57,15 +57,15 @@ event、deferred release queue は lifetime を実装する内部要素であり
 | --- | --- |
 | `vmm_socket_path` | VMM allocation を配布する Unix socket のパス |
 | `event_handle` | producer の ready event を識別する CUDA IPC event handle |
-| `shm_name` | buffer reference/refcount 用 POSIX shared memory 名 |
-| `publisher_instance_id` | publisher 初期化単位の識別子 |
+| `publisher_pid` | block metadata と GPU block を導出する publisher PID |
+| `block_id` | process-wide に一意な GPU block ID |
+| `uid` | 現在の publication identity。stale descriptor 検出に使う |
 | `device_id` | allocation が存在する CUDA device |
-| `slot_id` | 固定 pool 内の slot |
-| `generation` | slot 上の publication 世代 |
 | `byte_size` | GPU buffer の論理サイズ（bytes） |
 
-Subscriber は `publisher_instance_id`、`slot_id`、`generation` を検証してから buffer reference を取得する。
-同じ `slot_id` でも publisher instance または generation が異なる publication は別物として扱う。
+Subscriber は `publisher_pid`、`block_id` から `/ros2_cuda_ipc_<pid>_<block_id>` を導出し、
+`uid` を2回検証してから buffer reference を取得する。shared memory名およびPool identityは
+wireに含めない。
 
 ### typed message
 
@@ -81,18 +81,19 @@ Subscriber は `publisher_instance_id`、`slot_id`、`generation` を検証し�
 
 ## Memory sharing: VMM + FD
 
-Publisher は CUDA VMM allocation を slot ごとに作り、POSIX shareable FD を Unix domain socket
+Publisher は CUDA VMM allocation をBlockごとに作り、POSIX shareable FD を Unix domain socket
 経由で配布する。`vmm_socket_path` には socket のパスを格納し、Subscriber はその socket に
 接続して FD を取得し、`cuMemImportFromShareableHandle`、map、access 設定を行う。ready event
 の配送は CUDA IPC event handle を使う。
 
 VMM resource の allocation、FD server、import 済み mapping の破棄は backend と resource
-cache の責務である。generation の更新だけで mapping を無条件に再作成せず、allocation または
-publisher instance が変わった場合に resource identity を切り替える。
+cache の責務である。Block identity が同じ場合は allocationをcacheできる。Publisher PIDまたは
+Block IDが変わった場合は resource identityを切り替える。
 
 ## Publisher の lifecycle
 
-Publisher は `GpuBufferManager` と `GpuBufferPool` で slot を管理する。
+Publisher は `GpuBufferManager` と `GpuBufferPool` でBlockを管理する。各
+`GpuBufferBlock` はGPU allocationと1個の`BlockMetadata`を同時に所有する。
 
 ```text
 acquire_for_publish()
@@ -107,8 +108,8 @@ acquire_for_publish()
 `prepare_publish()` が失敗した場合は descriptor を返さず、reservation は manager の
 reset まで再利用しない。publish 後の middleware の成否は slot の commit 状態を変えない。
 
-固定 grace period と generation は配送保証ではない。遅延した message は、slot 再利用後に
-generation mismatch として破棄される可能性がある。詳細な buffer metadata protocol と publisher／
+固定 grace period と UID は配送保証ではない。遅延した message は、Block再利用後に
+UID mismatch として破棄される可能性がある。詳細な buffer metadata protocol と publisher／
 subscriber race の不変条件は [doc/buffer_metadata_protocol.md](buffer_metadata_protocol.md) を正とする。
 
 ## Subscriber の lifecycle
@@ -122,9 +123,9 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> read =
 
 `BufferMapper::map()` は次を一つの mapping 操作として行う。
 
-1. `publisher_instance_id` を検証する。
-2. `shm_name` に対応する buffer metadata mapping を取得または attach する。
-3. `slot_id` と `generation` を検証し、buffer reference を取得する。
+1. `publisher_pid` と `block_id` から shared metadata名を導出してmappingを取得またはattachする。
+2. `uid` を検証し、buffer referenceを取得する。
+3. UIDを再検証する。cacheが古い場合は対象Blockのentryを破棄して再attachする。
 4. `IpcHandleCache` から imported resource を取得する。未登録なら VMM-FD importer で import する。
 5. consumer stream に producer ready event の wait を enqueue する。
 6. imported resource と buffer reference を所有する `ReadHandle` を返す。
@@ -202,6 +203,6 @@ raw pointer mapping と同じ API として扱わない。
 ## 設計変更時の参照先
 
 - 公開 API の概要と maintainer 向け手順: [DEVELOPING.md](../DEVELOPING.md)
-- buffer reference、generation、競合安全性: [doc/buffer_metadata_protocol.md](buffer_metadata_protocol.md)
+- buffer reference、UID、競合安全性: [doc/buffer_metadata_protocol.md](buffer_metadata_protocol.md)
 - Python／DLPack の ownership と stream semantics: [doc/python-subscriber-implementation.md](python-subscriber-implementation.md)
 - 実行例: [examples/multi_process_image_fanout/README.md](../examples/multi_process_image_fanout/README.md)

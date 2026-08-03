@@ -39,21 +39,19 @@ class GpuImagePublisherNode : public rclcpp::Node {
             declare_parameter<std::string>("topic_name", "/fanout/image_gpu")) {
     const int width = declare_parameter<int>("width", 1920);
     const int height = declare_parameter<int>("height", 1080);
-    const int slot_count_parameter = declare_parameter<int>("slot_count", 4);
-    const auto shm_name_prefix = declare_parameter<std::string>(
-        "shm_name_prefix", "/ros2_cuda_ipc_fanout");
+    const int block_count_parameter = declare_parameter<int>("block_count", 4);
     const int device_index = declare_parameter<int>("device_index", 0);
     encoding_ = declare_parameter<std::string>("encoding", kDefaultEncoding);
 
     if (width <= 0 || height <= 0) {
       throw std::runtime_error("width and height must be greater than zero");
     }
-    if (slot_count_parameter <= 0) {
-      throw std::runtime_error("slot_count must be greater than zero");
+    if (block_count_parameter <= 0) {
+      throw std::runtime_error("block_count must be greater than zero");
     }
     width_ = static_cast<uint32_t>(width);
     height_ = static_cast<uint32_t>(height);
-    const auto slot_count = static_cast<std::size_t>(slot_count_parameter);
+    const auto block_count = static_cast<std::size_t>(block_count_parameter);
 
     throw_on_cuda_error(cudaSetDevice(device_index), "cudaSetDevice");
     const uint64_t frame_size_bytes =
@@ -61,7 +59,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     manager_ =
         std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferManager>(
             ros2_cuda_ipc_core::publisher::GpuBufferManager::Config{
-                shm_name_prefix, slot_count, frame_size_bytes, device_index});
+                block_count, frame_size_bytes, device_index});
     if (!manager_->initialise()) {
       throw std::runtime_error("Failed to initialise GPU buffer manager");
     }
@@ -91,8 +89,8 @@ class GpuImagePublisherNode : public rclcpp::Node {
     }
 
     RCLCPP_INFO(get_logger(),
-                "Publishing fanout GPU image %ux%u on %s with %zu slots",
-                width_, height_, topic_name_.c_str(), slot_count);
+                "Publishing fanout GPU image %ux%u on %s with %zu blocks",
+                width_, height_, topic_name_.c_str(), block_count);
   }
 
   ~GpuImagePublisherNode() override {

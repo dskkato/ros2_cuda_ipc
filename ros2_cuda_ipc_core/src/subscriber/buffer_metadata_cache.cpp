@@ -7,49 +7,42 @@
 
 namespace ros2_cuda_ipc_core::subscriber::detail {
 
-std::size_t BufferMetadataCache::KeyHash::operator()(
-    const Key& key) const noexcept {
-  std::size_t hash = std::hash<std::string>{}(key.shm_name);
-  for (const uint8_t byte : key.publisher_instance_id) {
-    hash ^= static_cast<std::size_t>(byte) +
-            static_cast<std::size_t>(0x9e3779b9) + (hash << 6) + (hash >> 2);
-  }
-  return hash;
-}
-
 BufferMetadataCache::BufferMetadataCache(AttachFn attach_fn)
     : attach_fn_(std::move(attach_fn)) {}
 
 BufferMetadataCache::~BufferMetadataCache() { clear(); }
 
 std::shared_ptr<buffer_metadata::BufferMetadata>
-BufferMetadataCache::get_or_attach(
-    const std::string& shm_name,
-    const PublisherInstanceId& publisher_instance_id) const {
-  const Key key{shm_name, publisher_instance_id};
+BufferMetadataCache::get_or_attach(uint32_t publisher_pid,
+                                   uint32_t block_id) const {
+  if (publisher_pid == 0 || block_id == 0) return nullptr;
+  const Key key{publisher_pid, block_id};
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto it = mappings_.find(key);
+    if (it != mappings_.end()) return it->second;
+  }
+  auto candidate = attach_fn_(
+      buffer_metadata::block_metadata_shm_name(publisher_pid, block_id));
+  if (!candidate) return nullptr;
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto [it, inserted] = mappings_.emplace(key, std::move(candidate));
+  (void)inserted;
+  return it->second;
+}
+
+void BufferMetadataCache::invalidate(uint32_t publisher_pid,
+                                     uint32_t block_id) const {
+  const Key key{publisher_pid, block_id};
+  std::shared_ptr<buffer_metadata::BufferMetadata> removed;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto it = mappings_.find(key);
     if (it != mappings_.end()) {
-      return it->second;
+      removed = std::move(it->second);
+      mappings_.erase(it);
     }
   }
-
-  auto candidate = attach_fn_(shm_name, publisher_instance_id);
-  if (!candidate) {
-    return nullptr;
-  }
-
-  std::shared_ptr<buffer_metadata::BufferMetadata> result;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto [it, inserted] = mappings_.emplace(key, candidate);
-    (void)inserted;
-    result = it->second;
-  }
-  // If another thread won the race, the duplicate candidate is released after
-  // the mutex scope so a custom mapping deleter can safely inspect the cache.
-  return result;
 }
 
 void BufferMetadataCache::clear() const {
