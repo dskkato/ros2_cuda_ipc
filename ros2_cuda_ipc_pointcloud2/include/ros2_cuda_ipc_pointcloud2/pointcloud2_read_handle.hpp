@@ -12,7 +12,7 @@
 #include "ros2_cuda_ipc_msgs/msg/gpu_point_cloud2.hpp"
 #include "std_msgs/msg/header.hpp"
 
-namespace ros2_cuda_ipc_core::pointcloud2 {
+namespace ros2_cuda_ipc_pointcloud2 {
 
 struct PointCloud2ReadHandle {
   struct Field {
@@ -40,7 +40,7 @@ struct PointCloud2ReadHandle {
   };
 
   std_msgs::msg::Header header{};
-  subscriber::ReadHandle read;
+  ros2_cuda_ipc_core::subscriber::ReadHandle read;
   uint32_t height = 1;
   uint32_t width = 0;
   uint32_t point_step = 0;
@@ -50,7 +50,7 @@ struct PointCloud2ReadHandle {
 
   static std::optional<PointCloud2ReadHandle> from_message(
       const ros2_cuda_ipc_msgs::msg::GpuPointCloud2& message,
-      subscriber::ReadHandle read);
+      ros2_cuda_ipc_core::subscriber::ReadHandle read);
 
   size_t num_points() const noexcept {
     return static_cast<size_t>(width) * height;
@@ -70,4 +70,4 @@ struct PointCloud2ReadHandle {
   }
 };
 
-}  // namespace ros2_cuda_ipc_core::pointcloud2
+}  // namespace ros2_cuda_ipc_pointcloud2

@@ -5,6 +5,20 @@ This document records the user-visible changes between releases of
 
 ## Unreleased
 
+- Added the independent `ros2_cuda_ipc_image` and
+  `ros2_cuda_ipc_pointcloud2` packages for typed read handles, modality
+  metadata validation, and `GpuImage`/`GpuPointCloud2` message helpers.
+- Limited `ros2_cuda_ipc_core` to untyped `BufferCore` IPC, GPU buffer
+  lifetime, and synchronization APIs. Image and PointCloud2 headers,
+  implementations, dependencies, and unit tests now live in their typed
+  packages.
+- Updated the fanout example, Python/DLPack binding, `gpu_image_transport`,
+  package dependencies, include paths, and package-structure documentation
+  for the new layering.
+- Preserved the existing wire format, UID/refcount protocol, ownership and
+  lifetime semantics, DLPack late-binding behavior, and typed validation
+  behavior while adding package-level regression coverage.
+
 - Renamed subscriber typed reads from `ImageView` and `PointCloud2View` to
   `ImageReadHandle` and `PointCloud2ReadHandle`. Typed handles now expose
   `from_message()` and own the mapped `ReadHandle` as their sole resource

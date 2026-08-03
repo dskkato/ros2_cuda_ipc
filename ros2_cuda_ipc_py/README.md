@@ -8,8 +8,8 @@ interoperability path used by CuPy, PyTorch, and other compatible consumers.
 ## Requirements
 
 Build with a sourced ROS 2 environment, CUDA Driver API headers/libraries,
-`ros2_cuda_ipc_core`, the `pybind11-dev` package, and an installed DLPack CMake
-package exposing `dlpack::dlpack`. CuPy and PyTorch are optional separate
+`ros2_cuda_ipc_core`, `ros2_cuda_ipc_image`, the `pybind11-dev` package, and an
+installed DLPack CMake package exposing `dlpack::dlpack`. CuPy and PyTorch are optional separate
 runtime dependencies and must match the installed CUDA toolkit/driver
 compatibility requirements. If DLPack is not installed, explicitly enable the
 network fetch fallback with

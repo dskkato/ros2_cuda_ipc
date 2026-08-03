@@ -31,6 +31,7 @@ find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(ros2_cuda_ipc_core REQUIRED)
+find_package(ros2_cuda_ipc_image REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
@@ -53,6 +54,7 @@ target_link_libraries(${PROJECT_NAME}_kernels
   PUBLIC
     rclcpp::rclcpp
     ros2_cuda_ipc_core::ros2_cuda_ipc_core
+    ros2_cuda_ipc_image::ros2_cuda_ipc_image
     ${ros2_cuda_ipc_msgs_TARGETS}
     ${sensor_msgs_TARGETS}
     ${std_msgs_TARGETS}

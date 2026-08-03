@@ -12,7 +12,7 @@
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "std_msgs/msg/header.hpp"
 
-namespace ros2_cuda_ipc_core::image {
+namespace ros2_cuda_ipc_image {
 
 enum class DType : uint8_t {
   U8 = 0,
@@ -29,7 +29,7 @@ enum class DType : uint8_t {
 /// resource and its read lease; this type only owns the validated metadata.
 struct ImageReadHandle {
   std_msgs::msg::Header header{};
-  subscriber::ReadHandle read;
+  ros2_cuda_ipc_core::subscriber::ReadHandle read;
   std::array<uint32_t, 3> shape{0, 0, 0};
   std::array<uint64_t, 3> strides{0, 0, 0};
   DType dtype = DType::U8;
@@ -44,7 +44,7 @@ struct ImageReadHandle {
 
   static std::optional<ImageReadHandle> from_message(
       const ros2_cuda_ipc_msgs::msg::GpuImage& message,
-      subscriber::ReadHandle read);
+      ros2_cuda_ipc_core::subscriber::ReadHandle read);
 
   uint32_t rows() const noexcept { return shape[0]; }
   uint32_t cols() const noexcept { return shape[1]; }
@@ -81,4 +81,4 @@ struct ImageReadHandle {
   bool sanity_check() const noexcept;
 };
 
-}  // namespace ros2_cuda_ipc_core::image
+}  // namespace ros2_cuda_ipc_image

@@ -37,8 +37,6 @@ Do not implement the following in this task:
 * TensorRT, ONNX Runtime, DNN inference, or model loading.
 * NVENC, V4L2 M2M, GStreamer, FFmpeg, or actual video encoding.
 * A new ROS message package.
-* Changes to `ros2_cuda_ipc_core` or `ros2_cuda_ipc_msgs`, unless a small bug fix
-  is strictly necessary.
 
 `encoder_like_node` and `inference_like_node` are intentionally CUDA-kernel-only
 stand-ins for downstream GPU consumers.
@@ -52,6 +50,7 @@ stand-ins for downstream GPU consumers.
 * `sensor_msgs`
 * `std_msgs`
 * `ros2_cuda_ipc_core`
+* `ros2_cuda_ipc_image`
 * `ros2_cuda_ipc_msgs`
 
 `CMakeLists.txt` should:
@@ -62,6 +61,7 @@ stand-ins for downstream GPU consumers.
 * find `CUDAToolkit`
 * link against `CUDA::cudart`
 * link against `ros2_cuda_ipc_core::ros2_cuda_ipc_core`
+* link against `ros2_cuda_ipc_image::ros2_cuda_ipc_image`
 * link against `ros2_cuda_ipc_msgs` in the same style as the existing packages
 * install executables to `lib/${PROJECT_NAME}`
 * install `launch/`, `doc/`, and `README.md`

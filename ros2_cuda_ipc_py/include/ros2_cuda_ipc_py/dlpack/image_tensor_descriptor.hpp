@@ -10,7 +10,7 @@
 #include <limits>
 #include <stdexcept>
 
-#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
+#include "ros2_cuda_ipc_image/image_read_handle.hpp"
 
 namespace ros2_cuda_ipc_py::dlpack {
 
@@ -25,8 +25,8 @@ struct ImageTensorDescriptor {
   DLDataType dl_dtype{};
 };
 
-inline DLDataType tensor_dl_dtype(ros2_cuda_ipc_core::image::DType dtype) {
-  using ros2_cuda_ipc_core::image::DType;
+inline DLDataType tensor_dl_dtype(ros2_cuda_ipc_image::DType dtype) {
+  using ros2_cuda_ipc_image::DType;
   switch (dtype) {
     case DType::U8:
       return {kDLUInt, 8, 1};
@@ -50,8 +50,7 @@ inline DLDataType tensor_dl_dtype(ros2_cuda_ipc_core::image::DType dtype) {
 
 /// Project unbound image metadata without performing a stream operation.
 inline ImageTensorDescriptor project_to_tensor(
-    ros2_cuda_ipc_core::image::DType dtype,
-    const std::array<uint32_t, 3>& shape,
+    ros2_cuda_ipc_image::DType dtype, const std::array<uint32_t, 3>& shape,
     const std::array<uint64_t, 3>& strides, void* data,
     uint64_t allocation_size, int device_id) {
   if (data == nullptr)

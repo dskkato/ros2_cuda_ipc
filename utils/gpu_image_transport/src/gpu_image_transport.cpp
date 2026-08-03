@@ -26,7 +26,7 @@ class GpuImageTransportNode : public GpuImageTransportNodeBase {
   }
 
  private:
-  void publish_frame(const ros2_cuda_ipc_core::image::ImageReadHandle& view,
+  void publish_frame(const ros2_cuda_ipc_image::ImageReadHandle& view,
                      std::uint64_t available_bytes) override {
     const std::uint32_t height = view.rows();
     const std::uint64_t step_bytes = view.strideH();
@@ -76,10 +76,10 @@ class GpuImageTransportNode : public GpuImageTransportNodeBase {
   }
 
   std::string infer_encoding(
-      const ros2_cuda_ipc_core::image::ImageReadHandle& view) const {
+      const ros2_cuda_ipc_image::ImageReadHandle& view) const {
     const auto channels = view.channels();
     const auto suffix = std::to_string(channels);
-    using ros2_cuda_ipc_core::image::DType;
+    using ros2_cuda_ipc_image::DType;
     switch (view.dtype) {
       case DType::U8:
         if (channels == 1) {

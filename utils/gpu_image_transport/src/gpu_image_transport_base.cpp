@@ -35,7 +35,7 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
                                "Failed to map received GPU image");
           return;
         }
-        auto view = ros2_cuda_ipc_core::image::ImageReadHandle::from_message(
+        auto view = ros2_cuda_ipc_image::ImageReadHandle::from_message(
             message, std::move(*read));
         if (!view) {
           RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
@@ -60,7 +60,7 @@ GpuImageTransportNodeBase::~GpuImageTransportNodeBase() {
 }
 
 void GpuImageTransportNodeBase::on_image(
-    const ros2_cuda_ipc_core::image::ImageReadHandle& view) {
+    const ros2_cuda_ipc_image::ImageReadHandle& view) {
   NvtxScopedRange callback_range("GpuImageTransportNodeBase::on_image");
   if (!view.read.valid()) {
     RCLCPP_WARN(get_logger(), "Received invalid GPU image view");

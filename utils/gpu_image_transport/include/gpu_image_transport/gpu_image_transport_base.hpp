@@ -12,8 +12,8 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
+#include "ros2_cuda_ipc_image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 
 namespace gpu_image_transport {
@@ -26,9 +26,8 @@ class GpuImageTransportNodeBase : public rclcpp::Node {
   ~GpuImageTransportNodeBase() override;
 
  protected:
-  virtual void publish_frame(
-      const ros2_cuda_ipc_core::image::ImageReadHandle& view,
-      std::uint64_t available_bytes) = 0;
+  virtual void publish_frame(const ros2_cuda_ipc_image::ImageReadHandle& view,
+                             std::uint64_t available_bytes) = 0;
 
   const std::string& input_topic() const { return input_topic_; }
   const std::string& output_topic() const { return output_topic_; }
@@ -38,7 +37,7 @@ class GpuImageTransportNodeBase : public rclcpp::Node {
   static std::string cuda_error_to_string(cudaError_t err);
 
  private:
-  void on_image(const ros2_cuda_ipc_core::image::ImageReadHandle& view);
+  void on_image(const ros2_cuda_ipc_image::ImageReadHandle& view);
   cudaError_t ensure_pinned_capacity(std::size_t bytes);
   void release_pinned_host();
 

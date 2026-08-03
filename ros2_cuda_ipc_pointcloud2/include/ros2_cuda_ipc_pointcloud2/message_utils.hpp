@@ -5,20 +5,22 @@
 
 #include <utility>
 
-#include "ros2_cuda_ipc_core/pointcloud2/pointcloud2_read_handle.hpp"
+#include "ros2_cuda_ipc_core/transport/buffer_descriptor.hpp"
 #include "ros2_cuda_ipc_core/transport/message_utils.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_point_cloud2.hpp"
+#include "ros2_cuda_ipc_pointcloud2/pointcloud2_read_handle.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
 
-namespace ros2_cuda_ipc_core::pointcloud2 {
+namespace ros2_cuda_ipc_pointcloud2 {
 
 // Build the point-cloud-specific part of a wire message from publisher
 // metadata. Buffer ownership and transport handles remain in BufferDescriptor.
 inline void fill_gpu_pointcloud2_message(
-    const transport::BufferDescriptor& descriptor,
+    const ros2_cuda_ipc_core::transport::BufferDescriptor& descriptor,
     const PointCloud2ReadHandle& metadata,
     ros2_cuda_ipc_msgs::msg::GpuPointCloud2& message) {
-  transport::fill_buffer_core_message(descriptor, message.core);
+  ros2_cuda_ipc_core::transport::fill_buffer_core_message(descriptor,
+                                                          message.core);
   message.header = metadata.header;
   message.height = metadata.height;
   message.width = metadata.width;
@@ -37,4 +39,4 @@ inline void fill_gpu_pointcloud2_message(
   }
 }
 
-}  // namespace ros2_cuda_ipc_core::pointcloud2
+}  // namespace ros2_cuda_ipc_pointcloud2

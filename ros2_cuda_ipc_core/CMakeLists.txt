@@ -16,8 +16,6 @@ find_package(rcpputils REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(rosidl_default_runtime REQUIRED)
 find_package(CUDAToolkit REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
 find_library(UUID_LIB uuid)
 
 if(CUDAToolkit_VERSION VERSION_LESS 10.2)
@@ -38,8 +36,6 @@ add_library(${PROJECT_NAME}
   src/backend/memory_importer.cpp
   src/subscriber/read_handle.cpp
   src/subscriber/buffer_metadata_cache.cpp
-  src/image/image_read_handle.cpp
-  src/pointcloud2/pointcloud2_read_handle.cpp
   src/subscriber/ipc_handle_cache.cpp
   src/buffer_metadata/buffer_metadata.cpp
   src/buffer_metadata/buffer_ref.cpp
@@ -59,8 +55,6 @@ target_link_libraries(${PROJECT_NAME}
     rclcpp::rclcpp
     rcpputils::rcpputils
     ${ros2_cuda_ipc_msgs_TARGETS}
-    ${sensor_msgs_TARGETS}
-    ${std_msgs_TARGETS}
     CUDA::cuda_driver
     ${UUID_LIB}
 )
@@ -85,15 +79,10 @@ if(BUILD_TESTING)
   target_link_libraries(test_ipc_handle_cache ${PROJECT_NAME})
   ament_add_gtest(test_buffer_metadata_cache test/test_buffer_metadata_cache.cpp)
   target_link_libraries(test_buffer_metadata_cache ${PROJECT_NAME})
-  # subscriber and typed read tests
+  # subscriber tests
   ament_add_gtest(test_buffer_mapper test/mapper/test_buffer_mapper.cpp)
   target_include_directories(test_buffer_mapper PRIVATE test)
   target_link_libraries(test_buffer_mapper ${PROJECT_NAME})
-  ament_add_gtest(test_image_read_handle test/test_image_read_handle.cpp)
-  target_link_libraries(test_image_read_handle ${PROJECT_NAME})
-  ament_add_gtest(test_pointcloud2_read_handle
-                  test/test_pointcloud2_read_handle.cpp)
-  target_link_libraries(test_pointcloud2_read_handle ${PROJECT_NAME})
   ament_add_gtest(test_publisher_messages test/test_publisher_messages.cpp)
   target_link_libraries(test_publisher_messages ${PROJECT_NAME})
   ament_add_gtest(test_gpu_buffer_manager
@@ -121,5 +110,5 @@ endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
-ament_export_dependencies(CUDAToolkit rcutils rclcpp rcpputils ros2_cuda_ipc_msgs rosidl_default_runtime sensor_msgs std_msgs)
+ament_export_dependencies(CUDAToolkit rcutils rclcpp rcpputils ros2_cuda_ipc_msgs rosidl_default_runtime)
 ament_package()

@@ -14,9 +14,9 @@
 #include "multi_process_image_fanout/kernels.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_core/publisher/gpu_buffer_manager.hpp"
 #include "ros2_cuda_ipc_core/transport/message_utils.hpp"
+#include "ros2_cuda_ipc_image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 
 namespace multi_process_image_fanout {
@@ -147,7 +147,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     ros2_cuda_ipc_msgs::msg::GpuImage message;
     ros2_cuda_ipc_core::transport::fill_buffer_core_message(descriptor.value(),
                                                             message.core);
-    message.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::image::DType::U8);
+    message.dtype = static_cast<uint8_t>(ros2_cuda_ipc_image::DType::U8);
     message.shape = {height_, width_, kDefaultChannels};
     message.strides = {width_ * kBytesPerPixel, kDefaultChannels, 1};
     message.encoding = encoding_;

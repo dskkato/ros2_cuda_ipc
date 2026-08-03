@@ -85,11 +85,27 @@ ros2 topic echo /fanout/inference_like/status
 ## Repository Layout
 
 - `ros2_cuda_ipc_msgs`: ROS 2 message definitions for GPU-backed buffers.
-- `ros2_cuda_ipc_core`: CUDA memory sharing plus modality-oriented mapping and view utilities.
+- `ros2_cuda_ipc_core`: untyped CUDA memory sharing, buffer lifetime, and synchronization APIs.
+- `ros2_cuda_ipc_image`: typed `GpuImage` metadata validation, `ImageReadHandle`, and image message helpers.
+- `ros2_cuda_ipc_pointcloud2`: typed `GpuPointCloud2`/`PointField` validation, `PointCloud2ReadHandle`, and point-cloud message helpers.
 - `ros2_cuda_ipc_py`: `rclpy`/pybind11 subscriber mapping with zero-copy CuPy views.
 - `examples/multi_process_image_fanout`: primary runnable demo.
 - `utils/gpu_image_transport`: utility nodes that map `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: small CUDA IPC / VMM-FD environment checks.
+
+The package dependency direction is:
+
+```text
+ros2_cuda_ipc_image ───────┐
+                           ├─> ros2_cuda_ipc_core ──> ros2_cuda_ipc_msgs
+ros2_cuda_ipc_pointcloud2 ─┘          │
+                                     └─> CUDA IPC / lifetime / synchronization
+```
+
+`ros2_cuda_ipc_core` does not depend on or expose image or PointCloud2 typed
+objects. Those layers keep their modality-specific validation and helpers in
+the package that owns the corresponding type. `ros2_cuda_ipc_pointcloud2` also
+depends directly on `sensor_msgs` for `PointField`.
 
 ## More Details
 

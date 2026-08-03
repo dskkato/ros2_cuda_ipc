@@ -12,6 +12,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(ros2_cuda_ipc_core REQUIRED)
+find_package(ros2_cuda_ipc_image REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS imgcodecs)
@@ -31,6 +32,7 @@ target_link_libraries(gpu_image_transport_base
   PUBLIC
     rclcpp::rclcpp
     ros2_cuda_ipc_core::ros2_cuda_ipc_core
+    ros2_cuda_ipc_image::ros2_cuda_ipc_image
     ${ros2_cuda_ipc_msgs_TARGETS}
     CUDA::cudart
 )

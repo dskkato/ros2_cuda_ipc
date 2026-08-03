@@ -13,12 +13,26 @@ Subscriber プロセスへコピーせずに共有する。メッセージには
 
 現在の transport は CUDA VMM + shareable FD を唯一の memory sharing backend とする。
 - 固定 block pool と shared-memory buffer reference による publisher/subscriber 間の lifetime 管理
-- C++ の raw pointer API、画像／点群の typed adapter、Python の GpuImage/DLPack adapter
+- C++ の raw pointer API、画像／点群 package の typed adapter、Python の GpuImage/DLPack adapter
 
 CPU fallback、Python publisher、任意の ROS message の自動変換はこの設計の範囲外である。
 Python adapter の詳細は [doc/python-subscriber-implementation.md](python-subscriber-implementation.md) を参照する。
 
 ## 用語と層構造
+
+パッケージの責務と依存方向は次の通りである。
+
+```text
+ros2_cuda_ipc_image ───────┐
+                           ├─> ros2_cuda_ipc_core ──> ros2_cuda_ipc_msgs
+ros2_cuda_ipc_pointcloud2 ─┘          │
+                                     └─> untyped IPC / lifetime / synchronization
+```
+
+`ros2_cuda_ipc_core` は `BufferCore` と GPU buffer の lifetime／同期だけを扱う。
+`GpuImage`、`GpuPointCloud2`、`sensor_msgs::msg::PointField` の validation と
+message helper は、それぞれの typed package に属する。PointCloud2 package は
+`sensor_msgs` にも直接依存する。
 
 | 用語 | 役割 |
 | --- | --- |
@@ -27,7 +41,8 @@ Python adapter の詳細は [doc/python-subscriber-implementation.md](python-sub
 | `BufferMapper` | `BufferCore` を import し、consumer stream に bind した read を作る mapper |
 | `MappedPublication` | detail内部の、import済みだがconsumer stream未bindのpublication |
 | `ReadHandle` | 一つの GPU read の所有者。imported resource と buffer reference を保持する move-only handle |
-| `ImageReadHandle` / `PointCloud2ReadHandle` | `ReadHandle` と画像／点群メタデータを組み合わせる move-only typed handle |
+| `ros2_cuda_ipc_image::ImageReadHandle` | `ReadHandle` と画像メタデータを組み合わせる move-only typed handle |
+| `ros2_cuda_ipc_pointcloud2::PointCloud2ReadHandle` | `ReadHandle` と点群メタデータを組み合わせる move-only typed handle |
 | buffer reference | shared-memory block の refcount を保持し、publisher による再利用を防ぐ subscriber 側の所有権 |
 
 ### Blockモデル
@@ -71,10 +86,15 @@ ROS message
     -> optional<ReadHandle>
     -> GPU pointer + byte size
 
-GpuImage / GpuPointCloud2
+ros2_cuda_ipc_image::ImageReadHandle
     -> BufferMapper::map(message.core, consumer_stream)
     -> ReadHandle
-    -> ImageReadHandle::from_message / PointCloud2ReadHandle::from_message
+    -> ImageReadHandle::from_message
+
+ros2_cuda_ipc_pointcloud2::PointCloud2ReadHandle
+    -> BufferMapper::map(message.core, consumer_stream)
+    -> ReadHandle
+    -> PointCloud2ReadHandle::from_message
 ```
 
 `MappedPublication`、`BufferRef`、`BufferMetadataCache`、`IpcHandleCache`、completion
