@@ -15,6 +15,9 @@ This document records the user-visible changes between releases of
 - Added process-unique block IDs, PID-reuse-aware UID initialization, orphaned
   shared-memory cleanup, and expanded multi-block, multi-pool, restart, stale
   descriptor, cache, and cleanup coverage.
+- Removed the obsolete shared-memory name-prefix configuration from the
+  publisher API and demo launch parameters; block metadata names are now
+  always derived from `publisher_pid` and `block_id`.
 - Removed the CUDA IPC memory-sharing backend. The core library now uses CUDA
   VMM plus POSIX file descriptors exclusively.
 - Removed `BufferCore.backend` and the publisher/launch backend-selection APIs.

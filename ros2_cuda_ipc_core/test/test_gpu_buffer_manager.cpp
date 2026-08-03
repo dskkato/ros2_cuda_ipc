@@ -32,7 +32,7 @@ class GpuBufferManagerTest : public ::testing::Test {
 }  // namespace
 
 TEST_F(GpuBufferManagerTest, DescriptorDirectlyIdentifiesBlock) {
-  GpuBufferManager manager({"/ignored", 2, 1024, 0});
+  GpuBufferManager manager({2, 1024, 0});
   ASSERT_TRUE(manager.initialise());
   std::set<uint32_t> ids;
   for (int i = 0; i < 2; ++i) {
@@ -51,7 +51,7 @@ TEST_F(GpuBufferManagerTest, DescriptorDirectlyIdentifiesBlock) {
 }
 
 TEST_F(GpuBufferManagerTest, ResetUnlinksAllBlockMetadataObjects) {
-  GpuBufferManager manager({"/ignored", 2, 1024, 0});
+  GpuBufferManager manager({2, 1024, 0});
   ASSERT_TRUE(manager.initialise());
   std::vector<std::string> names;
   for (int i = 0; i < 2; ++i) {
@@ -71,8 +71,8 @@ TEST_F(GpuBufferManagerTest, ResetUnlinksAllBlockMetadataObjects) {
 }
 
 TEST_F(GpuBufferManagerTest, DifferentPoolsUseDifferentBlockIds) {
-  GpuBufferManager first({"/ignored", 1, 1024, 0});
-  GpuBufferManager second({"/ignored", 1, 1024, 0});
+  GpuBufferManager first({1, 1024, 0});
+  GpuBufferManager second({1, 1024, 0});
   ASSERT_TRUE(first.initialise());
   ASSERT_TRUE(second.initialise());
   auto first_block = first.acquire_for_publish();

@@ -64,10 +64,8 @@ void cleanup_orphaned_metadata_objects() noexcept {
 
 }  // namespace
 
-BufferMetadataManager::BufferMetadataManager(std::string ignored_legacy_prefix,
-                                             std::size_t block_count)
-    : ignored_legacy_prefix_(std::move(ignored_legacy_prefix)),
-      block_count_(block_count),
+BufferMetadataManager::BufferMetadataManager(std::size_t block_count)
+    : block_count_(block_count),
       publisher_pid_(static_cast<uint32_t>(::getpid())) {}
 
 BufferMetadataManager::~BufferMetadataManager() { reset(); }

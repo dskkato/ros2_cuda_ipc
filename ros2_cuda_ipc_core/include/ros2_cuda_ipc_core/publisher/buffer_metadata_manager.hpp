@@ -26,8 +26,7 @@ class BufferMetadataManager {
     std::size_t pool_index = 0;
   };
 
-  explicit BufferMetadataManager(std::string ignored_legacy_prefix,
-                                 std::size_t block_count);
+  explicit BufferMetadataManager(std::size_t block_count);
   ~BufferMetadataManager();
 
   bool initialise();
@@ -51,7 +50,6 @@ class BufferMetadataManager {
     std::shared_ptr<buffer_metadata::BufferMetadata> mapping;
   };
 
-  std::string ignored_legacy_prefix_;
   std::size_t block_count_;
   uint32_t publisher_pid_ = 0;
   mutable std::mutex mutex_;

@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <optional>
-#include <string>
 
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
@@ -80,10 +79,6 @@ class GpuBufferManager {
  public:
   /// Configuration for a GPU buffer manager.
   struct Config {
-    /// Retained for source compatibility; block metadata names are derived
-    /// exclusively from publisher_pid and process-unique block_id.
-    std::string shm_name_prefix;
-
     /// Number of reusable GPU buffer blocks.
     std::size_t block_count = 0;
 

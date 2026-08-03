@@ -17,8 +17,8 @@
 namespace ros2_cuda_ipc_core::publisher {
 
 TEST(BufferMetadataManagerTest, MultiplePoolsReceiveProcessUniqueBlockIds) {
-  BufferMetadataManager first("/ignored", 2);
-  BufferMetadataManager second("/ignored", 3);
+  BufferMetadataManager first(2);
+  BufferMetadataManager second(3);
   ASSERT_TRUE(first.initialise());
   ASSERT_TRUE(second.initialise());
 
@@ -42,7 +42,7 @@ TEST(BufferMetadataManagerTest, MultiplePoolsReceiveProcessUniqueBlockIds) {
 }
 
 TEST(BufferMetadataManagerTest, ResetUnlinksEveryBlockMetadataObject) {
-  BufferMetadataManager manager("/ignored", 3);
+  BufferMetadataManager manager(3);
   ASSERT_TRUE(manager.initialise());
   std::vector<std::string> names;
   for (int i = 0; i < 3; ++i) {
@@ -60,7 +60,7 @@ TEST(BufferMetadataManagerTest, ResetUnlinksEveryBlockMetadataObject) {
 }
 
 TEST(BufferMetadataManagerTest, ReinitialiseUsesNewBlockIdentities) {
-  BufferMetadataManager manager("/ignored", 1);
+  BufferMetadataManager manager(1);
   ASSERT_TRUE(manager.initialise());
   const auto first = manager.reserve_for_publish();
   ASSERT_TRUE(first);
@@ -86,7 +86,7 @@ TEST(BufferMetadataManagerTest, InitialisationCleansMetadataFromDeadPublisher) {
   ASSERT_TRUE(orphan);
   orphan.reset();
 
-  BufferMetadataManager manager("/ignored", 1);
+  BufferMetadataManager manager(1);
   ASSERT_TRUE(manager.initialise());
   const int fd = ::shm_open(name.c_str(), O_RDONLY, 0);
   EXPECT_EQ(fd, -1);
@@ -95,7 +95,7 @@ TEST(BufferMetadataManagerTest, InitialisationCleansMetadataFromDeadPublisher) {
 
 TEST(BufferMetadataManagerTest, ResetRacingWithReserveLeavesNoReservation) {
   for (int iteration = 0; iteration < 100; ++iteration) {
-    BufferMetadataManager manager("/ignored", 1);
+    BufferMetadataManager manager(1);
     ASSERT_TRUE(manager.initialise());
     std::atomic<bool> start{false};
     std::optional<BufferMetadataManager::Reservation> reservation;

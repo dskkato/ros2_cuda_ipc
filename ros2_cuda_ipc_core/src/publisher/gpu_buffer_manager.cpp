@@ -107,7 +107,7 @@ void PublishBlock::cancel() noexcept {
 GpuBufferManager::GpuBufferManager(Config config)
     : config_(std::move(config)),
       buffer_pool_(config_.block_count),
-      buffer_metadata_manager_(config_.shm_name_prefix, config_.block_count) {}
+      buffer_metadata_manager_(config_.block_count) {}
 
 GpuBufferManager::~GpuBufferManager() { reset(); }
 
