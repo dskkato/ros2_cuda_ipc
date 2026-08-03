@@ -13,17 +13,17 @@
 
 namespace ros2_cuda_ipc_core::buffer_metadata {
 
-/// Metadata for one slot in the shared-memory buffer metadata pool.
-struct SlotMetadata {
-  std::atomic<uint32_t> generation{0};
+/// Metadata for one block in the shared-memory buffer metadata pool.
+struct BlockMetadata {
+  std::atomic<uint32_t> uid{0};
   std::atomic<uint32_t> refcount{0};
   std::atomic<uint64_t> publish_timestamp_us{0};
 };
 
 static_assert(std::atomic<uint32_t>::is_always_lock_free);
 static_assert(std::atomic<uint64_t>::is_always_lock_free);
-static_assert(sizeof(SlotMetadata) == 16);
-static_assert(alignof(SlotMetadata) >= alignof(std::atomic<uint64_t>));
+static_assert(sizeof(BlockMetadata) == 16);
+static_assert(alignof(BlockMetadata) >= alignof(std::atomic<uint64_t>));
 
 /// Owns one POSIX shared-memory mapping.
 ///
@@ -37,7 +37,7 @@ class BufferMetadata {
   ///
   /// @param shm_name POSIX shared-memory name.
   /// @param instance_id Publisher instance identity stored in the header.
-  /// @param capacity Number of slots to allocate.
+  /// @param capacity Number of blocks to allocate.
   /// @return Owning mapping, or nullptr when creation or initialization fails.
   static std::shared_ptr<BufferMetadata> create(
       const std::string& shm_name, const PublisherInstanceId& instance_id,
@@ -64,10 +64,10 @@ class BufferMetadata {
     return publisher_instance_id_;
   }
   uint32_t capacity() const noexcept { return capacity_; }
-  SlotMetadata* slot(uint32_t slot_id) noexcept {
-    return slot_id < capacity_ ? &slots_[slot_id] : nullptr;
+  BlockMetadata* block(uint32_t block_id) noexcept {
+    return block_id < capacity_ ? &blocks_[block_id] : nullptr;
   }
-  std::atomic<uint32_t>& next_slot() noexcept { return next_slot_; }
+  std::atomic<uint32_t>& next_block() noexcept { return next_block_; }
 
  private:
   BufferMetadata() = default;
@@ -77,8 +77,8 @@ class BufferMetadata {
   uint32_t capacity_ = 0;
   std::size_t mapped_size_ = 0;
   void* addr_ = nullptr;
-  SlotMetadata* slots_ = nullptr;
-  std::atomic<uint32_t> next_slot_{0};
+  BlockMetadata* blocks_ = nullptr;
+  std::atomic<uint32_t> next_block_{0};
 };
 
 }  // namespace ros2_cuda_ipc_core::buffer_metadata

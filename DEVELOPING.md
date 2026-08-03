@@ -17,18 +17,18 @@ who want to try the demo first.
 - `ros2_cuda_ipc_core::subscriber::BufferMapper`: maps a `BufferCore` and a consumer stream to an optional `ReadHandle`.
 - `ros2_cuda_ipc_core::subscriber::ReadHandle`: the normal pointer API. It waits for producer readiness, owns the buffer reference, and defers resource/buffer reference release until consumer completion.
 - `ros2_cuda_ipc_core::image::ImageView` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2View`: typed adapters layered on `ReadHandle`; the Python image adapter is DLPack-only and binds its stream at export.
-- `ros2_cuda_ipc_core::publisher::BufferMetadataManager`: publisher reservation, generation, and grace-period state. Subscriber buffer reference handles, import caches, completion events, and deferred queues are internal.
-- `ros2_cuda_ipc_core::publisher::GpuBufferPool`: publisher-side GPU resource ownership.
-- `ros2_cuda_ipc_core::publisher::BufferMetadataManager`: publisher reservation, generation, and grace-period state.
+- `ros2_cuda_ipc_core::publisher::GpuBufferPool`: publisher-local allocation and reuse strategy for independent `GpuBufferBlock` resources.
+- `ros2_cuda_ipc_core::publisher::BufferMetadataManager`: publisher reservation, uid, and grace-period state.
 - `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher-facing buffer manager.
-- `ros2_cuda_ipc_core::publisher::PublishSlot`: one move-only publish attempt with RAII cancellation.
+- `ros2_cuda_ipc_core::publisher::PublishBlock`: one move-only publish attempt with RAII cancellation.
+- `ros2_cuda_ipc_core::buffer_metadata::BlockMetadata`: shared per-block publication identity and refcount state. Subscriber buffer reference handles, import caches, completion events, and deferred queues are internal.
 
 Publisher code should follow this order:
 
 ```cpp
-auto slot = manager.acquire_for_publish();
-launch_gpu_work(slot->device_ptr(), stream);
-auto descriptor = slot->prepare_publish(stream);
+auto block = manager.acquire_for_publish();
+launch_gpu_work(block->device_ptr(), stream);
+auto descriptor = block->prepare_publish(stream);
 if (!descriptor) {
   return;
 }
@@ -45,9 +45,9 @@ Applications that use the CUDA Runtime API include
 passed directly to `prepare_publish()`. The stream is owned by the application
 and is only borrowed by the core library.
 
-Destroying a slot before preparation cancels its reservation. A successful
+Destroying a block before preparation cancels its reservation. A successful
 preparation commits it. The subsequent middleware publish result does not
-affect slot lifecycle.
+affect block lifecycle.
 The protocol guarantees and known limitations are specified in
 [doc/buffer_metadata_protocol.md](doc/buffer_metadata_protocol.md).
 
@@ -135,7 +135,7 @@ This writes separate reports named
 `fanout-<arch>-<width>x<height>-<rate>-<label>-<node>`. Override
 `nsys_profile_flags` to change the default `--trace=osrt,nvtx,cuda` flags.
 
-Expected NVTX ranges include slot acquisition, producer kernel work, input
+Expected NVTX ranges include block acquisition, producer kernel work, input
 event waits, preview image copy, encoder-like kernels, and inference-like
 kernels. A large device-to-host image copy should appear only in `preview_node`.
 

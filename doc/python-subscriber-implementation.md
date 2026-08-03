@@ -29,8 +29,8 @@ Python側は次を担当する。
 
 C++ coreは次を担当する。
 
-- messageの検証とgenerationの確認
-- shared-memory slotのbuffer reference取得
+- messageの検証とuidの確認
+- shared-memory blockのbuffer reference取得
 - CUDA memory/eventのimportとcache
 - `ReadHandle`からのdevice pointer、ready wait、metadataの提供
 - completion event後のresource/buffer reference cleanup
@@ -56,10 +56,10 @@ Python ReadHandle
     -> native ReadHandle
         -> imported resource
         -> buffer reference
-            -> shared-memory slot reference
+            -> shared-memory block reference
 ```
 
-slotは、completion event後にdeferred queueがhandle固有のbuffer referenceを解放するまで
+blockは、completion event後にdeferred queueがhandle固有のbuffer referenceを解放するまで
 publisherから再利用されない。通常のPython `ReadHandle`の`close()`は、そのread
 stateを解放する。DLPack export後のtyped adapterは`close()`できない。
 
@@ -70,14 +70,14 @@ buffer referenceが維持される。
 ## Framework adapterの原則
 
 framework objectはraw device pointerだけを保持してはいけない。framework objectの
-lifetimeをnative viewへ接続し、slotの所有権を一方向に拡張する。
+lifetimeをnative viewへ接続し、blockの所有権を一方向に拡張する。
 
 ```text
 framework object
     -> retained native read state
         -> imported resource
         -> buffer reference
-            -> shared-memory slot
+            -> shared-memory block
 ```
 
 これはmemoryの所有権であり、CUDA kernelの完了通知ではない。capsule deleterは
@@ -113,7 +113,7 @@ framework tensor / array
         -> manager context / retained native read state
             -> imported CUDA resource
             -> buffer reference
-                -> shared-memory slot reference
+                -> shared-memory block reference
 ```
 
 capsuleがconsumerに渡された後はmanaged-tensor deleterがretained native read stateを
@@ -147,7 +147,7 @@ producerの書き込み完了を表し、capsule deleterがconsumer streamへの
 event recordを行う。利用者はframework objectと、bindしたstreamをcompletion record
 完了まで保持する必要がある。import cache entryの破棄方針はcacheが管理する。
 
-逆に、arrayを長く保持するとslot referenceも長く保持され、publisherが利用できるslot数を
+逆に、arrayを長く保持するとblock referenceも長く保持され、publisherが利用できるblock数を
 圧迫する可能性がある。stream完了に合わせた自動buffer reference releaseや、同期を伴う
 context managerは今後のAPI設計課題である。
 
@@ -169,7 +169,7 @@ CPU fallback、PointCloud2は対象外である。
 ## エラーと実行モデル
 
 - descriptorの型・field・layout不正はPythonの入力エラーとして扱う
-- stale generation、buffer reference取得失敗、CUDA import失敗はmapping failureとして扱う
+- stale uid、buffer reference取得失敗、CUDA import失敗はmapping failureとして扱う
 - ready-event waitのCUDA failureはmapping failureと分けて扱う
 - Python messageの読み取りにはGILが必要だが、C++ mapperの重い処理はGILを解放できる
 - Python wrapperのdestructorからPython APIを呼び出さない
@@ -178,5 +178,5 @@ CPU fallback、PointCloud2は対象外である。
 
 Python callbackから既存のC++ buffer reference/resource modelを壊さずにzero-copyのGPU viewを
 取得し、framework固有のobjectへ一方向にownershipを拡張できることが到達点である。
-frameworkごとの使い勝手や非同期処理の完了管理は、slotの再利用条件を曖昧にしない
+frameworkごとの使い勝手や非同期処理の完了管理は、blockの再利用条件を曖昧にしない
 形で今後拡張する。

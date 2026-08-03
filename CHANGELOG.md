@@ -17,6 +17,10 @@ This document records the user-visible changes between releases of
   using a ROS message and is not a mirror of the message field.
 - The standalone `cuda_ipc_poc` comparison programs remain available, but are
   no longer library backends.
+- Renamed publisher buffer slots to blocks across the core API, metadata,
+  ROS messages, Python descriptors, launch arguments, documentation, and
+  tests. The wire/API identifiers `slot_id` and `generation` are now
+  `block_id` and `uid`, and `slot_count` is now `block_count`.
 
 ## [0.4.0] - 2026-07-30
 
@@ -33,10 +37,10 @@ work.
   `ReadHandle` API. Imported resources, publication leases, producer waits,
   and completion handling now follow the read-handle lifecycle, with release
   deferred until asynchronous work completes.
-- Simplified `PublishSlot` preparation to the single
+- Simplified `PublishBlock` preparation to the single
   `prepare_publish(CUstream)` operation, which builds the descriptor,
   records the ready event, and commits the reservation.
-- Simplified lease slot reuse to generation, reference-count, and publication
+- Simplified lease block reuse to uid, reference-count, and publication
   timestamp tracking with a fixed grace period; removed pending metadata and
   pending-TTL configuration.
 - Replaced core `RCLCPP_*` logging and propagated logger objects with named
@@ -44,11 +48,11 @@ work.
 
 ### Breaking changes and migration notes
 
-- Update publisher code to use `PublishSlot::prepare_publish(CUstream)`;
+- Update publisher code to use `PublishBlock::prepare_publish(CUstream)`;
   `record_ready()`, `descriptor()`, and `commit_publish()` are no longer part
-  of the public `PublishSlot` API.
+  of the public `PublishBlock` API.
 - Remove uses of pending-lease metadata and pending-TTL configuration APIs.
-  Slot reuse is now protected by the fixed grace period and active lease
+  Block reuse is now protected by the fixed grace period and active lease
   reference counts.
 - Update subscriber code to use `BufferMapper` and `ReadHandle`. Legacy
   buffer-view, lease-handle, and import-cache implementation headers are no

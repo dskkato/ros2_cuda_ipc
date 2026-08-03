@@ -79,12 +79,12 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   width:=1280 \
   height:=720 \
   publish_rate_hz:=60.0 \
-  slot_count:=4 \
+  block_count:=4 \
   shm_name_prefix:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```
 
-The `width`, `height`, and `slot_count`,
+The `width`, `height`, and `block_count`,
 `shm_name_prefix`, and `device_index` arguments are publisher-side pseudo-camera
 parameters.
 
@@ -132,7 +132,7 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
 This wraps each process with `nsys profile` and writes separate reports named
 `fanout-<arch>-<width>x<height>-<rate>-<label>-<node>`. Override
 `nsys_profile_flags` to change the default `--trace=osrt,nvtx,cuda` flags.
-Nsight Systems should show NVTX ranges for slot acquisition, producer kernel
+Nsight Systems should show NVTX ranges for block acquisition, producer kernel
 work, input event waits, preview image copy, encoder-like kernels, and
 inference-like kernels. A large device-to-host image copy should appear only in
 `preview_node`.

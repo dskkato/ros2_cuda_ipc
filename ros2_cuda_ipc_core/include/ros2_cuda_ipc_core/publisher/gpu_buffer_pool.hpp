@@ -13,11 +13,15 @@
 
 namespace ros2_cuda_ipc_core::publisher {
 
+/// A single independently allocated GPU resource owned by a publisher pool.
+using GpuBufferBlock = backend::GpuBufferBlock;
+
 class GpuBufferPool {
  public:
-  using SlotResources = backend::SlotResources;
+  /// One independently allocated GPU resource managed by this local pool.
+  using GpuBufferBlock = backend::GpuBufferBlock;
 
-  explicit GpuBufferPool(std::size_t slot_count);
+  explicit GpuBufferPool(std::size_t block_count);
   ~GpuBufferPool();
 
   GpuBufferPool(const GpuBufferPool&) = delete;
@@ -29,21 +33,22 @@ class GpuBufferPool {
   void reset() noexcept;
   bool is_initialised() const noexcept { return initialised_; }
   bool matches(uint64_t byte_size, int device_index) const noexcept;
-  std::size_t size() const noexcept { return slots_.size(); }
+  std::size_t size() const noexcept { return blocks_.size(); }
   uint64_t byte_size() const noexcept { return byte_size_; }
   int device_index() const noexcept { return device_index_; }
 
-  void* device_ptr(uint32_t slot_id) const noexcept;
-  detail::CudaResult<void> record_ready(uint32_t slot_id,
+  void* device_ptr(uint32_t block_id) const noexcept;
+  detail::CudaResult<void> record_ready(uint32_t block_id,
                                         CUstream stream) noexcept;
-  const SlotResources* resources(uint32_t slot_id) const noexcept;
+  const GpuBufferBlock* resources(uint32_t block_id) const noexcept;
 
  private:
-  bool allocate_slots();
-  void destroy_slots() noexcept;
+  /// Pool is a publisher-local block allocation and reuse strategy.
+  bool allocate_blocks();
+  void destroy_blocks() noexcept;
 
-  std::size_t slot_count_;
-  std::vector<SlotResources> slots_;
+  std::size_t block_count_;
+  std::vector<GpuBufferBlock> blocks_;
   uint64_t byte_size_ = 0;
   int device_index_ = -1;
   bool initialised_ = false;

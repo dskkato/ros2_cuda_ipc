@@ -43,7 +43,7 @@ uint64_t align_up(uint64_t value, uint64_t alignment) {
  * @brief Helper that serves a shareable file descriptor over a Unix socket.
  *
  * The VMM backend exports CUDA memory as a POSIX FD. `UnixFdServer` listens on
- * an `AF_UNIX` socket (one per slot) and sends that FD to every client via
+ * an `AF_UNIX` socket (one per block) and sends that FD to every client via
  * `SCM_RIGHTS`. This isolates the POSIX details from the backend logic.
  */
 class UnixFdServer {
@@ -244,14 +244,14 @@ bool ensure_driver() {
 }  // namespace
 
 /**
- * @brief Runtime state for a VMM-backed slot (address, FD server, etc.).
+ * @brief Runtime state for a VMM-backed block (address, FD server, etc.).
  *
  * Owns the CUDA driver objects and POSIX FD server used to share the
  * allocation. Destruction tears down the mapping, frees the allocation, closes
  * the FD, and stops the Unix socket server.
  */
-struct VmmFdSlotState {
-  ~VmmFdSlotState() {
+struct VmmFdBlockState {
+  ~VmmFdBlockState() {
     if (server) {
       server->stop();
       server.reset();
@@ -277,13 +277,13 @@ struct VmmFdSlotState {
   std::unique_ptr<UnixFdServer> server;
 };
 
-SlotResources::SlotResources() = default;
-SlotResources::~SlotResources() = default;
-SlotResources::SlotResources(SlotResources&&) noexcept = default;
-SlotResources& SlotResources::operator=(SlotResources&&) noexcept = default;
+GpuBufferBlock::GpuBufferBlock() = default;
+GpuBufferBlock::~GpuBufferBlock() = default;
+GpuBufferBlock::GpuBufferBlock(GpuBufferBlock&&) noexcept = default;
+GpuBufferBlock& GpuBufferBlock::operator=(GpuBufferBlock&&) noexcept = default;
 
 bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
-                            std::vector<SlotResources>& slots) {
+                            std::vector<GpuBufferBlock>& blocks) {
   if (!ensure_driver()) {
     return false;
   }
@@ -308,8 +308,8 @@ bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
   }
 
   const uint64_t aligned_size = align_up(frame_size_bytes, granularity);
-  for (auto& slot : slots) {
-    auto state = std::make_unique<VmmFdSlotState>();
+  for (auto& block : blocks) {
+    auto state = std::make_unique<VmmFdBlockState>();
     state->allocation_size = aligned_size;
 
     CUdeviceptr address = 0;
@@ -319,7 +319,7 @@ bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemAddressReserve failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy_vmm_fd_memory(slots);
+      destroy_vmm_fd_memory(blocks);
       return false;
     }
     state->address = address;
@@ -330,7 +330,7 @@ bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemCreate failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy_vmm_fd_memory(slots);
+      destroy_vmm_fd_memory(blocks);
       return false;
     }
 
@@ -339,7 +339,7 @@ bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemMap failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy_vmm_fd_memory(slots);
+      destroy_vmm_fd_memory(blocks);
       return false;
     }
 
@@ -352,7 +352,7 @@ bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.backend.vmm_fd", "cuMemSetAccess failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy_vmm_fd_memory(slots);
+      destroy_vmm_fd_memory(blocks);
       return false;
     }
 
@@ -366,7 +366,7 @@ bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
           "ros2_cuda_ipc_core.backend.vmm_fd",
           "cuMemExportToShareableHandle failed: %s",
           ros2_cuda_ipc_core::detail::cu_result_to_string(res).c_str());
-      destroy_vmm_fd_memory(slots);
+      destroy_vmm_fd_memory(blocks);
       return false;
     }
     if (state->shareable_fd >= 0) {
@@ -388,23 +388,23 @@ bool allocate_vmm_fd_memory(uint64_t frame_size_bytes, int device_index,
     state->server =
         std::make_unique<UnixFdServer>(socket_path, state->shareable_fd);
     if (!state->server->start()) {
-      destroy_vmm_fd_memory(slots);
+      destroy_vmm_fd_memory(blocks);
       return false;
     }
 
     // Store the socket path so subscribers know which socket to contact.
-    slot.vmm_socket_path = socket_path;
-    slot.device_ptr = reinterpret_cast<void*>(state->address);
-    slot.vmm_fd_state = std::move(state);
+    block.vmm_socket_path = socket_path;
+    block.device_ptr = reinterpret_cast<void*>(state->address);
+    block.vmm_fd_state = std::move(state);
   }
   return true;
 }
 
-void destroy_vmm_fd_memory(std::vector<SlotResources>& slots) noexcept {
-  for (auto& slot : slots) {
-    slot.device_ptr = nullptr;
-    slot.vmm_fd_state.reset();
-    slot.vmm_socket_path.clear();
+void destroy_vmm_fd_memory(std::vector<GpuBufferBlock>& blocks) noexcept {
+  for (auto& block : blocks) {
+    block.device_ptr = nullptr;
+    block.vmm_fd_state.reset();
+    block.vmm_socket_path.clear();
   }
 }
 

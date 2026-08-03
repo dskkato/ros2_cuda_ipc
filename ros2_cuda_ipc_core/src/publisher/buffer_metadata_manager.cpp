@@ -35,17 +35,18 @@ std::pair<PublisherInstanceId, std::string> make_instance_identity(
 }  // namespace
 
 BufferMetadataManager::BufferMetadataManager(std::string shm_name_prefix,
-                                             std::size_t slot_count)
-    : shm_name_prefix_(std::move(shm_name_prefix)), slot_count_(slot_count) {}
+                                             std::size_t block_count)
+    : shm_name_prefix_(std::move(shm_name_prefix)), block_count_(block_count) {}
 
 BufferMetadataManager::~BufferMetadataManager() { reset(); }
 
 bool BufferMetadataManager::initialise() {
   reset();
-  if (slot_count_ == 0 || slot_count_ > std::numeric_limits<uint32_t>::max()) {
+  if (block_count_ == 0 ||
+      block_count_ > std::numeric_limits<uint32_t>::max()) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Invalid slot_count: %zu", slot_count_);
+        "Invalid block_count: %zu", block_count_);
     return false;
   }
   if (!valid_prefix(shm_name_prefix_)) {
@@ -62,7 +63,7 @@ bool BufferMetadataManager::initialise() {
     return false;
   }
   auto mapping = buffer_metadata::BufferMetadata::create(
-      instance_name, instance_id, static_cast<uint32_t>(slot_count_));
+      instance_name, instance_id, static_cast<uint32_t>(block_count_));
   if (!mapping) {
     return false;
   }
@@ -124,19 +125,19 @@ BufferMetadataManager::reserve_for_publish() {
   if (!reservation) {
     return std::nullopt;
   }
-  if (reservation->slot_id >= slot_count_) {
+  if (reservation->block_id >= block_count_) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
         "Buffer metadata shared-memory capacity changed unexpectedly: "
-        "slot=%u configured_count=%zu",
-        reservation->slot_id, slot_count_);
+        "block=%u configured_count=%zu",
+        reservation->block_id, block_count_);
     const bool rolled_back = buffer_metadata::BufferRef::cancel_publish(
-        reservation->mapping, reservation->slot_id, reservation->generation);
+        reservation->mapping, reservation->block_id, reservation->uid);
     if (!rolled_back) {
       RCUTILS_LOG_ERROR_NAMED(
           "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-          "Failed to roll back out-of-range reservation slot=%u generation=%u",
-          reservation->slot_id, reservation->generation);
+          "Failed to roll back out-of-range reservation block=%u uid=%u",
+          reservation->block_id, reservation->uid);
     }
     return std::nullopt;
   }
@@ -144,45 +145,45 @@ BufferMetadataManager::reserve_for_publish() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (initialised_ && shm_name_ == shm_name &&
         publisher_instance_id_ == instance_id) {
-      return Reservation{reservation->mapping, reservation->slot_id,
-                         reservation->generation, shm_name, instance_id};
+      return Reservation{reservation->mapping, reservation->block_id,
+                         reservation->uid, shm_name, instance_id};
     }
   }
 
   const bool rolled_back = buffer_metadata::BufferRef::cancel_publish(
-      reservation->mapping, reservation->slot_id, reservation->generation);
+      reservation->mapping, reservation->block_id, reservation->uid);
   if (!rolled_back) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Failed to roll back reservation slot=%u generation=%u",
-        reservation->slot_id, reservation->generation);
+        "Failed to roll back reservation block=%u uid=%u",
+        reservation->block_id, reservation->uid);
   }
   return std::nullopt;
 }
 
 bool BufferMetadataManager::commit(const Reservation& reservation) noexcept {
   const bool committed = buffer_metadata::BufferRef::commit_publish(
-      reservation.mapping, reservation.slot_id, reservation.generation);
+      reservation.mapping, reservation.block_id, reservation.uid);
   if (!committed) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Failed to commit reservation slot=%u generation=%u",
-        reservation.slot_id, reservation.generation);
+        "Failed to commit reservation block=%u uid=%u", reservation.block_id,
+        reservation.uid);
   }
   return committed;
 }
 
 bool BufferMetadataManager::cancel(const Reservation& reservation) noexcept {
-  if (reservation.slot_id >= slot_count_) {
+  if (reservation.block_id >= block_count_) {
     return false;
   }
   const bool cancelled = buffer_metadata::BufferRef::cancel_publish(
-      reservation.mapping, reservation.slot_id, reservation.generation);
+      reservation.mapping, reservation.block_id, reservation.uid);
   if (!cancelled) {
     RCUTILS_LOG_ERROR_NAMED(
         "ros2_cuda_ipc_core.publisher.buffer_metadata_manager",
-        "Failed to cancel reservation slot=%u generation=%u",
-        reservation.slot_id, reservation.generation);
+        "Failed to cancel reservation block=%u uid=%u", reservation.block_id,
+        reservation.uid);
   }
   return cancelled;
 }

@@ -17,8 +17,8 @@ namespace ros2_cuda_ipc_core::transport {
 struct BufferDescriptor {
   std::string buffer_metadata_shm_name;
   PublisherInstanceId publisher_instance_id{};
-  uint32_t slot_id = 0;
-  uint32_t generation = 0;
+  uint32_t block_id = 0;
+  uint32_t uid = 0;
   int device_id = -1;
   uint64_t byte_size = 0;
   std::string vmm_socket_path;

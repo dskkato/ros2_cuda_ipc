@@ -59,7 +59,7 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   width:=1280 \
   height:=720 \
   publish_rate_hz:=60.0 \
-  slot_count:=4 \
+  block_count:=4 \
   shm_name_prefix:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```
@@ -104,10 +104,10 @@ ros2 topic echo /fanout/inference_like/status
 ## Publisher API
 
 ```cpp
-auto slot = manager.acquire_for_publish();
-launch_gpu_work(slot->device_ptr(), stream);
+auto block = manager.acquire_for_publish();
+launch_gpu_work(block->device_ptr(), stream);
 
-auto descriptor = slot->prepare_publish(stream);
+auto descriptor = block->prepare_publish(stream);
 if (!descriptor) {
   return;
 }
@@ -117,7 +117,7 @@ publisher->publish(make_message(descriptor.value()));
 
 Pass the stream that carries the producer work dependency to
 `prepare_publish()`. On success, publish the returned descriptor. On failure,
-that slot is not reused until `GpuBufferManager::reset()`.
+that block is not reused until `GpuBufferManager::reset()`.
 
 The API accepts Driver API `CUstream` values and Runtime API `cudaStream_t`
 values directly. The application retains ownership of the stream.

@@ -121,10 +121,9 @@ TEST(BufferMetadataCacheTest, ReusesMappingAcrossCallbackLocalBufferRefs) {
 
   auto reservation = buffer_metadata::BufferRef::reserve_for_publish(first);
   ASSERT_TRUE(reservation.has_value());
-  const auto slot_id = reservation->slot_id;
-  const auto generation = reservation->generation;
-  ASSERT_TRUE(
-      buffer_metadata::BufferRef::commit_publish(first, slot_id, generation));
+  const auto block_id = reservation->block_id;
+  const auto uid = reservation->uid;
+  ASSERT_TRUE(buffer_metadata::BufferRef::commit_publish(first, block_id, uid));
   reservation.reset();
 
   for (int i = 0; i < 1000; ++i) {
@@ -133,7 +132,7 @@ TEST(BufferMetadataCacheTest, ReusesMappingAcrossCallbackLocalBufferRefs) {
     EXPECT_EQ(mapping.get(), first.get());
     {
       auto buffer_ref =
-          buffer_metadata::BufferRef::acquire(mapping, slot_id, generation);
+          buffer_metadata::BufferRef::acquire(mapping, block_id, uid);
       ASSERT_TRUE(buffer_ref.valid());
     }
   }
@@ -180,17 +179,17 @@ TEST(BufferMetadataCacheTest, ClearPreservesMappingForActiveBufferRef) {
   ASSERT_TRUE(mapping);
   auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
   ASSERT_TRUE(reservation.has_value());
-  const auto slot_id = reservation->slot_id;
-  const auto generation = reservation->generation;
+  const auto block_id = reservation->block_id;
+  const auto uid = reservation->uid;
   ASSERT_TRUE(
-      buffer_metadata::BufferRef::commit_publish(mapping, slot_id, generation));
+      buffer_metadata::BufferRef::commit_publish(mapping, block_id, uid));
   reservation.reset();
 
   std::weak_ptr<buffer_metadata::BufferMetadata> weak_mapping = mapping;
 
   {
     auto active_buffer_ref =
-        buffer_metadata::BufferRef::acquire(mapping, slot_id, generation);
+        buffer_metadata::BufferRef::acquire(mapping, block_id, uid);
     ASSERT_TRUE(active_buffer_ref.valid());
     mapping.reset();
     cache.clear();

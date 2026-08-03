@@ -32,9 +32,9 @@ TEST_F(PointCloud2ViewMapperTest, InvalidCorePreservesHeaderOnlyBehavior) {
   msg.is_dense = true;
   msg.core.shm_name = shm_name;
   msg.core.publisher_instance_id = test::publisher_instance_id(shm_name);
-  msg.core.slot_id = 0;
+  msg.core.block_id = 0;
   msg.core.device_id = 0;
-  msg.core.generation = 42;
+  msg.core.uid = 42;
   msg.core.byte_size = 24;
 
   pointcloud2::PointCloud2ViewMapper mapper;

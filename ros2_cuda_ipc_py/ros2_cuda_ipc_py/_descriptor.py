@@ -49,8 +49,8 @@ def buffer_core_descriptor(message):
             _field(message, "publisher_instance_id")
         ),
         "device_id": _field(message, "device_id"),
-        "slot_id": _field(message, "slot_id"),
-        "generation": _field(message, "generation"),
+        "block_id": _field(message, "block_id"),
+        "uid": _field(message, "uid"),
         "byte_size": _field(message, "byte_size"),
     }
 
