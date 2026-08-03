@@ -86,8 +86,8 @@ ros2 topic echo /fanout/inference_like/status
 
 - `ros2_cuda_ipc_msgs`: ROS 2 message definitions for GPU-backed buffers.
 - `ros2_cuda_ipc_core`: untyped CUDA memory sharing, buffer lifetime, and synchronization APIs.
-- `ros2_cuda_ipc_image`: typed `GpuImage` metadata validation, `ImageReadHandle`, and image message helpers.
-- `ros2_cuda_ipc_pointcloud2`: typed `GpuPointCloud2`/`PointField` validation, `PointCloud2ReadHandle`, and point-cloud message helpers.
+- `ros2_cuda_ipc_image`: typed `GpuImage` metadata validation, `ImageReader`, `ImageReadHandle`, and image message helpers.
+- `ros2_cuda_ipc_pointcloud2`: typed `GpuPointCloud2`/`PointField` validation, `PointCloud2Reader`, `PointCloud2ReadHandle`, and point-cloud message helpers.
 - `ros2_cuda_ipc_py`: `rclpy`/pybind11 subscriber mapping with zero-copy CuPy views.
 - `examples/multi_process_image_fanout`: primary runnable demo.
 - `utils/gpu_image_transport`: utility nodes that map `GpuImage` messages to CPU image topics.

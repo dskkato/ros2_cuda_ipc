@@ -5,6 +5,7 @@
 
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_pointcloud2/pointcloud2_read_handle.hpp"
+#include "ros2_cuda_ipc_pointcloud2/pointcloud2_reader.hpp"
 #include "sensor_msgs/msg/point_field.hpp"
 #include "test_mapper_utils.hpp"
 
@@ -85,6 +86,42 @@ TEST_F(PointCloud2ReadHandleTest, RejectsZeroCountAndEndOffsetFields) {
                   mapping),
               0u);
   }
+  ::shm_unlink(name.c_str());
+}
+
+TEST_F(PointCloud2ReadHandleTest, ReaderMapsAndValidatesMessage) {
+  const auto core =
+      ros2_cuda_ipc_core::test::make_seeded_buffer_core_message(46);
+  const auto name = ros2_cuda_ipc_core::test::metadata_shm_name(core);
+  auto mapping =
+      ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::attach(name);
+  ASSERT_TRUE(mapping);
+
+  ros2_cuda_ipc_msgs::msg::GpuPointCloud2 message;
+  message.header.frame_id = "lidar";
+  message.core = core;
+  message.height = 1;
+  message.width = 2;
+  message.point_step = 12;
+  message.row_step = 24;
+  message.is_dense = true;
+  sensor_msgs::msg::PointField field;
+  field.name = "x";
+  field.datatype = sensor_msgs::msg::PointField::FLOAT32;
+  field.offset = 0;
+  field.count = 1;
+  message.fields = {field};
+
+  PointCloud2Reader reader;
+  auto cloud = reader.read(message, CU_STREAM_LEGACY);
+  ASSERT_TRUE(cloud);
+  EXPECT_EQ(cloud->header.frame_id, "lidar");
+  EXPECT_EQ(cloud->fields.front().name, "x");
+
+  cloud.reset();
+  EXPECT_EQ(
+      ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(mapping),
+      0u);
   ::shm_unlink(name.c_str());
 }
 

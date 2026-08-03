@@ -12,8 +12,8 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_image/image_read_handle.hpp"
+#include "ros2_cuda_ipc_image/image_reader.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 
 namespace gpu_image_transport {
@@ -48,7 +48,7 @@ class GpuImageTransportNodeBase : public rclcpp::Node {
   std::string output_topic_;
   uint8_t* pinned_host_buffer_ = nullptr;
   std::size_t pinned_host_capacity_ = 0;
-  ros2_cuda_ipc_core::subscriber::BufferMapper buffer_mapper_;
+  ros2_cuda_ipc_image::ImageReader reader_;
 };
 
 }  // namespace gpu_image_transport

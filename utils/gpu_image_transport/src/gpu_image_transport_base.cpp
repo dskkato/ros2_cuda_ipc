@@ -29,17 +29,10 @@ GpuImageTransportNodeBase::GpuImageTransportNodeBase(
   subscription_ = create_subscription<ros2_cuda_ipc_msgs::msg::GpuImage>(
       input_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).reliable(),
       [this](const ros2_cuda_ipc_msgs::msg::GpuImage& message) {
-        auto read = buffer_mapper_.map(message.core, stream_);
-        if (!read) {
-          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                               "Failed to map received GPU image");
-          return;
-        }
-        auto view = ros2_cuda_ipc_image::ImageReadHandle::from_message(
-            message, std::move(*read));
+        auto view = reader_.read(message, stream_);
         if (!view) {
           RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                               "Received invalid GPU image metadata");
+                               "Failed to read received GPU image");
           return;
         }
         on_image(*view);

@@ -8,8 +8,8 @@ who want to try the demo first.
 
 - `ros2_cuda_ipc_msgs`: message definitions for GPU-backed buffers.
 - `ros2_cuda_ipc_core`: untyped CUDA memory sharing, buffer reference handling, and synchronization.
-- `ros2_cuda_ipc_image`: `ImageReadHandle`, image metadata validation, and image message helpers.
-- `ros2_cuda_ipc_pointcloud2`: `PointCloud2ReadHandle`, PointCloud2/PointField validation, and point-cloud message helpers.
+- `ros2_cuda_ipc_image`: `ImageReader`, `ImageReadHandle`, image metadata validation, and image message helpers.
+- `ros2_cuda_ipc_pointcloud2`: `PointCloud2Reader`, `PointCloud2ReadHandle`, PointCloud2/PointField validation, and point-cloud message helpers.
 - `examples/multi_process_image_fanout`: primary multi-process sample.
 - `utils/gpu_image_transport`: utility bridge from `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: CUDA IPC and VMM-FD environment checks.
@@ -18,7 +18,9 @@ who want to try the demo first.
 
 - `ros2_cuda_ipc_core::subscriber::BufferMapper`: maps a `BufferCore` and a consumer stream to an optional `ReadHandle`.
 - `ros2_cuda_ipc_core::subscriber::ReadHandle`: the normal pointer API. It waits for producer readiness, owns the buffer reference, and defers resource/buffer reference release until consumer completion.
+- `ros2_cuda_ipc_image::ImageReader`: typed subscriber facade that composes `BufferMapper` and `ImageReadHandle::from_message()` while reusing the mapper cache across calls.
 - `ros2_cuda_ipc_image::ImageReadHandle`: typed image metadata adapter that owns a `ReadHandle`.
+- `ros2_cuda_ipc_pointcloud2::PointCloud2Reader`: typed subscriber facade that composes `BufferMapper` and `PointCloud2ReadHandle::from_message()` while reusing the mapper cache across calls.
 - `ros2_cuda_ipc_pointcloud2::PointCloud2ReadHandle`: typed PointCloud2 metadata adapter that owns a `ReadHandle`.
 - `ros2_cuda_ipc_core::publisher::GpuBufferPool`: the sole owner of publisher-local `GpuBufferBlock` resources, their metadata mappings, and reservation/reuse state.
 - `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher facade that orchestrates initialization, reset, preparation order, and quarantine.
@@ -59,6 +61,11 @@ The protocol guarantees and known limitations are specified in
 Receiving code subscribes to `ros2_cuda_ipc_msgs::msg::BufferCore` and calls
 `BufferMapper::map(message, consumer_stream)`. Mapping acquires the buffer reference and
 imports or looks up the GPU resource before returning a `ReadHandle`.
+
+For typed `GpuImage` and `GpuPointCloud2` subscriptions, the corresponding
+`ImageReader` or `PointCloud2Reader` composes that mapping with typed metadata
+validation. The low-level `BufferMapper` and `from_message()` APIs remain
+available when an application needs to control those steps separately.
 
 The consumer stream must remain valid until the corresponding `ReadHandle` is
 destroyed and its completion event has been recorded. A failed optional map
