@@ -16,6 +16,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 add_library(${PROJECT_NAME}
+  src/pointcloud2_reader.cpp
   src/pointcloud2_read_handle.cpp
 )
 

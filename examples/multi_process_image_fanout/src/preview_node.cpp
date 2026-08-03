@@ -15,8 +15,8 @@
 #include "multi_process_image_fanout/status_format.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_image/image_read_handle.hpp"
+#include "ros2_cuda_ipc_image/image_reader.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
@@ -83,10 +83,7 @@ class PreviewNode : public rclcpp::Node {
               cudaSuccess) {
             return;
           }
-          auto read = buffer_mapper_.map(message.core, stream_);
-          auto view = read ? ros2_cuda_ipc_image::ImageReadHandle::from_message(
-                                 message, std::move(*read))
-                           : std::nullopt;
+          auto view = reader_.read(message, stream_);
           if (!view) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                  "Skipping GPU image mapping failure");
@@ -246,7 +243,7 @@ class PreviewNode : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_;
   cudaStream_t stream_ = nullptr;
   int current_device_id_ = -1;
-  ros2_cuda_ipc_core::subscriber::BufferMapper buffer_mapper_;
+  ros2_cuda_ipc_image::ImageReader reader_;
   std::size_t received_ = 0;
   std::size_t copy_every_n_ = 1;
   std::size_t log_every_n_ = 30;

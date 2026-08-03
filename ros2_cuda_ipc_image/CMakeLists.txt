@@ -15,6 +15,7 @@ find_package(ros2_cuda_ipc_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 add_library(${PROJECT_NAME}
+  src/image_reader.cpp
   src/image_read_handle.cpp
 )
 

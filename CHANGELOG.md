@@ -5,6 +5,14 @@ This document records the user-visible changes between releases of
 
 ## Unreleased
 
+- Added `ImageReader` and `PointCloud2Reader` typed subscriber facades. Each
+  reader composes `BufferMapper` with the corresponding typed
+  `from_message()` validation while reusing its mapper cache across calls.
+- Migrated the C++ fanout example and `gpu_image_transport` to the typed
+  reader facade, and added facade coverage for mapping, validation, and read
+  handle lifetime. The low-level `BufferMapper`, `ReadHandle`, and typed
+  `from_message()` APIs remain available.
+
 - Added the independent `ros2_cuda_ipc_image` and
   `ros2_cuda_ipc_pointcloud2` packages for typed read handles, modality
   metadata validation, and `GpuImage`/`GpuPointCloud2` message helpers.

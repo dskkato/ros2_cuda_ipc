@@ -5,6 +5,7 @@
 
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_image/image_read_handle.hpp"
+#include "ros2_cuda_ipc_image/image_reader.hpp"
 #include "test_mapper_utils.hpp"
 
 namespace ros2_cuda_ipc_image {
@@ -63,6 +64,34 @@ TEST_F(ImageReadHandleTest, CopiesAndValidatesMessageMetadata) {
   ASSERT_TRUE(image);
   EXPECT_EQ(image->header.frame_id, "camera_frame");
   EXPECT_TRUE(image->sanity_check());
+  image.reset();
+  EXPECT_EQ(
+      ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(mapping),
+      0u);
+  ::shm_unlink(name.c_str());
+}
+
+TEST_F(ImageReadHandleTest, ReaderMapsAndValidatesMessage) {
+  const auto core =
+      ros2_cuda_ipc_core::test::make_seeded_buffer_core_message(45);
+  const auto name = ros2_cuda_ipc_core::test::metadata_shm_name(core);
+  auto mapping =
+      ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::attach(name);
+  ASSERT_TRUE(mapping);
+
+  ros2_cuda_ipc_msgs::msg::GpuImage message;
+  message.header.frame_id = "camera_frame";
+  message.core = core;
+  message.dtype = static_cast<uint8_t>(DType::U8);
+  message.shape = {2, 3, 4};
+  message.strides = {12, 4, 1};
+
+  ImageReader reader;
+  auto image = reader.read(message, CU_STREAM_LEGACY);
+  ASSERT_TRUE(image);
+  EXPECT_EQ(image->header.frame_id, "camera_frame");
+  EXPECT_TRUE(image->sanity_check());
+
   image.reset();
   EXPECT_EQ(
       ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(mapping),

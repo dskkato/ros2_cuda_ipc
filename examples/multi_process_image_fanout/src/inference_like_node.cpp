@@ -15,8 +15,8 @@
 #include "multi_process_image_fanout/status_format.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "ros2_cuda_ipc_core/detail/nvtx_scoped_range.hpp"
-#include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_image/image_read_handle.hpp"
+#include "ros2_cuda_ipc_image/image_reader.hpp"
 #include "ros2_cuda_ipc_msgs/msg/gpu_image.hpp"
 #include "std_msgs/msg/string.hpp"
 
@@ -70,10 +70,7 @@ class InferenceLikeNode : public rclcpp::Node {
           if (!ensure_cuda_state(static_cast<int>(message.core.device_id))) {
             return;
           }
-          auto read = buffer_mapper_.map(message.core, stream_);
-          auto view = read ? ros2_cuda_ipc_image::ImageReadHandle::from_message(
-                                 message, std::move(*read))
-                           : std::nullopt;
+          auto view = reader_.read(message, stream_);
           if (!view) {
             RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                                  "Skipping GPU image mapping failure");
@@ -387,7 +384,7 @@ class InferenceLikeNode : public rclcpp::Node {
   float* device_gray_ = nullptr;
   InferenceStats* device_stats_ = nullptr;
   int current_device_id_ = -1;
-  ros2_cuda_ipc_core::subscriber::BufferMapper buffer_mapper_;
+  ros2_cuda_ipc_image::ImageReader reader_;
   std::size_t gray_element_count_ = 0;
   std::string input_topic_name_;
   std::string status_topic_name_;

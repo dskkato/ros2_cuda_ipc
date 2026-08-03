@@ -41,7 +41,9 @@ message helper は、それぞれの typed package に属する。PointCloud2 pa
 | `BufferMapper` | `BufferCore` を import し、consumer stream に bind した read を作る mapper |
 | `MappedPublication` | detail内部の、import済みだがconsumer stream未bindのpublication |
 | `ReadHandle` | 一つの GPU read の所有者。imported resource と buffer reference を保持する move-only handle |
+| `ros2_cuda_ipc_image::ImageReader` | `BufferMapper` と `ImageReadHandle::from_message()` を合成する typed subscriber facade |
 | `ros2_cuda_ipc_image::ImageReadHandle` | `ReadHandle` と画像メタデータを組み合わせる move-only typed handle |
+| `ros2_cuda_ipc_pointcloud2::PointCloud2Reader` | `BufferMapper` と `PointCloud2ReadHandle::from_message()` を合成する typed subscriber facade |
 | `ros2_cuda_ipc_pointcloud2::PointCloud2ReadHandle` | `ReadHandle` と点群メタデータを組み合わせる move-only typed handle |
 | buffer reference | shared-memory block の refcount を保持し、publisher による再利用を防ぐ subscriber 側の所有権 |
 
@@ -86,12 +88,12 @@ ROS message
     -> optional<ReadHandle>
     -> GPU pointer + byte size
 
-ros2_cuda_ipc_image::ImageReadHandle
+ros2_cuda_ipc_image::ImageReader::read
     -> BufferMapper::map(message.core, consumer_stream)
     -> ReadHandle
     -> ImageReadHandle::from_message
 
-ros2_cuda_ipc_pointcloud2::PointCloud2ReadHandle
+ros2_cuda_ipc_pointcloud2::PointCloud2Reader::read
     -> BufferMapper::map(message.core, consumer_stream)
     -> ReadHandle
     -> PointCloud2ReadHandle::from_message
@@ -235,19 +237,20 @@ typed layerはIPC import、refcount取得、producer event waitを行わない�
 内包する move-only object である。raw pointerが必要なC++ callerは
 `handle.read.data<T>()` または `handle.read.device_ptr()` を使う。
 
-画像の通常の stream-bound mapping は次のように行う。
+画像の通常の stream-bound mapping は、typed facadeを使うと次のように行う。
 
 ```cpp
-auto read = buffer_mapper.map(message.core, consumer_stream);
-if (!read) {
-  return;
-}
-auto image = ImageReadHandle::from_message(message, std::move(*read));
+ros2_cuda_ipc_image::ImageReader reader;
+auto image = reader.read(message, consumer_stream);
 if (!image) {
   return;
 }
 launch_kernel(image->read.data<uint8_t>(), consumer_stream);
 ```
+
+`PointCloud2Reader` も同じ構成で、`GpuPointCloud2` の`core` mappingと
+`PointCloud2ReadHandle::from_message()`によるmetadata validationを合成する。
+`BufferMapper` と各`from_message()`は、低レベル制御が必要な利用者向けに引き続き公開する。
 
 ## API 契約と制約
 
