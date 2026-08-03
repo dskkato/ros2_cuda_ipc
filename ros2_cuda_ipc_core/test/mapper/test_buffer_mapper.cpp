@@ -4,8 +4,6 @@
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 
-#include <cstring>
-
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "test_mapper_utils.hpp"
 
@@ -17,110 +15,41 @@ class BufferMapperTest : public ::testing::Test {
   static void TearDownTestSuite() { test::RclcppScope::TearDown(); }
 };
 
-TEST_F(BufferMapperTest, BufferReferenceFailureReturnsEmptyOptional) {
-  const std::string shm_name = test::make_unique_shm_name("buffer_mapper_fail");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-
-  ros2_cuda_ipc_msgs::msg::BufferCore msg;
-  msg.shm_name = shm_name;
-  msg.publisher_instance_id = test::publisher_instance_id(shm_name);
-  msg.block_id = 0;
-  msg.device_id = 0;
-  msg.uid = 99;
-  msg.byte_size = 64;
-
-  subscriber::BufferMapper mapper;
-  EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
-
-  ::shm_unlink(shm_name.c_str());
-}
-
-TEST_F(BufferMapperTest, PublisherInstanceMismatchRejectsMessage) {
-  const std::string shm_name =
-      test::make_unique_shm_name("buffer_mapper_instance");
-  const auto owner_id = test::publisher_instance_id(shm_name);
-  auto mapping = buffer_metadata::BufferMetadata::create(shm_name, owner_id, 1);
-  ASSERT_TRUE(mapping);
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-
+TEST_F(BufferMapperTest, MissingBlockMetadataReturnsEmptyOptional) {
   auto msg = test::make_cached_buffer_core_message(
-      shm_name, reservation->block_id, reservation->uid, 91);
-  msg.publisher_instance_id =
-      test::publisher_instance_id(shm_name + "_different");
+      test::test_publisher_pid(), test::next_test_block_id(), 99, 1);
   subscriber::BufferMapper mapper;
   EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
-  auto refcount = buffer_metadata::BufferRef::current_refcount(mapping, 0);
-  ASSERT_TRUE(refcount.has_value());
-  EXPECT_EQ(*refcount, 1u);
-  ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
-      mapping, reservation->block_id, reservation->uid));
-  ::shm_unlink(shm_name.c_str());
 }
 
-TEST_F(BufferMapperTest, InvalidVmmPayloadReturnsEmptyOptional) {
-  const std::string shm_name =
-      test::make_unique_shm_name("buffer_mapper_vmm_payload");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
-  ASSERT_TRUE(mapping);
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-
-  ros2_cuda_ipc_msgs::msg::BufferCore msg;
-  msg.shm_name = shm_name;
-  msg.publisher_instance_id = test::publisher_instance_id(shm_name);
-  msg.block_id = 0;
-  msg.device_id = 0;
-  msg.uid = reservation->uid;
-  msg.byte_size = 64;
-  msg.vmm_socket_path.clear();
-  msg.event_handle.fill(0);
-
+TEST_F(BufferMapperTest, StaleUidIsRejectedBeforeGpuImport) {
+  auto msg = test::make_seeded_buffer_core_message(2);
+  ASSERT_NE(msg.publisher_pid, 0u);
+  const auto name = test::metadata_shm_name(msg);
+  ++msg.uid;
   subscriber::BufferMapper mapper;
   EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
-
-  auto refcount = buffer_metadata::BufferRef::current_refcount(mapping, 0);
-  ASSERT_TRUE(refcount.has_value());
-  EXPECT_EQ(refcount.value(), 1u);
-  ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
-      mapping, reservation->block_id, reservation->uid));
-
-  ::shm_unlink(shm_name.c_str());
+  ::shm_unlink(name.c_str());
 }
 
-TEST_F(BufferMapperTest, MissingVmmSocketReturnsEmptyAndReleasesBufferRef) {
-  const std::string shm_name =
-      test::make_unique_shm_name("buffer_mapper_vmm_sock");
-  auto mapping = buffer_metadata::BufferMetadata::create(
-      shm_name, test::publisher_instance_id(shm_name), 1);
+TEST_F(BufferMapperTest, ImportFailureReleasesAcquiredReference) {
+  const uint32_t pid = test::test_publisher_pid();
+  const uint32_t block_id = test::next_test_block_id();
+  const auto name =
+      publisher::BufferMetadataManager::shm_name_for_block(pid, block_id);
+  auto mapping = buffer_metadata::BufferMetadata::create(name);
   ASSERT_TRUE(mapping);
-  auto reservation = buffer_metadata::BufferRef::reserve_for_publish(mapping);
-  ASSERT_TRUE(reservation.has_value());
-
-  ros2_cuda_ipc_msgs::msg::BufferCore msg;
-  msg.shm_name = shm_name;
-  msg.publisher_instance_id = test::publisher_instance_id(shm_name);
-  msg.block_id = 0;
-  msg.device_id = 0;
-  msg.uid = reservation->uid;
-  msg.byte_size = 64;
-  msg.event_handle.fill(0);
-  msg.vmm_socket_path =
-      "/tmp/cuda_memory_pool_12345678-1234-5678-1234-567812345678.sock";
-
+  const auto reservation =
+      buffer_metadata::BufferRef::reserve_for_publish(mapping);
+  ASSERT_TRUE(reservation);
+  auto msg =
+      test::make_cached_buffer_core_message(pid, block_id, reservation->uid, 3);
   subscriber::BufferMapper mapper;
   EXPECT_FALSE(mapper.map(msg, CU_STREAM_LEGACY));
-
-  auto refcount = buffer_metadata::BufferRef::current_refcount(mapping, 0);
-  ASSERT_TRUE(refcount.has_value());
-  EXPECT_EQ(refcount.value(), 1u);
-  ASSERT_TRUE(buffer_metadata::BufferRef::cancel_publish(
-      mapping, reservation->block_id, reservation->uid));
-
-  ::shm_unlink(shm_name.c_str());
+  EXPECT_EQ(buffer_metadata::BufferRef::current_refcount(mapping), 1u);
+  ASSERT_TRUE(
+      buffer_metadata::BufferRef::cancel_publish(mapping, reservation->uid));
+  ::shm_unlink(name.c_str());
 }
 
 }  // namespace ros2_cuda_ipc_core

@@ -4,55 +4,33 @@
 #pragma once
 
 #include <atomic>
-#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 
-#include "ros2_cuda_ipc_core/publisher_instance_id.hpp"
-
 namespace ros2_cuda_ipc_core::buffer_metadata {
 
-/// Metadata for one block in the shared-memory buffer metadata pool.
+/// The complete contents of one per-GPU-block shared-memory object.
 struct BlockMetadata {
-  std::atomic<uint32_t> uid{0};
+  std::atomic<uint64_t> uid{0};
   std::atomic<uint32_t> refcount{0};
   std::atomic<uint64_t> publish_timestamp_us{0};
 };
 
 static_assert(std::atomic<uint32_t>::is_always_lock_free);
 static_assert(std::atomic<uint64_t>::is_always_lock_free);
-static_assert(sizeof(BlockMetadata) == 16);
+static_assert(sizeof(BlockMetadata) == 24);
 static_assert(alignof(BlockMetadata) >= alignof(std::atomic<uint64_t>));
 
-/// Owns one POSIX shared-memory mapping.
+/// Owns one POSIX shared-memory mapping containing exactly one BlockMetadata.
 ///
-/// The object deliberately has no process-global cache. Callers that need to
-/// share a mapping must retain the returned shared_ptr. The subscriber's
-/// internal mapping cache is one such owner and retains mappings between
-/// messages.
+/// The object deliberately has no pool header, capacity, block array, or
+/// publisher-instance identity. The block locator is encoded in the POSIX
+/// name and carried by the transport descriptor.
 class BufferMetadata {
  public:
-  /// Create and map a new shared-memory buffer metadata pool exclusively.
-  ///
-  /// @param shm_name POSIX shared-memory name.
-  /// @param instance_id Publisher instance identity stored in the header.
-  /// @param capacity Number of blocks to allocate.
-  /// @return Owning mapping, or nullptr when creation or initialization fails.
-  static std::shared_ptr<BufferMetadata> create(
-      const std::string& shm_name, const PublisherInstanceId& instance_id,
-      uint32_t capacity);
-
-  /// Open and map an existing shared-memory buffer metadata pool.
-  ///
-  /// The header's publisher instance identity must match the expected value.
-  ///
-  /// @param shm_name POSIX shared-memory name.
-  /// @param expected_instance_id Publisher identity expected in the header.
-  /// @return Owning mapping, or nullptr when opening or validation fails.
-  static std::shared_ptr<BufferMetadata> attach(
-      const std::string& shm_name,
-      const PublisherInstanceId& expected_instance_id);
+  static std::shared_ptr<BufferMetadata> create(const std::string& shm_name);
+  static std::shared_ptr<BufferMetadata> attach(const std::string& shm_name);
 
   ~BufferMetadata();
 
@@ -60,25 +38,18 @@ class BufferMetadata {
   BufferMetadata& operator=(const BufferMetadata&) = delete;
 
   const std::string& shm_name() const noexcept { return shm_name_; }
-  const PublisherInstanceId& publisher_instance_id() const noexcept {
-    return publisher_instance_id_;
-  }
-  uint32_t capacity() const noexcept { return capacity_; }
-  BlockMetadata* block(uint32_t block_id) noexcept {
-    return block_id < capacity_ ? &blocks_[block_id] : nullptr;
-  }
-  std::atomic<uint32_t>& next_block() noexcept { return next_block_; }
+  BlockMetadata* metadata() noexcept { return metadata_; }
+  const BlockMetadata* metadata() const noexcept { return metadata_; }
 
  private:
   BufferMetadata() = default;
+  static std::shared_ptr<BufferMetadata> make_mapping(
+      const std::string& shm_name, void* addr, std::size_t mapped_size);
 
   std::string shm_name_;
-  PublisherInstanceId publisher_instance_id_{};
-  uint32_t capacity_ = 0;
   std::size_t mapped_size_ = 0;
   void* addr_ = nullptr;
-  BlockMetadata* blocks_ = nullptr;
-  std::atomic<uint32_t> next_block_{0};
+  BlockMetadata* metadata_ = nullptr;
 };
 
 }  // namespace ros2_cuda_ipc_core::buffer_metadata

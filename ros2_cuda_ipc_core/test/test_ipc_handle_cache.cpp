@@ -9,13 +9,13 @@
 #include <vector>
 
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
-#include "test_instance_id.hpp"
 
 namespace ros2_cuda_ipc_core {
 
-TEST(IpcHandleCacheTest, KeyEqualityAndHashUseInstanceDevicePayloadAndEvent) {
+TEST(IpcHandleCacheTest, KeyEqualityAndHashUseBlockIdentityAndPayload) {
   subscriber::IpcHandleKey lhs{};
-  lhs.publisher_instance_id = test::publisher_instance_id("lhs");
+  lhs.publisher_pid = 100;
+  lhs.block_id = 200;
   lhs.device_id = 2;
   lhs.vmm_socket_path = "path-3";
   lhs.event[0] = 5;
@@ -27,9 +27,8 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseInstanceDevicePayloadAndEvent) {
   different_mem.vmm_socket_path = "path-7";
   subscriber::IpcHandleKey different_event = lhs;
   different_event.event[1] = 9;
-  subscriber::IpcHandleKey different_instance = lhs;
-  different_instance.publisher_instance_id =
-      test::publisher_instance_id("different");
+  subscriber::IpcHandleKey different_block = lhs;
+  different_block.block_id = 201;
 
   subscriber::IpcHandleKeyHash hash;
   EXPECT_TRUE(lhs == same);
@@ -38,8 +37,8 @@ TEST(IpcHandleCacheTest, KeyEqualityAndHashUseInstanceDevicePayloadAndEvent) {
   EXPECT_NE(hash(lhs), hash(different_device));
   EXPECT_FALSE(lhs == different_mem);
   EXPECT_FALSE(lhs == different_event);
-  EXPECT_FALSE(lhs == different_instance);
-  EXPECT_NE(hash(lhs), hash(different_instance));
+  EXPECT_FALSE(lhs == different_block);
+  EXPECT_NE(hash(lhs), hash(different_block));
 }
 
 TEST(IpcHandleCacheTest, DuplicateInsertReturnsExistingEntry) {

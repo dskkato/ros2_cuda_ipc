@@ -40,8 +40,6 @@ class GpuImagePublisherNode : public rclcpp::Node {
     const int width = declare_parameter<int>("width", 1920);
     const int height = declare_parameter<int>("height", 1080);
     const int block_count_parameter = declare_parameter<int>("block_count", 4);
-    const auto shm_name_prefix = declare_parameter<std::string>(
-        "shm_name_prefix", "/ros2_cuda_ipc_fanout");
     const int device_index = declare_parameter<int>("device_index", 0);
     encoding_ = declare_parameter<std::string>("encoding", kDefaultEncoding);
 
@@ -61,7 +59,7 @@ class GpuImagePublisherNode : public rclcpp::Node {
     manager_ =
         std::make_unique<ros2_cuda_ipc_core::publisher::GpuBufferManager>(
             ros2_cuda_ipc_core::publisher::GpuBufferManager::Config{
-                shm_name_prefix, block_count, frame_size_bytes, device_index});
+                block_count, frame_size_bytes, device_index});
     if (!manager_->initialise()) {
       throw std::runtime_error("Failed to initialise GPU buffer manager");
     }

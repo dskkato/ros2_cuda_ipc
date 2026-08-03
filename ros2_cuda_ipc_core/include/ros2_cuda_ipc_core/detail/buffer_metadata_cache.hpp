@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -14,37 +15,44 @@
 
 namespace ros2_cuda_ipc_core::subscriber::detail {
 
-/// Internal subscriber cache for shared-memory buffer metadata mappings.
+/// Subscriber cache keyed by the direct block locator, not by a pool/name.
 class BufferMetadataCache {
  public:
   using AttachFn =
-      std::function<std::shared_ptr<buffer_metadata::BufferMetadata>(
-          const std::string&, const PublisherInstanceId&)>;
+      std::function<std::shared_ptr<buffer_metadata::BufferMetadata>(uint32_t,
+                                                                     uint32_t)>;
 
-  explicit BufferMetadataCache(
-      AttachFn attach_fn = buffer_metadata::BufferMetadata::attach);
+  explicit BufferMetadataCache(AttachFn attach_fn = [](uint32_t publisher_pid,
+                                                       uint32_t block_id) {
+    return buffer_metadata::BufferMetadata::attach(
+        "/ros2_cuda_ipc_" + std::to_string(publisher_pid) + "_" +
+        std::to_string(block_id));
+  });
   ~BufferMetadataCache();
 
   std::shared_ptr<buffer_metadata::BufferMetadata> get_or_attach(
-      const std::string& shm_name,
-      const PublisherInstanceId& publisher_instance_id) const;
+      uint32_t publisher_pid, uint32_t block_id, uint64_t expected_uid) const;
 
   void clear() const;
   std::size_t size() const;
 
  private:
   struct Key {
-    std::string shm_name;
-    PublisherInstanceId publisher_instance_id{};
+    uint32_t publisher_pid = 0;
+    uint32_t block_id = 0;
 
     bool operator==(const Key& other) const noexcept {
-      return shm_name == other.shm_name &&
-             publisher_instance_id == other.publisher_instance_id;
+      return publisher_pid == other.publisher_pid && block_id == other.block_id;
     }
   };
 
   struct KeyHash {
-    std::size_t operator()(const Key& key) const noexcept;
+    std::size_t operator()(const Key& key) const noexcept {
+      std::size_t seed = std::hash<uint32_t>{}(key.publisher_pid);
+      seed ^= std::hash<uint32_t>{}(key.block_id) +
+              static_cast<std::size_t>(0x9e3779b9U) + (seed << 6) + (seed >> 2);
+      return seed;
+    }
   };
 
   AttachFn attach_fn_;

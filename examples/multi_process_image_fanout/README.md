@@ -80,13 +80,11 @@ ros2 launch multi_process_image_fanout multi_process_image_fanout.launch.py \
   height:=720 \
   publish_rate_hz:=60.0 \
   block_count:=4 \
-  shm_name_prefix:=/ros2_cuda_ipc_fanout \
   device_index:=0
 ```
 
-The `width`, `height`, and `block_count`,
-`shm_name_prefix`, and `device_index` arguments are publisher-side pseudo-camera
-parameters.
+The `width`, `height`, `block_count`, and `device_index` arguments are
+publisher-side pseudo-camera parameters.
 
 ## Visualize preview
 

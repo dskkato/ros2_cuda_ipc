@@ -28,6 +28,7 @@
 #include "ros2_cuda_ipc_core/backend/memory_importer.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_ref.hpp"
+#include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
 #include "ros2_cuda_ipc_core/subscriber/ipc_handle_cache.hpp"
 #endif
 
@@ -139,14 +140,13 @@ ros2_cuda_ipc_msgs::msg::BufferCore buffer_core_from_descriptor(
       string_value(required(descriptor, "vmm_socket_path"), "vmm_socket_path");
   message.event_handle = fixed_sequence<uint8_t, 64>(
       required(descriptor, "event_handle"), "event_handle");
-  message.shm_name = string_value(required(descriptor, "shm_name"), "shm_name");
-  message.publisher_instance_id = fixed_sequence<uint8_t, 16>(
-      required(descriptor, "publisher_instance_id"), "publisher_instance_id");
+  message.publisher_pid = unsigned_integer<uint32_t>(
+      required(descriptor, "publisher_pid"), "publisher_pid");
   message.device_id = unsigned_integer<uint32_t>(
       required(descriptor, "device_id"), "device_id");
   message.block_id =
       unsigned_integer<uint32_t>(required(descriptor, "block_id"), "block_id");
-  message.uid = unsigned_integer<uint32_t>(required(descriptor, "uid"), "uid");
+  message.uid = unsigned_integer<uint64_t>(required(descriptor, "uid"), "uid");
   message.byte_size = unsigned_integer<uint64_t>(
       required(descriptor, "byte_size"), "byte_size");
   return message;
@@ -595,32 +595,13 @@ class PyImageMapper {
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
 
-ros2_cuda_ipc_core::PublisherInstanceId test_instance_id(
-    const std::string& seed) {
-  ros2_cuda_ipc_core::PublisherInstanceId id{};
-  uint32_t state = 2166136261u;
-  for (const uint8_t byte : seed) {
-    state = (state ^ byte) * 16777619u;
-  }
-  for (auto& byte : id) {
-    state = state * 1664525u + 1013904223u;
-    byte = static_cast<uint8_t>(state >> 24);
-  }
-  if (ros2_cuda_ipc_core::is_nil(id)) {
-    id.back() = 1;
-  }
-  return id;
-}
-
 class TestBufferRefProbe {
  public:
   TestBufferRefProbe(
       std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata>
           mapping,
-      uint32_t block_id, std::string shm_name)
-      : mapping_(std::move(mapping)),
-        block_id_(block_id),
-        shm_name_(std::move(shm_name)) {}
+      std::string shm_name)
+      : mapping_(std::move(mapping)), shm_name_(std::move(shm_name)) {}
 
   ~TestBufferRefProbe() {
     if (!shm_name_.empty()) {
@@ -631,7 +612,7 @@ class TestBufferRefProbe {
   uint32_t refcount() const {
     const auto value =
         ros2_cuda_ipc_core::buffer_metadata::BufferRef::current_refcount(
-            mapping_, block_id_);
+            mapping_);
     return value.value_or(0);
   }
 
@@ -639,7 +620,6 @@ class TestBufferRefProbe {
 
  private:
   std::shared_ptr<ros2_cuda_ipc_core::buffer_metadata::BufferMetadata> mapping_;
-  uint32_t block_id_;
   std::string shm_name_;
 };
 
@@ -654,13 +634,13 @@ py::list bytes_to_list(const Array& bytes) {
 
 py::tuple make_test_image() {
   static std::atomic<uint64_t> counter{0};
-  std::ostringstream name;
-  name << "/ros2_cuda_ipc_py_test_" << static_cast<long long>(::getpid()) << "_"
-       << counter.fetch_add(1);
-  const std::string shm_name = name.str();
-  const auto instance_id = test_instance_id(shm_name);
-  auto mapping = ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(
-      shm_name, instance_id, 1);
+  const uint32_t publisher_pid = static_cast<uint32_t>(::getpid());
+  const uint32_t block_id = static_cast<uint32_t>(counter.fetch_add(1));
+  const std::string shm_name =
+      ros2_cuda_ipc_core::publisher::BufferMetadataManager::shm_name_for_block(
+          publisher_pid, block_id);
+  auto mapping =
+      ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(shm_name);
   if (!mapping) {
     throw std::runtime_error("test BufferMetadata::create failed");
   }
@@ -681,15 +661,15 @@ py::tuple make_test_image() {
   message.core.event_handle[0] = 18;
   message.core.vmm_socket_path =
       "/tmp/ros2_cuda_ipc_test_socket_12345678901234567890.sock";
-  message.core.shm_name = shm_name;
-  message.core.publisher_instance_id = instance_id;
+  message.core.publisher_pid = publisher_pid;
   message.core.device_id = 0;
-  message.core.block_id = reservation->block_id;
+  message.core.block_id = block_id;
   message.core.uid = reservation->uid;
   message.core.byte_size = 24;
 
   ros2_cuda_ipc_core::subscriber::IpcHandleKey key{};
-  key.publisher_instance_id = instance_id;
+  key.publisher_pid = publisher_pid;
+  key.block_id = block_id;
   key.device_id = message.core.device_id;
   key.vmm_socket_path = message.core.vmm_socket_path;
   key.event = message.core.event_handle;
@@ -706,9 +686,9 @@ py::tuple make_test_image() {
     throw std::runtime_error("test ImageViewMapper fixture failed");
   }
   if (!ros2_cuda_ipc_core::buffer_metadata::BufferRef::commit_publish(
-          mapping, reservation->block_id, reservation->uid)) {
+          mapping, reservation->uid)) {
     (void)ros2_cuda_ipc_core::buffer_metadata::BufferRef::cancel_publish(
-        mapping, reservation->block_id, reservation->uid);
+        mapping, reservation->uid);
     (void)::shm_unlink(shm_name.c_str());
     throw std::runtime_error("test BufferRef::commit_publish failed");
   }
@@ -716,9 +696,7 @@ py::tuple make_test_image() {
   py::dict core;
   core["vmm_socket_path"] = message.core.vmm_socket_path;
   core["event_handle"] = bytes_to_list(message.core.event_handle);
-  core["shm_name"] = message.core.shm_name;
-  core["publisher_instance_id"] =
-      bytes_to_list(message.core.publisher_instance_id);
+  core["publisher_pid"] = message.core.publisher_pid;
   core["device_id"] = message.core.device_id;
   core["block_id"] = message.core.block_id;
   core["uid"] = message.core.uid;
@@ -737,8 +715,7 @@ py::tuple make_test_image() {
   descriptor["core"] = core;
   descriptor["encoding"] = message.encoding;
 
-  auto probe = std::make_shared<TestBufferRefProbe>(
-      mapping, reservation->block_id, shm_name);
+  auto probe = std::make_shared<TestBufferRefProbe>(mapping, shm_name);
   return py::make_tuple(PyImageView(std::move(view)), probe, descriptor);
 }
 

@@ -6,6 +6,7 @@
 #include <cuda.h>
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "ros2_cuda_ipc_core/backend/memory_backend.hpp"
@@ -34,10 +35,13 @@ class GpuBufferPool {
   uint64_t byte_size() const noexcept { return byte_size_; }
   int device_index() const noexcept { return device_index_; }
 
-  void* device_ptr(uint32_t block_id) const noexcept;
-  detail::CudaResult<void> record_ready(uint32_t block_id,
+  void* device_ptr(uint32_t pool_index) const noexcept;
+  detail::CudaResult<void> record_ready(uint32_t pool_index,
                                         CUstream stream) noexcept;
-  const GpuBufferBlock* resources(uint32_t block_id) const noexcept;
+  const GpuBufferBlock* resources(uint32_t pool_index) const noexcept;
+  bool set_shared_metadata(
+      uint32_t pool_index, uint32_t block_id,
+      std::shared_ptr<buffer_metadata::BufferMetadata> metadata) noexcept;
 
  private:
   /// Pool is a publisher-local block allocation and reuse strategy.

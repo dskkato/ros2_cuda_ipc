@@ -33,35 +33,34 @@ Python adapter の詳細は [doc/python-subscriber-implementation.md](python-sub
 
 `GpuBufferBlock` は、1つのGPU allocation、export可能なmemory handle、CUDA
 synchronization object、およびそのallocationに対応する再利用identityをひとまとまりで
-表す。`BlockMetadata` は同じblockに対応するPool shared memory内の共有lifetime stateであり、
+表す。`BlockMetadata` は同じblockが所有する単独shared-memory object内の共有lifetime stateであり、
 publication identity (`uid`) とrefcountを保持する。
 
 `GpuBufferPool` はwire protocol上のオブジェクトではない。これはPublisher内部で
 `GpuBufferBlock` の確保・破棄・再利用を管理するローカルなimplementation detailであり、
 Subscriberから参照されることはない。Subscriberが参照するresource identityは、descriptorの
-`publisher_instance_id`、`block_id`、`uid` と、対応する `BlockMetadata` で表される。
+`publisher_pid`、`block_id`、`uid` と、対応する `BlockMetadata` で表される。
 
 ```text
 Publisher process                                      Subscriber process
 
 GpuBufferManager                                      BufferMapper
   ├─ GpuBufferPool                                    ├─ BufferMetadataCache
-  │    ├─ GpuBufferBlock                              │    └─ BlockMetadata[] (mapped)
+  │    ├─ GpuBufferBlock                              │    └─ BlockMetadata (per-block mapping)
   │    │    ├─ GPU allocation                         ├─ BufferRef
   │    │    ├─ exportable memory handle                └─ ReadHandle
   │    │    └─ CUDA synchronization objects                 └─ imported GPU resource
   └─ BufferMetadataManager
-       └─ Pool shared memory
-            ├─ header
-            └─ BlockMetadata[]
+       └─ per-block reservation lifecycle
 
 GpuBufferBlock + BlockMetadata + BufferDescriptor
                          └─ one publication/resource identity
 ```
 
 `BufferDescriptor` はGPU resourceを所有せず、上記identityとimportに必要なwire情報だけを
-運ぶ。Pool shared memoryはPoolごとに1つのPOSIX shared memoryを持ち、layoutは引き続き
-`header` と `BlockMetadata[]` の順序で構成される。
+運ぶ。各 `GpuBufferBlock` はGPU allocationと1つの `BlockMetadata` mappingを所有する。
+そのPOSIX名は `/ros2_cuda_ipc_<publisher_pid>_<block_id>` から決まり、Poolはwire protocol
+およびmetadata lookupに現れない。
 
 公開 API の中心は次の関係である。
 
@@ -91,15 +90,14 @@ event、deferred release queue は lifetime を実装する内部要素であり
 | --- | --- |
 | `vmm_socket_path` | VMM allocation を配布する Unix socket のパス |
 | `event_handle` | producer の ready event を識別する CUDA IPC event handle |
-| `shm_name` | buffer reference/refcount 用 POSIX shared memory 名 |
-| `publisher_instance_id` | publisher 初期化単位の識別子 |
+| `publisher_pid` | block metadataおよびGPU resourceのpublisher process locator |
 | `device_id` | allocation が存在する CUDA device |
-| `block_id` | 固定 pool 内の block |
+| `block_id` | publisher process 内で一意なGPU block |
 | `uid` | block 上の publication 世代 |
 | `byte_size` | GPU buffer の論理サイズ（bytes） |
 
-Subscriber は `publisher_instance_id`、`block_id`、`uid` を検証してから buffer reference を取得する。
-同じ `block_id` でも publisher instance または uid が異なる publication は別物として扱う。
+Subscriber は `publisher_pid + block_id` からmetadata nameを導出し、`uid`を検証してから
+buffer reference を取得する。同じ locatorでもuidが異なるpublicationは別物として扱う。
 
 ### typed message
 
@@ -121,8 +119,8 @@ Publisher は CUDA VMM allocation を block ごとに作り、POSIX shareable FD
 の配送は CUDA IPC event handle を使う。
 
 VMM resource の allocation、FD server、import 済み mapping の破棄は backend と resource
-cache の責務である。uid の更新だけで mapping を無条件に再作成せず、allocation または
-publisher instance が変わった場合に resource identity を切り替える。
+cache の責務である。metadata cache は `publisher_pid + block_id` をkeyにする。uid mismatch
+時にはmappingを破棄して再attachし、再確認後もuidが違えばdescriptorを破棄する。
 
 ## Publisher の lifecycle
 
@@ -156,9 +154,9 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> read =
 
 `BufferMapper::map()` は次を一つの mapping 操作として行う。
 
-1. `publisher_instance_id` を検証する。
-2. `shm_name` に対応する buffer metadata mapping を取得または attach する。
-3. `block_id` と `uid` を検証し、buffer reference を取得する。
+1. `publisher_pid + block_id` から metadata name を導出する。
+2. block identityをkeyにmetadata mappingを取得またはattachする。
+3. `uid` を検証し、buffer reference を取得する。
 4. `IpcHandleCache` から imported resource を取得する。未登録なら VMM-FD importer で import する。
 5. consumer stream に producer ready event の wait を enqueue する。
 6. imported resource と buffer reference を所有する `ReadHandle` を返す。

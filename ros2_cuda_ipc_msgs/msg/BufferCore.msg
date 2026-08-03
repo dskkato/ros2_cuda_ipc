@@ -2,16 +2,12 @@
 string vmm_socket_path
 uint8[64] event_handle
 
-# Shared memory name for buffer metadata/refcount management
-string shm_name
-
-# Identity of the publisher initialisation that owns this buffer
-uint8[16] publisher_instance_id
-
-# Identification of the GPU buffer block
+# Direct block locator and publication identity.  The subscriber derives the
+# metadata object name as /ros2_cuda_ipc_<publisher_pid>_<block_id>.
+uint32 publisher_pid
 uint32 device_id
 uint32 block_id
-uint32 uid
+uint64 uid
 
 # Total bytes in the GPU buffer
 uint64 byte_size

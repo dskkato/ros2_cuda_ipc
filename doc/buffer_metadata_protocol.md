@@ -60,14 +60,16 @@ publisher->publish(make_message(descriptor.value()));
 
 ```cpp
 struct BlockMetadata {
-  std::atomic<uint32_t> uid;
+  std::atomic<uint64_t> uid;
   std::atomic<uint32_t> refcount;
   std::atomic<uint64_t> publish_timestamp_us;
 };
 ```
 
-shared-memory layout version は5である。attach 時には magic、layout version、capacity、
-Publisher instance ID を検証する。
+各 block はこの `BlockMetadata` **だけ**を含む独立した POSIX shared-memory object を
+所有する。名前は `/ros2_cuda_ipc_<publisher_pid>_<block_id>` であり、pool header、layout
+version、capacity、metadata array は存在しない。`block_id` は pool 内 index ではなく、
+publisher process 内で一意に採番する。
 
 各atomicは対象platformでlock-freeであることを要求し、Publisherがshared memoryを作成
 するときに`BlockMetadata`をplacement newで構築する。Subscriberは既存のblockを再構築せずに
@@ -133,14 +135,14 @@ reservation の `refcount` だけを減少させる。cancel では publish time
 
 ## 6. Subscriber acquire と release
 
-Subscriber は message の `shm_name`、`publisher_instance_id`、`block_id`、`uid`
-を使って buffer reference を取得する。
+Subscriber は message の `publisher_pid`、`block_id`、`uid` を使って buffer reference
+を取得する。`publisher_pid + block_id` から shared-memory name を導出するため、wire format
+には shared-memory name や pool identity を含めない。
 
 acquire は次を行う。
 
-1. shared memory へ attach し、layout と block 範囲を検証する。
-2. Publisher instance ID を検証する。
-3. message の uid と block の uid を確認する。
+1. `publisher_pid + block_id` から shared-memory name を導出して attach する。
+2. message の uid とその単一 metadata object の uid を確認する。
 4. `refcount` を CAS で1増加する。
 5. uid を再確認する。
 6. 再確認に失敗した場合は refcount を戻して失敗する。
@@ -186,16 +188,16 @@ buffer reference が成立することを防ぐ。
 | reusable block がない | Publisher の acquire が失敗する |
 | GPU resource 初期化失敗 | 作成済み resource を rollback する |
 | preparation 失敗 | reservation を保持し、manager reset まで再利用しない |
-| uid mismatch | Subscriber acquire または reservation 完了を失敗させる |
+| uid mismatch | cache を破棄して再attachし、なお不一致なら stale descriptor として拒否する |
 | Subscriber process crash | refcount が残り、block が再利用不能になる可能性がある |
 | 100 ms を超える message 遅延 | block 再利用後は uid mismatch で drop される可能性がある |
 
 固定 grace period は配送保証ではない。publish rate、最大 Subscriber 遅延、block 数に
 応じて、遅延 message を drop し得る安全側の設計である。
 
-`uid` は wire format と shared state の `uint32_t` を維持する。wraparound 時に
-非常に古い message と一致する可能性があるため、必要なら Publisher instance と shared
-memory pool を再生成する。
+`uid` は wire format と shared state の `uint64_t` を使用する。新しい shared-memory
+object はランダムな非ゼロ初期世代から開始するため、PID 再利用後に同じ locator を持つ古い
+descriptor と偶然同一世代になることを避ける。各 publish ではそこから単調増加する。
 
 shared memory 上の atomic は Linux x86_64/aarch64 と対象 toolchain に依存する。現在の
 実装は aligned な整数 field を process-shared atomic として扱うため、異なる ABI 間の

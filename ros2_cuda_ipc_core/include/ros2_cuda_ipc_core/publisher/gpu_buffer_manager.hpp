@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <optional>
-#include <string>
 
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/publisher/buffer_metadata_manager.hpp"
@@ -80,9 +79,6 @@ class GpuBufferManager {
  public:
   /// Configuration for a GPU buffer manager.
   struct Config {
-    /// Prefix used to create a publisher-instance-specific shared-memory name.
-    std::string shm_name_prefix;
-
     /// Number of reusable GPU buffer blocks.
     std::size_t block_count = 0;
 
@@ -104,7 +100,7 @@ class GpuBufferManager {
   GpuBufferManager(GpuBufferManager&&) = delete;
   GpuBufferManager& operator=(GpuBufferManager&&) = delete;
 
-  /// Initialize the shared-memory buffer_ref pool and GPU buffer pool.
+  /// Initialize one shared BlockMetadata object per GPU block and the GPU pool.
   ///
   /// @return true when both pools are initialized successfully.
   bool initialise();
@@ -115,11 +111,8 @@ class GpuBufferManager {
   /// Check whether both the buffer_ref pool and buffer pool are initialized.
   bool is_initialised() const noexcept;
 
-  /// Return the current instance-specific shared-memory name.
-  std::string shm_name() const;
-
-  /// Return the current publisher instance identity.
-  PublisherInstanceId publisher_instance_id() const;
+  /// Return the process locator carried by every block descriptor.
+  uint32_t publisher_pid() const noexcept;
 
   /// Reserve a block for a new publish attempt.
   /// @return A publish block when a reservation is available; std::nullopt

@@ -13,7 +13,6 @@
 #include "ros2_cuda_ipc_core/buffer_metadata/buffer_metadata.hpp"
 #include "ros2_cuda_ipc_core/detail/cuda_driver_context.hpp"
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
-#include "test_instance_id.hpp"
 
 namespace {
 
@@ -36,10 +35,8 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> make_read_handle(
     const std::shared_ptr<ros2_cuda_ipc_core::detail::CudaDeviceContext>&
         context,
     const std::string& shm_name) {
-  const auto instance_id =
-      ros2_cuda_ipc_core::test::publisher_instance_id(shm_name);
-  auto mapping = ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(
-      shm_name, instance_id, 1);
+  auto mapping =
+      ros2_cuda_ipc_core::buffer_metadata::BufferMetadata::create(shm_name);
   if (!mapping) {
     return std::nullopt;
   }
@@ -50,13 +47,13 @@ std::optional<ros2_cuda_ipc_core::subscriber::ReadHandle> make_read_handle(
     return std::nullopt;
   }
   if (!ros2_cuda_ipc_core::buffer_metadata::BufferRef::commit_publish(
-          mapping, reservation->block_id, reservation->uid)) {
+          mapping, reservation->uid)) {
     (void)ros2_cuda_ipc_core::buffer_metadata::BufferRef::cancel_publish(
-        mapping, reservation->block_id, reservation->uid);
+        mapping, reservation->uid);
     return std::nullopt;
   }
   auto buffer_ref = ros2_cuda_ipc_core::buffer_metadata::BufferRef::acquire(
-      mapping, reservation->block_id, reservation->uid);
+      mapping, reservation->uid);
   if (!buffer_ref.valid()) {
     return std::nullopt;
   }
