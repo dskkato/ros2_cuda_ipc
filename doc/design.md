@@ -25,6 +25,7 @@ Python adapter の詳細は [doc/python-subscriber-implementation.md](python-sub
 | `BufferCore` | GPU allocation と publication を識別する transport descriptor |
 | `GpuImage` / `GpuPointCloud2` | `BufferCore` とアプリケーションのレイアウトメタデータを持つ ROS message |
 | `BufferMapper` | `BufferCore` を import し、consumer stream に bind した read を作る mapper |
+| `MappedPublication` | detail内部の、import済みだがconsumer stream未bindのpublication |
 | `ReadHandle` | 一つの GPU read の所有者。imported resource と buffer reference を保持する move-only handle |
 | `ImageReadHandle` / `PointCloud2ReadHandle` | `ReadHandle` と画像／点群メタデータを組み合わせる move-only typed handle |
 | buffer reference | shared-memory block の refcount を保持し、publisher による再利用を防ぐ subscriber 側の所有権 |

@@ -224,3 +224,58 @@ class BufferMapper:
         except RuntimeError as exc:
             raise MappingError(str(exc)) from exc
         return ReadHandle._from_native(native_view)
+
+
+class DLPackImage:
+    """One-shot, late-binding CUDA DLPack producer."""
+
+    def __init__(self, native_view):
+        self._native = native_view
+
+    @property
+    def valid(self): return self._native.valid
+    @property
+    def byte_size(self): return self._native.byte_size
+    @property
+    def device_id(self): return self._native.device_id
+    @property
+    def shape(self): return self._native.shape
+    @property
+    def strides(self): return self._native.strides
+    @property
+    def dtype(self): return self._native.dtype
+    @property
+    def encoding(self): return self._native.encoding
+    @property
+    def frame_id(self): return self._native.frame_id
+
+    def __dlpack_device__(self):
+        return self._native._dlpack_device()
+
+    def __dlpack__(
+        self, *, stream=None, max_version=None, dl_device=None, copy=None
+    ):
+        current_device = self.__dlpack_device__()
+        if dl_device is not None and tuple(dl_device) != current_device:
+            raise BufferError("cross-device DLPack export is not supported")
+        if copy is True:
+            raise BufferError("copying DLPack export is not supported")
+        pointer, synchronize = _dlpack_stream_pointer(stream)
+        return self._native._dlpack(
+            pointer, synchronize, _dlpack_versioned(max_version)
+        )
+
+    def close(self): self._native.close()
+
+
+class ImageMapper:
+    """Create late-binding DLPack image producers from GpuImage messages."""
+
+    def __init__(self):
+        self._native = _native.ImageMapper()
+
+    def map(self, message):
+        try:
+            return DLPackImage(self._native.map(gpu_image_descriptor(message)))
+        except RuntimeError as exc:
+            raise MappingError(str(exc)) from exc

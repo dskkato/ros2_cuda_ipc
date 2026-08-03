@@ -8,6 +8,7 @@ from ros2_cuda_ipc_msgs.msg import GpuImage
 from ros2_cuda_ipc_py import _native
 from ros2_cuda_ipc_py import (
     BufferMapper,
+    ImageMapper,
     ImageReadHandle,
     MappingError,
 )
@@ -191,6 +192,38 @@ def test_dlpack_device_and_stream_protocol_arguments():
         image.__dlpack__(stream=-2)
     with pytest.raises(TypeError, match="stream"):
         image.__dlpack__(stream=object())
+
+
+def test_image_mapper_defers_binding_until_dlpack_export():
+    native_view, probe, descriptor = _fixture()
+    image = ImageMapper().map(descriptor)
+    # The producer owns its unbound publication; no ReadHandle is exposed.
+    assert image.valid
+    assert image.shape == (2, 3, 4)
+    assert image.__dlpack_device__() == (2, 0)
+    assert probe.refcount() == 2
+
+    capsule = image.__dlpack__(stream=2)
+    assert not image.valid
+    with pytest.raises(MappingError, match="ownership was transferred"):
+        image.__dlpack__(stream=2)
+    with pytest.raises(MappingError, match="ownership was transferred"):
+        image.close()
+    del capsule, image, native_view
+    gc.collect()
+    assert probe.refcount() == 0
+
+
+def test_image_mapper_close_releases_unbound_publication():
+    native_view, probe, descriptor = _fixture()
+    image = ImageMapper().map(descriptor)
+    image.close()
+    assert not image.valid
+    with pytest.raises(MappingError, match="after close"):
+        image.__dlpack__(stream=1)
+    del image, native_view
+    gc.collect()
+    assert probe.refcount() == 0
 
 
 def test_dlpack_device_copy_and_keyword_only_arguments():

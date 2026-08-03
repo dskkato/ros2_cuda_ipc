@@ -129,4 +129,56 @@ inline ImageTensorDescriptor project_to_tensor(
   return result;
 }
 
+/// Project metadata and an unbound publication without performing a stream
+/// operation. The caller binds the publication only after this succeeds.
+inline ImageTensorDescriptor project_to_tensor(
+    ros2_cuda_ipc_core::image::DType dtype,
+    const std::array<uint32_t, 3>& shape,
+    const std::array<uint64_t, 3>& strides, void* data,
+    uint64_t allocation_size, int device_id) {
+  if (data == nullptr)
+    throw std::invalid_argument("cannot export a null GPU allocation");
+  ImageTensorDescriptor result;
+  result.data = data;
+  result.device_id = device_id;
+  result.allocation_size = allocation_size;
+  result.rank = 3;
+  result.dl_dtype = tensor_dl_dtype(dtype);
+  const uint64_t element_size =
+      static_cast<uint64_t>(result.dl_dtype.bits / 8) * result.dl_dtype.lanes;
+  if (element_size == 0)
+    throw std::invalid_argument("image dtype has zero-sized elements");
+  unsigned __int128 last_byte = 0;
+  for (std::size_t index = 0; index < 3; ++index) {
+    if (shape[index] == 0)
+      throw std::invalid_argument("Image dimensions must be positive");
+    if (strides[index] % element_size != 0)
+      throw std::invalid_argument(
+          "Image byte strides must be divisible by the dtype size");
+    if (shape[index] > 1 && strides[index] < element_size)
+      throw std::invalid_argument(
+          "Image strides overlap elements for a non-singleton dimension");
+    const uint64_t element_stride = strides[index] / element_size;
+    if (element_stride >
+        static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
+      throw std::invalid_argument(
+          "Image element stride exceeds the DLPack int64 range");
+    result.shape[index] = static_cast<int64_t>(shape[index]);
+    result.element_strides[index] = static_cast<int64_t>(element_stride);
+    last_byte +=
+        static_cast<unsigned __int128>(shape[index] - 1) * strides[index];
+  }
+  last_byte += element_size;
+  if (last_byte > std::numeric_limits<uint64_t>::max() ||
+      last_byte > allocation_size)
+    throw std::invalid_argument(
+        "Image shape/strides exceed the mapped allocation");
+  const auto base = reinterpret_cast<uintptr_t>(data);
+  if (allocation_size > std::numeric_limits<uintptr_t>::max() - base ||
+      last_byte > std::numeric_limits<uintptr_t>::max() - base) {
+    throw std::invalid_argument("Image pointer arithmetic overflows");
+  }
+  return result;
+}
+
 }  // namespace ros2_cuda_ipc_py::dlpack

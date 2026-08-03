@@ -103,7 +103,7 @@ BufferMapper& BufferMapper::operator=(BufferMapper&&) noexcept = default;
 std::optional<ReadHandle> BufferMapper::map(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg,
     CUstream consumer_stream) const {
-  auto publication = map_publication(msg);
+  auto publication = detail::acquire_publication(*this, msg);
   if (!publication) {
     return std::nullopt;
   }
@@ -120,9 +120,18 @@ std::optional<ReadHandle> BufferMapper::map(
   return read;
 }
 
-std::unique_ptr<detail::MappedPublication> BufferMapper::map_publication(
+std::unique_ptr<detail::MappedPublication>
+BufferMapper::acquire_publication_impl(
     const ros2_cuda_ipc_msgs::msg::BufferCore& msg) const {
   return map_descriptor(impl_->mapping_cache, msg);
 }
+
+namespace detail {
+std::unique_ptr<MappedPublication> acquire_publication(
+    const BufferMapper& mapper,
+    const ros2_cuda_ipc_msgs::msg::BufferCore& msg) {
+  return mapper.acquire_publication_impl(msg);
+}
+}  // namespace detail
 
 }  // namespace ros2_cuda_ipc_core::subscriber

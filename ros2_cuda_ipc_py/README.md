@@ -57,13 +57,12 @@ covered by this procedure.
 
 ```python
 import cupy as cp
-from ros2_cuda_ipc_py import BufferMapper, ImageReadHandle
+from ros2_cuda_ipc_py import ImageMapper
 
-buffer_mapper = BufferMapper()  # keep one mapper for the subscriber's lifetime
+image_mapper = ImageMapper()  # keep one mapper for the subscriber's lifetime
 
 def callback(msg):
-    read = buffer_mapper.map(msg.core, cp.cuda.get_current_stream().ptr)
-    image = ImageReadHandle.from_message(msg, read)
+    image = image_mapper.map(msg)
     array = cp.from_dlpack(image)
     # array is a zero-copy view of the imported allocation.
     consume(array)
@@ -74,26 +73,32 @@ def callback(msg):
 preserves the message's `(rows, cols, channels)` shape, byte strides, and dtype,
 and the returned array keeps the native image buffer reference alive until it is released.
 
-`ImageReadHandle` is a typed DLPack projection. It exposes projection metadata such
+`ImageMapper` returns a one-shot late-binding DLPack producer. It retains an
+internal, unbound `MappedPublication` until the consumer invokes
+`__dlpack__(stream)`; only then is the producer-ready wait enqueued on that
+actual CUDA stream and the resulting `ReadHandle` is transferred to the
+DLPack capsule. It exposes projection metadata such
 as `byte_size`, `device_id`, `shape`, `strides`, `dtype`, `encoding`, and
 `frame_id`, but it never exposes an unbound raw device pointer. The regular
 raw-pointer path is `BufferMapper.map(message, stream)`, which returns a
 `ReadHandle`.
 
+The raw-pointer path remains an explicitly early-bound API: use
+`BufferMapper.map(message.core, stream)` followed by
+`ImageReadHandle.from_message(message, read)` when application code itself
+selects the consumer stream. `ImageReadHandle` is always stream-bound and is
+not used as the DLPack producer's unbound state.
+
 Framework-neutral DLPack consumers use the standard producer protocol:
 
 ```python
 import torch
-from ros2_cuda_ipc_py import BufferMapper, ImageReadHandle
+from ros2_cuda_ipc_py import ImageMapper
 
-buffer_mapper = BufferMapper()
+image_mapper = ImageMapper()
 
 def callback(message):
-    consumer_stream = torch.cuda.current_stream(
-        device=int(message.core.device_id)
-    )
-    read = buffer_mapper.map(message.core, consumer_stream.cuda_stream)
-    image = ImageReadHandle.from_message(message, read)
+    image = image_mapper.map(message)
     tensor = torch.from_dlpack(image)
 
     consumer_stream = torch.cuda.current_stream(device=image.device_id)

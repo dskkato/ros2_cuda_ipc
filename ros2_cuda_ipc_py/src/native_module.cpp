@@ -17,6 +17,7 @@
 #include <utility>
 
 #include "ros2_cuda_ipc_core/detail/image_read_handle_dlpack.hpp"
+#include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
 #include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
 #include "ros2_cuda_ipc_py/dlpack/image_tensor_descriptor.hpp"
@@ -221,7 +222,7 @@ void validate_image_descriptor(
 // releases the managed tensor.
 struct DlpackExportContext {
   dlpack::ImageTensorDescriptor tensor;
-  std::unique_ptr<ros2_cuda_ipc_core::image::ImageReadHandle> owner;
+  std::unique_ptr<ros2_cuda_ipc_core::subscriber::ReadHandle> owner;
 };
 
 void legacy_dlpack_deleter(DLManagedTensor* managed) noexcept {
@@ -306,7 +307,7 @@ void populate_dlpack_tensor(ManagedTensor& managed,
 
 py::capsule prepare_legacy_dlpack_capsule(
     const dlpack::ImageTensorDescriptor& tensor,
-    std::unique_ptr<ros2_cuda_ipc_core::image::ImageReadHandle>& owner,
+    std::unique_ptr<ros2_cuda_ipc_core::subscriber::ReadHandle>& owner,
     DlpackExportContext*& prepared_context) {
   auto context = std::make_unique<DlpackExportContext>();
   context->tensor = tensor;
@@ -337,7 +338,7 @@ py::capsule prepare_legacy_dlpack_capsule(
 
 py::capsule prepare_versioned_dlpack_capsule(
     const dlpack::ImageTensorDescriptor& tensor,
-    std::unique_ptr<ros2_cuda_ipc_core::image::ImageReadHandle>& owner,
+    std::unique_ptr<ros2_cuda_ipc_core::subscriber::ReadHandle>& owner,
     DlpackExportContext*& prepared_context) {
   auto context = std::make_unique<DlpackExportContext>();
   context->tensor = tensor;
@@ -434,8 +435,8 @@ class PyImageReadHandle {
     return py::make_tuple(static_cast<int32_t>(kDLCUDA), device_id_);
   }
 
-  std::string dtype() const {
-    switch (dtype_) {
+  static std::string dtype_name(ros2_cuda_ipc_core::image::DType dtype) {
+    switch (dtype) {
       case ros2_cuda_ipc_core::image::DType::U8:
         return "uint8";
       case ros2_cuda_ipc_core::image::DType::U16:
@@ -455,6 +456,7 @@ class PyImageReadHandle {
     }
     throw std::logic_error("unsupported ros2_cuda_ipc image dtype");
   }
+  std::string dtype() const { return dtype_name(dtype_); }
 
   py::tuple shape() const {
     return py::make_tuple(shape_[0], shape_[1], shape_[2]);
@@ -492,17 +494,21 @@ class PyImageReadHandle {
     }
 
     auto pending = std::move(view_);
+    auto pending_read =
+        std::make_unique<ros2_cuda_ipc_core::subscriber::ReadHandle>(
+            std::move(pending->read));
     DlpackExportContext* prepared_context = nullptr;
     py::capsule capsule;
     try {
       if (versioned) {
-        capsule =
-            prepare_versioned_dlpack_capsule(tensor, pending, prepared_context);
+        capsule = prepare_versioned_dlpack_capsule(tensor, pending_read,
+                                                   prepared_context);
       } else {
-        capsule =
-            prepare_legacy_dlpack_capsule(tensor, pending, prepared_context);
+        capsule = prepare_legacy_dlpack_capsule(tensor, pending_read,
+                                                prepared_context);
       }
     } catch (...) {
+      pending->read = std::move(*pending_read);
       view_ = std::move(pending);
       throw;
     }
@@ -535,6 +541,150 @@ class PyImageReadHandle {
   std::string frame_id_;
 };
 
+// Late-binding DLPack producer.  Unlike PyImageReadHandle this object never
+// contains a ReadHandle before __dlpack__; publication is the sole unbound
+// state and keeps the lease alive while metadata is inspected.
+class PyDLPackImage {
+ public:
+  PyDLPackImage(
+      const ros2_cuda_ipc_msgs::msg::GpuImage& message,
+      std::unique_ptr<ros2_cuda_ipc_core::subscriber::detail::MappedPublication>
+          publication)
+      : publication_(std::move(publication)),
+        shape_(message.shape),
+        strides_(message.strides),
+        dtype_(static_cast<ros2_cuda_ipc_core::image::DType>(message.dtype)),
+        encoding_(message.encoding),
+        frame_id_(message.header.frame_id) {
+    if (!publication_ || !publication_->valid()) {
+      throw MappingError("GpuImage publication is invalid");
+    }
+    byte_size_ = publication_->byte_size();
+    device_id_ = publication_->device_id();
+  }
+
+  bool valid() const noexcept { return state_ == State::Available; }
+  uint64_t byte_size() const noexcept { return byte_size_; }
+  int device_id() const noexcept { return device_id_; }
+  py::tuple shape() const {
+    return py::make_tuple(shape_[0], shape_[1], shape_[2]);
+  }
+  py::tuple strides() const {
+    return py::make_tuple(strides_[0], strides_[1], strides_[2]);
+  }
+  const std::string& encoding() const noexcept { return encoding_; }
+  const std::string& frame_id() const noexcept { return frame_id_; }
+  std::string dtype() const { return PyImageReadHandle::dtype_name(dtype_); }
+
+  py::tuple dlpack_device() const {
+    ensure_available("query DLPack device");
+    return py::make_tuple(static_cast<int32_t>(kDLCUDA), device_id_);
+  }
+
+  py::capsule dlpack(std::uintptr_t stream_ptr, bool synchronize,
+                     bool versioned) {
+    ensure_available("export through DLPack");
+    if (!synchronize || stream_ptr == 0) {
+      throw py::value_error(
+          "DLPack export requires a consumer CUDA stream; stream=-1 is not "
+          "supported");
+    }
+    dlpack::ImageTensorDescriptor tensor;
+    try {
+      tensor = dlpack::project_to_tensor(dtype_, shape_, strides_,
+                                         publication_->device_ptr(), byte_size_,
+                                         device_id_);
+    } catch (const std::invalid_argument& error) {
+      throw py::buffer_error(error.what());
+    }
+
+    // Allocate all capsule objects first. make_bound retains publication on
+    // every failure before its ownership commit.
+    auto capsule_context = std::make_unique<DlpackExportContext>();
+    capsule_context->tensor = tensor;
+    std::unique_ptr<DLManagedTensor> legacy;
+    std::unique_ptr<DLManagedTensorVersioned> versioned_managed;
+    if (versioned) {
+      versioned_managed = std::make_unique<DLManagedTensorVersioned>();
+      versioned_managed->version = {1, 0};
+      versioned_managed->flags = 0;
+    } else {
+      legacy = std::make_unique<DLManagedTensor>();
+    }
+
+    auto read =
+        ros2_cuda_ipc_core::subscriber::detail::ReadHandleFactory::make_bound(
+            *publication_, reinterpret_cast<CUstream>(stream_ptr));
+    if (!read)
+      throw MappingError(
+          "failed to bind GpuImage to the DLPack consumer stream");
+    capsule_context->owner =
+        std::make_unique<ros2_cuda_ipc_core::subscriber::ReadHandle>(
+            std::move(*read));
+
+    // No fallible allocation follows the ownership commit. PyCapsule_New is
+    // the only remaining fallible operation; its failure destroys read safely.
+    if (versioned) {
+      versioned_managed->manager_ctx = capsule_context.get();
+      versioned_managed->deleter = &versioned_dlpack_deleter;
+      populate_dlpack_tensor(*versioned_managed, *capsule_context);
+      auto* raw = versioned_managed.release();
+      py::capsule result;
+      try {
+        result =
+            py::capsule(raw, kVersionedDLPackName, &dlpack_capsule_destructor);
+      } catch (...) {
+        raw->deleter(raw);
+        throw;
+      }
+      (void)capsule_context.release();
+      state_ = State::Consumed;
+      publication_.reset();
+      return result;
+    }
+    legacy->manager_ctx = capsule_context.get();
+    legacy->deleter = &legacy_dlpack_deleter;
+    populate_dlpack_tensor(*legacy, *capsule_context);
+    auto* raw = legacy.release();
+    py::capsule result;
+    try {
+      result = py::capsule(raw, kDLPackName, &dlpack_capsule_destructor);
+    } catch (...) {
+      raw->deleter(raw);
+      throw;
+    }
+    (void)capsule_context.release();
+    state_ = State::Consumed;
+    publication_.reset();
+    return result;
+  }
+
+  void close() {
+    ensure_available("close");
+    publication_.reset();
+    state_ = State::Closed;
+  }
+
+ private:
+  enum class State { Available, Consumed, Closed };
+  void ensure_available(const char* action) const {
+    if (state_ == State::Consumed)
+      throw MappingError(std::string("cannot ") + action +
+                         " after DLPack ownership was transferred");
+    if (state_ == State::Closed)
+      throw MappingError(std::string("cannot ") + action + " after close");
+  }
+  std::unique_ptr<ros2_cuda_ipc_core::subscriber::detail::MappedPublication>
+      publication_;
+  State state_ = State::Available;
+  uint64_t byte_size_ = 0;
+  int device_id_ = -1;
+  std::array<uint32_t, 3> shape_{};
+  std::array<uint64_t, 3> strides_{};
+  ros2_cuda_ipc_core::image::DType dtype_;
+  std::string encoding_, frame_id_;
+};
+
 class PyBufferMapper {
  public:
   PyReadHandle map(const py::dict& descriptor,
@@ -552,6 +702,28 @@ class PyBufferMapper {
           "VMM-FD import failure)");
     }
     return PyReadHandle(std::move(*view));
+  }
+
+ private:
+  ros2_cuda_ipc_core::subscriber::BufferMapper mapper_;
+};
+
+class PyImageMapper {
+ public:
+  PyDLPackImage map(const py::dict& descriptor) const {
+    const auto message = gpu_image_from_descriptor(descriptor);
+    validate_image_descriptor(message);
+    std::unique_ptr<ros2_cuda_ipc_core::subscriber::detail::MappedPublication>
+        publication;
+    {
+      py::gil_scoped_release release;
+      publication = ros2_cuda_ipc_core::subscriber::detail::acquire_publication(
+          mapper_, message.core);
+    }
+    if (!publication)
+      throw MappingError(
+          "GpuImage was rejected while acquiring its publication");
+    return PyDLPackImage(message, std::move(publication));
   }
 
  private:
@@ -730,6 +902,24 @@ PYBIND11_MODULE(_native, module) {
       .def(py::init<>())
       .def("map", &PyBufferMapper::map, py::arg("descriptor"),
            py::arg("stream_ptr"));
+
+  py::class_<PyDLPackImage>(module, "DLPackImage")
+      .def_property_readonly("valid", &PyDLPackImage::valid)
+      .def_property_readonly("byte_size", &PyDLPackImage::byte_size)
+      .def_property_readonly("device_id", &PyDLPackImage::device_id)
+      .def_property_readonly("shape", &PyDLPackImage::shape)
+      .def_property_readonly("strides", &PyDLPackImage::strides)
+      .def_property_readonly("dtype", &PyDLPackImage::dtype)
+      .def_property_readonly("encoding", &PyDLPackImage::encoding)
+      .def_property_readonly("frame_id", &PyDLPackImage::frame_id)
+      .def("_dlpack_device", &PyDLPackImage::dlpack_device)
+      .def("_dlpack", &PyDLPackImage::dlpack, py::arg("stream_ptr"),
+           py::arg("synchronize"), py::arg("versioned"))
+      .def("close", &PyDLPackImage::close);
+
+  py::class_<PyImageMapper>(module, "ImageMapper")
+      .def(py::init<>())
+      .def("map", &PyImageMapper::map, py::arg("descriptor"));
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
   py::class_<TestBufferRefProbe, std::shared_ptr<TestBufferRefProbe>>(
