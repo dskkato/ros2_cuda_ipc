@@ -17,8 +17,8 @@
 #include <utility>
 
 #include "ros2_cuda_ipc_core/detail/read_handle_factory.hpp"
-#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_core/subscriber/buffer_mapper.hpp"
+#include "ros2_cuda_ipc_image/image_read_handle.hpp"
 #include "ros2_cuda_ipc_py/dlpack/image_tensor_descriptor.hpp"
 
 #ifdef ROS2_CUDA_IPC_PY_ENABLE_TEST_SUPPORT
@@ -188,8 +188,8 @@ ros2_cuda_ipc_msgs::msg::GpuImage gpu_image_from_descriptor(
 
 uint32_t dtype_size(uint8_t dtype) {
   try {
-    const auto dl_dtype = dlpack::tensor_dl_dtype(
-        static_cast<ros2_cuda_ipc_core::image::DType>(dtype));
+    const auto dl_dtype =
+        dlpack::tensor_dl_dtype(static_cast<ros2_cuda_ipc_image::DType>(dtype));
     return dl_dtype.bits / 8;
   } catch (const std::invalid_argument&) {
     throw py::value_error("unsupported ros2_cuda_ipc image dtype " +
@@ -329,8 +329,8 @@ class PyReadHandle {
 
 class PyImageReadHandle {
  public:
-  explicit PyImageReadHandle(ros2_cuda_ipc_core::image::ImageReadHandle view)
-      : view_(std::make_unique<ros2_cuda_ipc_core::image::ImageReadHandle>(
+  explicit PyImageReadHandle(ros2_cuda_ipc_image::ImageReadHandle view)
+      : view_(std::make_unique<ros2_cuda_ipc_image::ImageReadHandle>(
             std::move(view))),
         valid_(view_->valid()),
         byte_size_(view_->read.byte_size()),
@@ -345,7 +345,7 @@ class PyImageReadHandle {
                                         PyReadHandle& read) {
     const auto message = gpu_image_from_descriptor(descriptor);
     validate_image_descriptor(message);
-    auto typed = ros2_cuda_ipc_core::image::ImageReadHandle::from_message(
+    auto typed = ros2_cuda_ipc_image::ImageReadHandle::from_message(
         message, read.release());
     if (!typed) {
       throw MappingError(
@@ -357,23 +357,23 @@ class PyImageReadHandle {
   bool valid() const noexcept { return valid_; }
   uint64_t byte_size() const noexcept { return byte_size_; }
   int device_id() const noexcept { return device_id_; }
-  static std::string dtype_name(ros2_cuda_ipc_core::image::DType dtype) {
+  static std::string dtype_name(ros2_cuda_ipc_image::DType dtype) {
     switch (dtype) {
-      case ros2_cuda_ipc_core::image::DType::U8:
+      case ros2_cuda_ipc_image::DType::U8:
         return "uint8";
-      case ros2_cuda_ipc_core::image::DType::U16:
+      case ros2_cuda_ipc_image::DType::U16:
         return "uint16";
-      case ros2_cuda_ipc_core::image::DType::F16:
+      case ros2_cuda_ipc_image::DType::F16:
         return "float16";
-      case ros2_cuda_ipc_core::image::DType::F32:
+      case ros2_cuda_ipc_image::DType::F32:
         return "float32";
-      case ros2_cuda_ipc_core::image::DType::F64:
+      case ros2_cuda_ipc_image::DType::F64:
         return "float64";
-      case ros2_cuda_ipc_core::image::DType::S16:
+      case ros2_cuda_ipc_image::DType::S16:
         return "int16";
-      case ros2_cuda_ipc_core::image::DType::S32:
+      case ros2_cuda_ipc_image::DType::S32:
         return "int32";
-      case ros2_cuda_ipc_core::image::DType::U32:
+      case ros2_cuda_ipc_image::DType::U32:
         return "uint32";
     }
     throw std::logic_error("unsupported ros2_cuda_ipc image dtype");
@@ -395,14 +395,13 @@ class PyImageReadHandle {
   }
 
  private:
-  std::unique_ptr<ros2_cuda_ipc_core::image::ImageReadHandle> view_;
+  std::unique_ptr<ros2_cuda_ipc_image::ImageReadHandle> view_;
   bool valid_ = false;
   uint64_t byte_size_ = 0;
   int device_id_ = -1;
   std::array<uint32_t, 3> shape_{};
   std::array<uint64_t, 3> strides_{};
-  ros2_cuda_ipc_core::image::DType dtype_ =
-      ros2_cuda_ipc_core::image::DType::U8;
+  ros2_cuda_ipc_image::DType dtype_ = ros2_cuda_ipc_image::DType::U8;
   std::string encoding_;
   std::string frame_id_;
 };
@@ -419,7 +418,7 @@ class PyDLPackImage {
       : publication_(std::move(publication)),
         shape_(message.shape),
         strides_(message.strides),
-        dtype_(static_cast<ros2_cuda_ipc_core::image::DType>(message.dtype)),
+        dtype_(static_cast<ros2_cuda_ipc_image::DType>(message.dtype)),
         encoding_(message.encoding),
         frame_id_(message.header.frame_id) {
     if (!publication_ || !publication_->valid()) {
@@ -550,7 +549,7 @@ class PyDLPackImage {
   int device_id_ = -1;
   std::array<uint32_t, 3> shape_{};
   std::array<uint64_t, 3> strides_{};
-  ros2_cuda_ipc_core::image::DType dtype_;
+  ros2_cuda_ipc_image::DType dtype_;
   std::string encoding_, frame_id_;
 };
 
@@ -659,7 +658,7 @@ py::tuple make_test_image() {
 
   ros2_cuda_ipc_msgs::msg::GpuImage message;
   message.header.frame_id = "test_frame";
-  message.dtype = static_cast<uint8_t>(ros2_cuda_ipc_core::image::DType::U8);
+  message.dtype = static_cast<uint8_t>(ros2_cuda_ipc_image::DType::U8);
   message.shape = {2, 3, 4};
   message.strides = {12, 4, 1};
   message.encoding = "rgba8";
@@ -691,7 +690,7 @@ py::tuple make_test_image() {
   if (!read) {
     throw std::runtime_error("test BufferMapper fixture failed");
   }
-  auto view = ros2_cuda_ipc_core::image::ImageReadHandle::from_message(
+  auto view = ros2_cuda_ipc_image::ImageReadHandle::from_message(
       message, std::move(*read));
   if (!view) {
     throw std::runtime_error("test ImageReadHandle fixture failed");

@@ -7,7 +7,9 @@ who want to try the demo first.
 ## Packages
 
 - `ros2_cuda_ipc_msgs`: message definitions for GPU-backed buffers.
-- `ros2_cuda_ipc_core`: CUDA memory sharing, buffer reference handling, and typed read handles.
+- `ros2_cuda_ipc_core`: untyped CUDA memory sharing, buffer reference handling, and synchronization.
+- `ros2_cuda_ipc_image`: `ImageReadHandle`, image metadata validation, and image message helpers.
+- `ros2_cuda_ipc_pointcloud2`: `PointCloud2ReadHandle`, PointCloud2/PointField validation, and point-cloud message helpers.
 - `examples/multi_process_image_fanout`: primary multi-process sample.
 - `utils/gpu_image_transport`: utility bridge from `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: CUDA IPC and VMM-FD environment checks.
@@ -16,7 +18,8 @@ who want to try the demo first.
 
 - `ros2_cuda_ipc_core::subscriber::BufferMapper`: maps a `BufferCore` and a consumer stream to an optional `ReadHandle`.
 - `ros2_cuda_ipc_core::subscriber::ReadHandle`: the normal pointer API. It waits for producer readiness, owns the buffer reference, and defers resource/buffer reference release until consumer completion.
-- `ros2_cuda_ipc_core::image::ImageReadHandle` / `ros2_cuda_ipc_core::pointcloud2::PointCloud2ReadHandle`: typed metadata adapters that own a `ReadHandle`.
+- `ros2_cuda_ipc_image::ImageReadHandle`: typed image metadata adapter that owns a `ReadHandle`.
+- `ros2_cuda_ipc_pointcloud2::PointCloud2ReadHandle`: typed PointCloud2 metadata adapter that owns a `ReadHandle`.
 - `ros2_cuda_ipc_core::publisher::GpuBufferPool`: the sole owner of publisher-local `GpuBufferBlock` resources, their metadata mappings, and reservation/reuse state.
 - `ros2_cuda_ipc_core::publisher::GpuBufferManager`: publisher facade that orchestrates initialization, reset, preparation order, and quarantine.
 - `ros2_cuda_ipc_core::publisher::PublishBlock`: one move-only publish attempt with RAII cancellation.

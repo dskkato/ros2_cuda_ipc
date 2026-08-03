@@ -14,6 +14,7 @@ find_package(ament_cmake_python REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 REQUIRED CONFIG)
 find_package(ros2_cuda_ipc_core REQUIRED)
+find_package(ros2_cuda_ipc_image REQUIRED)
 find_package(ros2_cuda_ipc_msgs REQUIRED)
 
 include(FetchContent)
@@ -29,7 +30,11 @@ ament_get_python_install_dir(PYTHON_INSTALL_DIR)
 
 pybind11_add_module(_native MODULE src/native_module.cpp)
 target_include_directories(_native PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(_native PRIVATE ros2_cuda_ipc_core::ros2_cuda_ipc_core dlpack::dlpack)
+target_link_libraries(_native PRIVATE
+  ros2_cuda_ipc_core::ros2_cuda_ipc_core
+  ros2_cuda_ipc_image::ros2_cuda_ipc_image
+  dlpack::dlpack
+)
 target_compile_definitions(_native PRIVATE ROS2_CUDA_IPC_PY_VERSION="0.4.0")
 
 if(BUILD_TESTING)

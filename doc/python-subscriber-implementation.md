@@ -28,13 +28,16 @@ Python側は次を担当する。
 - C++ mapperを呼び出し、Python viewを返す
 - streamやframework objectをPython APIへ接続する
 
-C++ coreは次を担当する。
+C++ core と image typed layer は次を担当する。
 
-- messageの検証とuidの確認
+- `BufferCore` messageの検証とuidの確認
 - shared-memory blockのbuffer reference取得
 - CUDA memory/eventのimportとcache
 - `ReadHandle`からのdevice pointer、ready wait、metadataの提供
 - completion event後のresource/buffer reference cleanup
+
+`GpuImage` のレイアウト検証と `ImageReadHandle` は
+`ros2_cuda_ipc_image` が担当する。Python binding はその typed package を利用する。
 
 descriptorで渡すのはmetadataとhandleだけであり、GPU payload bytesはコピーしない。
 node、executor、QoSの管理も`rclpy`に委ねる。

@@ -12,6 +12,7 @@
   <build_depend>python3-dev</build_depend>
   <depend>pybind11-dev</depend>
   <depend>ros2_cuda_ipc_core</depend>
+  <depend>ros2_cuda_ipc_image</depend>
   <depend>ros2_cuda_ipc_msgs</depend>
 
   <exec_depend>rclpy</exec_depend>

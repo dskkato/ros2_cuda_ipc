@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/image/image_read_handle.hpp"
+#include "ros2_cuda_ipc_image/image_read_handle.hpp"
 
 #include <limits>
 #include <utility>
 
-namespace ros2_cuda_ipc_core::image {
+namespace ros2_cuda_ipc_image {
 
 std::optional<ImageReadHandle> ImageReadHandle::from_message(
     const ros2_cuda_ipc_msgs::msg::GpuImage& message,
-    subscriber::ReadHandle read) {
+    ros2_cuda_ipc_core::subscriber::ReadHandle read) {
   ImageReadHandle result;
   result.header = message.header;
   result.read = std::move(read);
@@ -61,4 +61,4 @@ bool ImageReadHandle::sanity_check() const noexcept {
          needed <= read.byte_size();
 }
 
-}  // namespace ros2_cuda_ipc_core::image
+}  // namespace ros2_cuda_ipc_image

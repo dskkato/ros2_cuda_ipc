@@ -1,18 +1,18 @@
 // Copyright (c) 2026 Daisuke Kato
 // SPDX-License-Identifier: MIT
 
-#include "ros2_cuda_ipc_core/pointcloud2/pointcloud2_read_handle.hpp"
+#include "ros2_cuda_ipc_pointcloud2/pointcloud2_read_handle.hpp"
 
 #include <limits>
 #include <utility>
 
 #include "sensor_msgs/msg/point_field.hpp"
 
-namespace ros2_cuda_ipc_core::pointcloud2 {
+namespace ros2_cuda_ipc_pointcloud2 {
 
 std::optional<PointCloud2ReadHandle> PointCloud2ReadHandle::from_message(
     const ros2_cuda_ipc_msgs::msg::GpuPointCloud2& message,
-    subscriber::ReadHandle read) {
+    ros2_cuda_ipc_core::subscriber::ReadHandle read) {
   PointCloud2ReadHandle result;
   result.header = message.header;
   result.read = std::move(read);
@@ -72,4 +72,4 @@ std::optional<PointCloud2ReadHandle> PointCloud2ReadHandle::from_message(
   return std::optional<PointCloud2ReadHandle>(std::move(result));
 }
 
-}  // namespace ros2_cuda_ipc_core::pointcloud2
+}  // namespace ros2_cuda_ipc_pointcloud2
