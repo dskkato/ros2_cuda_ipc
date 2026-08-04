@@ -1,22 +1,49 @@
 # ros2_cuda_ipc
 
-ROS 2 nodes can pass large GPU images between processes without copying the
+`ros2_cuda_ipc` lets ROS 2 processes share GPU-resident data without copying the
 full payload through host memory.
 
-This repository provides CUDA-backed message types, mapping utilities, and a
-small multi-process demo that shows one GPU image publisher feeding preview,
-encoder-like, and inference-like consumers.
+The project provides:
+
+- CUDA VMM-FD-based inter-process GPU memory sharing;
+- CUDA event-based stream synchronization;
+- explicit multi-consumer buffer lifetime management;
+- typed C++ APIs for images and point clouds;
+- Python integration with DLPack-compatible frameworks such as PyTorch and
+  CuPy;
+- a multi-process demo in which one GPU image publisher feeds preview,
+  encoder-like, and inference-like consumers.
 
 > [!NOTE]
-> **ROS 2 Lyrical users**
+> **Related ROS 2 work**
 >
-> ROS 2 Lyrical introduced the new `rosidl::Buffer` abstraction together with the CUDA buffer backend, which provides functionality similar to this project.
+> ROS 2 Lyrical introduced the `rosidl::Buffer` abstraction and a CUDA buffer
+> backend. It addresses a closely related problem by integrating pluggable
+> storage backends with generated ROS message types and the ROS 2 middleware.
 >
-> If you are starting a new project on ROS 2 Lyrical or later, I recommend evaluating the upstream implementation first, as it is the long-term supported solution within the ROS 2 ecosystem.
+> If you are using ROS 2 Lyrical or later, the upstream buffer backend is worth
+> evaluating, especially when you want a ROS-native storage abstraction that is
+> integrated throughout the message and middleware stack.
 >
-> This repository was developed before I became aware of the upstream effort, and it independently arrived at a very similar design. It is still useful as a reference implementation and for understanding the design trade-offs behind CUDA IPC-based zero-copy communication.
+> `ros2_cuda_ipc` was developed independently and uses a standalone library
+> approach with explicit GPU buffer descriptors. It may still be useful when:
 >
-> See https://docs.ros.org/en/lyrical/Releases/Release-Lyrical-Luth.html#publish-messages-without-copying-data-using-rosidl-buffer
+> - supporting ROS 2 distributions before Lyrical;
+> - working with existing or custom message definitions;
+> - requiring explicit control over CUDA stream synchronization and
+>   multi-consumer buffer lifetimes;
+> - consuming GPU data directly from Python through DLPack-compatible
+>   frameworks such as PyTorch and CuPy;
+> - experimenting with CUDA IPC behavior independently of the middleware
+>   implementation.
+>
+> The projects have different integration points rather than being direct
+> replacements for one another. Users on Lyrical or later may want to evaluate
+> both approaches based on their deployment and API requirements.
+>
+> See the ROS 2 Lyrical release notes for more information about
+> `rosidl::Buffer` and the CUDA buffer backend:
+> https://docs.ros.org/en/lyrical/Releases/Release-Lyrical-Luth.html#publish-messages-without-copying-data-using-rosidl-buffer
 
 ## What You Can Try
 
@@ -88,7 +115,7 @@ ros2 topic echo /fanout/inference_like/status
 - `ros2_cuda_ipc_core`: untyped CUDA memory sharing, buffer lifetime, and synchronization APIs.
 - `ros2_cuda_ipc_image`: typed `GpuImage` metadata validation, `ImageReader`, `ImageReadHandle`, and image message helpers.
 - `ros2_cuda_ipc_pointcloud2`: typed `GpuPointCloud2`/`PointField` validation, `PointCloud2Reader`, `PointCloud2ReadHandle`, and point-cloud message helpers.
-- `ros2_cuda_ipc_py`: `rclpy`/pybind11 subscriber mapping with zero-copy CuPy views.
+- `ros2_cuda_ipc_py`: `rclpy`/pybind11 subscriber mapping with zero-copy DLPack integration for Python frameworks such as PyTorch and CuPy.
 - `examples/multi_process_image_fanout`: primary runnable demo.
 - `utils/gpu_image_transport`: utility nodes that map `GpuImage` messages to CPU image topics.
 - `utils/cuda_ipc_poc`: small CUDA IPC / VMM-FD environment checks.
@@ -115,6 +142,21 @@ depends directly on `sensor_msgs` for `PointField`.
 - Python subscriber: [ros2_cuda_ipc_py/README.md](ros2_cuda_ipc_py/README.md)
 - Python binding design: [doc/python-subscriber-implementation.md](doc/python-subscriber-implementation.md)
 - CUDA IPC / VMM-FD checks: [utils/cuda_ipc_poc/README.md](utils/cuda_ipc_poc/README.md)
+
+## Python and DLPack
+
+GPU data published from C++ can be consumed directly by DLPack-compatible
+Python frameworks:
+
+```python
+image = ImageMapper().map(msg)
+tensor = torch.from_dlpack(image)
+```
+
+Synchronization is bound to the CUDA stream selected by the consumer framework
+when the DLPack object is consumed. This allows the same received buffer to be
+used by PyTorch, CuPy, and other DLPack-compatible libraries without adding a
+hard dependency on a particular framework.
 
 ## Publisher API
 
