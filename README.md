@@ -146,17 +146,21 @@ depends directly on `sensor_msgs` for `PointField`.
 ## Python and DLPack
 
 GPU data published from C++ can be consumed directly by DLPack-compatible
-Python frameworks:
+Python frameworks. Reuse one mapper across callbacks so its metadata and IPC
+import caches remain effective:
 
 ```python
-image = ImageMapper().map(msg)
-tensor = torch.from_dlpack(image)
+mapper = ImageMapper()
+
+def on_image(msg):
+    image = mapper.map(msg)
+    tensor = torch.from_dlpack(image)
 ```
 
 Synchronization is bound to the CUDA stream selected by the consumer framework
-when the DLPack object is consumed. This allows the same received buffer to be
-used by PyTorch, CuPy, and other DLPack-compatible libraries without adding a
-hard dependency on a particular framework.
+when the DLPack object is consumed. Each mapped object is one-shot and can be
+consumed by one DLPack-compatible library, such as PyTorch or CuPy, without
+adding a hard dependency on a particular framework.
 
 ## Publisher API
 
